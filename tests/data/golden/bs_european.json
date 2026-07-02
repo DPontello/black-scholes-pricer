@@ -1,0 +1,208 @@
+{
+  "meta": {
+    "description": "Golden-master Black-Scholes europeu. Camada 'verified': full precision, gerada por script stdlib independente do kernel (erf, nao erfc). Camada 'published': valores de livro-texto com tolerancia = metade da ultima casa publicada.",
+    "verified_on": "2026-07-02",
+    "verified_with": "Python 3.12.10, stdlib math.erf; cross-checked contra verificacao independente da mesma data",
+    "conventions": {
+      "tau": "anos",
+      "sigma": "anualizada decimal",
+      "vega": "por 1.00 de vol",
+      "theta": "por ano calendario",
+      "rho": "por 1.00 de taxa",
+      "q": "carry continuo"
+    },
+    "immutability": "Arquivo imutavel por convencao: corrigir um valor exige nova verificacao registrada no commit."
+  },
+  "cases": [
+    {
+      "label": "HULL_15_6",
+      "inputs": {
+        "s": 42.0,
+        "k": 40.0,
+        "tau": 0.5,
+        "r": 0.1,
+        "sigma": 0.2,
+        "q": 0.0
+      },
+      "verified": {
+        "call": 4.759422392871528,
+        "put": 0.8085993729000958,
+        "delta_call": 0.7791312909426689,
+        "delta_put": -0.22086870905733108,
+        "gamma": 0.04996267040591185,
+        "vega": 8.813415059602853,
+        "theta_call": -4.559092194592626,
+        "theta_put": -0.7541744965897703,
+        "rho_call": 13.982045913360281,
+        "rho_put": -5.042542576654
+      },
+      "published": {
+        "source": "Hull, Options, Futures and Other Derivatives, 10th ed., Example 15.6 (2 casas)",
+        "abs_tol": 0.005,
+        "values": {
+          "call": 4.76,
+          "put": 0.81
+        }
+      }
+    },
+    {
+      "label": "ATM_CANONICO",
+      "inputs": {
+        "s": 100.0,
+        "k": 100.0,
+        "tau": 1.0,
+        "r": 0.05,
+        "sigma": 0.2,
+        "q": 0.0
+      },
+      "verified": {
+        "call": 10.450583572185565,
+        "put": 5.573526022256971,
+        "delta_call": 0.6368306511756191,
+        "delta_put": -0.3631693488243809,
+        "gamma": 0.018762017345846895,
+        "vega": 37.52403469169379,
+        "theta_call": -6.414027546438196,
+        "theta_put": -1.657880423934626,
+        "rho_call": 53.232481545376345,
+        "rho_put": -41.89046090469506
+      },
+      "published": {
+        "source": "Caso canonico de sanidade ATM (2 casas)",
+        "abs_tol": 0.005,
+        "values": {
+          "call": 10.45
+        }
+      }
+    },
+    {
+      "label": "DEEP_OTM",
+      "inputs": {
+        "s": 100.0,
+        "k": 150.0,
+        "tau": 0.25,
+        "r": 0.05,
+        "sigma": 0.2,
+        "q": 0.0
+      },
+      "verified": {
+        "call": 0.00011838419451374021,
+        "put": 48.136788458276726,
+        "delta_call": 5.2303205793580165e-05,
+        "delta_put": -0.9999476967942065,
+        "gamma": 2.1501886517764942e-05,
+        "vega": 0.010750943258882472,
+        "theta_call": -0.004555974122795202,
+        "theta_put": 7.402277529581316,
+        "rho_call": 0.001277984096211069,
+        "rho_put": -37.03288953442434
+      }
+    },
+    {
+      "label": "DEEP_ITM",
+      "inputs": {
+        "s": 100.0,
+        "k": 50.0,
+        "tau": 0.5,
+        "r": 0.05,
+        "sigma": 0.2,
+        "q": 0.0
+      },
+      "verified": {
+        "call": 51.23450474417436,
+        "put": 3.4559099036041194e-07,
+        "delta_call": 0.9999998689055768,
+        "delta_put": -1.31094423205802e-07,
+        "gamma": 4.941285962103554e-08,
+        "vega": 4.9412859621035555e-05,
+        "theta_call": -2.4382839898910906,
+        "theta_put": -9.20982025866008e-06,
+        "rho_call": 24.38274107319166,
+        "rho_put": -6.727516655470306e-06
+      }
+    },
+    {
+      "label": "NEAR_EXPIRY_ATM",
+      "inputs": {
+        "s": 100.0,
+        "k": 100.0,
+        "tau": 0.003968253968253968,
+        "r": 0.05,
+        "sigma": 0.2,
+        "q": 0.0
+      },
+      "verified": {
+        "call": 0.5125488181954694,
+        "put": 0.49270951660397344,
+        "delta_call": 0.5087951379369416,
+        "delta_put": -0.4912048620630583,
+        "gamma": 0.3165736640838472,
+        "vega": 2.5124893974908518,
+        "theta_call": -65.83308106554438,
+        "theta_put": -60.834073030623955,
+        "rho_call": 0.1998689086329313,
+        "rho_put": -0.1968777608051976
+      }
+    },
+    {
+      "label": "HULL_GREEKS_DELTA",
+      "inputs": {
+        "s": 49.0,
+        "k": 50.0,
+        "tau": 0.3846,
+        "r": 0.05,
+        "sigma": 0.2,
+        "q": 0.0
+      },
+      "verified": {
+        "call": 2.4004610869656666,
+        "put": 2.448146933950394,
+        "delta_call": 0.5216016339715761,
+        "delta_put": -0.47839836602842395,
+        "gamma": 0.06554537725247868,
+        "vega": 12.105242754243843,
+        "theta_call": -4.305389964546105,
+        "theta_put": -1.8530056721968684,
+        "rho_call": 8.906574098800945,
+        "rho_put": -9.95716587794938
+      },
+      "published": {
+        "source": "Hull, 10th ed., cap. 19 \u2014 exemplo de delta (3 casas)",
+        "abs_tol": 0.0005,
+        "values": {
+          "delta_call": 0.522
+        }
+      }
+    },
+    {
+      "label": "HAUG_GBS",
+      "inputs": {
+        "s": 60.0,
+        "k": 65.0,
+        "tau": 0.25,
+        "r": 0.08,
+        "sigma": 0.3,
+        "q": 0.0
+      },
+      "verified": {
+        "call": 2.133368444916197,
+        "put": 5.846282209855282,
+        "delta_call": 0.372482797961973,
+        "delta_put": -0.6275172020380271,
+        "gamma": 0.04204275575378518,
+        "vega": 11.351544053522,
+        "theta_call": -8.428174386737375,
+        "theta_put": -3.331141285542247,
+        "rho_call": 5.053899858200546,
+        "rho_put": -10.874328583034227
+      },
+      "published": {
+        "source": "Haug, The Complete Guide to Option Pricing Formulas, 2nd ed. \u2014 GBS (4 casas)",
+        "abs_tol": 5e-05,
+        "values": {
+          "call": 2.1334
+        }
+      }
+    }
+  ]
+}

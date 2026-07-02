@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Ambientes
+.venv/
+venv/
+
+# Instruções locais do agente (não versionar)
+.claude/
+CLAUDE.md
+
+# Ferramentas
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
