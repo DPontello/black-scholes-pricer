@@ -1,6 +1,6 @@
 # Roadmap — Options Analytics Engine
 
-> **Status:** Sprint 1 em andamento — kernel `black_scholes.py` + suíte golden/property implementados em 2026-07-02.
+> **Status:** Sprint 1 **concluída em 2026-07-02** (tag `v0.1.0`) — kernel + V&V de 4 camadas + CI (pytest/mypy/ruff/import-linter + job de oráculo scipy) + CONVENTIONS.md. Gates verificados localmente: 1691 testes, 100% linhas+branches no kernel, oráculo verde em 10k casos. Próxima: Sprint 2 (Domínio e Simulação).
 >
 > **Premissas:** Python 3.12+, stdlib-only no core até a Sprint 4, arquitetura hexagonal desde o commit inicial (o layout `domain/ → application/ → adapters/` nasce na Sprint 1, ainda que parcialmente vazio — refatorar layout de pacote depois é custo puro). Esforço relativo: **S** (≤ 3 dias-pessoa), **M** (4–7), **L** (8–12), assumindo 1 dev sênior em dedicação parcial de portfólio.
 >
