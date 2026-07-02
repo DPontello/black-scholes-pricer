@@ -25,6 +25,13 @@ ABS_REGRESSION_FLOOR = 1e-12  # escalar por max(s, k) no ponto de uso
 REL_SELF = 1e-12
 ABS_SELF_FLOOR = 1e-12  # escalar pela escala do problema
 
+# --- differential testing vs oráculo independente (scipy, job de CI) ---------
+# Duas implementações da mesma fórmula com libms distintas (nossa erfc vs
+# Cephes/ndtr do scipy) acumulam ~poucos ulps por avaliação; 1e-9 dá margem
+# ~1e4x sobre o ruído real e ainda mata qualquer erro de fórmula (>= 0.01%).
+REL_ORACLE = 1e-9
+ABS_ORACLE_FLOOR = 1e-12  # escalar por max(S, K) no ponto de uso
+
 # --- identidades matemáticas por caminhos aritméticos DIFERENTES --------------
 # Ex.: homogeneidade BS(lam*s, lam*k) = lam*BS(s, k). O log da razão amplifica
 # 1 ulp de diferença em (lam*s)/(lam*k) por um fator 1/(sigma*sqrt(tau)) — até

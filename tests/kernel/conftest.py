@@ -1,4 +1,4 @@
-"""Configuração global de testes — perfis Hypothesis (VV-PLAN §determinismo).
+"""Perfis Hypothesis dos testes de kernel (VV-PLAN §determinismo).
 
 - ``dev``     (default): 100 exemplos, rápido no ciclo local.
 - ``ci``      : 500 exemplos, ``derandomize=True`` — PR nunca flaka por sorteio.
@@ -6,6 +6,12 @@
                 permanentemente a ``@example(...)`` no teste (corpus versionado).
 
 Seleção via variável de ambiente ``HYPOTHESIS_PROFILE``.
+
+Vive em ``tests/kernel/`` (não em ``tests/``) de propósito: o ambiente do
+job de oráculo (``tests/oracle/``) não instala hypothesis, e um conftest na
+raiz de ``tests/`` quebraria a coleta daquele job. Quando outra suíte
+passar a usar Hypothesis (domínio, Sprint 2), extrair os perfis para um
+módulo compartilhado importado pelos conftests locais.
 """
 
 import os

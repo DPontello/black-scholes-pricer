@@ -1,0 +1,5 @@
+# Dependências EXCLUSIVAS do job de CI "oracle" (differential testing).
+# REGRA DE ARQUITETURA: nada daqui entra no pyproject.toml — o core do
+# motor é stdlib-only, e o oráculo existe justamente para ser um caminho
+# de código independente. Instalação: pip install -r tests/oracle/requirements.txt
+scipy>=1.13
