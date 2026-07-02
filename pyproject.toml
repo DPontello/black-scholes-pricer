@@ -20,6 +20,7 @@ dev = [
     "hypothesis>=6.100",
     "mypy>=1.10",
     "ruff>=0.5",
+    "import-linter>=2.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -32,6 +33,35 @@ pythonpath = ["src", "."]
 [tool.coverage.run]
 source = ["options_engine"]
 branch = true
+
+[tool.coverage.report]
+# Gate global; o kernel é mantido em 100% de linhas por critério de aceite
+# da Sprint 1 (verificado por inspeção do relatório no review).
+fail_under = 95
+
+# Regra de arquitetura executável (docs/ARCHITECTURE.md): o domínio é
+# stdlib-only — nenhum framework, nenhuma lib numérica, nenhum adapter.
+# O contrato de camadas completo (adapters -> application -> domain) entra
+# quando os pacotes application/ e adapters/ existirem (Sprint 3).
+[tool.importlinter]
+root_packages = ["options_engine"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "domain é stdlib-only (sem frameworks, sem libs numéricas)"
+type = "forbidden"
+source_modules = ["options_engine.domain"]
+forbidden_modules = [
+    "fastapi",
+    "pydantic",
+    "starlette",
+    "numpy",
+    "pandas",
+    "scipy",
+    "requests",
+    "httpx",
+    "sqlalchemy",
+]
 
 [tool.mypy]
 strict = true

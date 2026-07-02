@@ -1,0 +1,71 @@
+# Gates obrigatórios da Sprint 1 (docs/ROADMAP.md, docs/VV-PLAN.md §7).
+# PR não mergeia sem: ruff (lint+format) + mypy --strict + import-linter +
+# pytest (perfil ci, derandomizado) com cobertura + oráculo scipy verde.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  quality:
+    name: Gates (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Instalar pacote + dependências de dev
+        run: python -m pip install -e ".[dev]"
+
+      - name: Ruff — lint
+        run: ruff check .
+
+      - name: Ruff — formatação
+        run: ruff format --check .
+
+      - name: Mypy --strict
+        run: mypy
+
+      - name: Import-linter — regra de camadas (domain stdlib-only)
+        run: lint-imports
+
+      - name: Pytest — perfil ci (derandomizado, 500 exemplos/propriedade)
+        env:
+          HYPOTHESIS_PROFILE: ci
+        run: pytest -q --cov=options_engine --cov-report=term-missing
+
+  oracle:
+    # Differential testing contra scipy — ambiente próprio, fora do pyproject
+    # do core (o domínio permanece stdlib-only). Ver docs/VV-PLAN.md §3.
+    name: Oráculo diferencial (scipy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar core + dependências do oráculo (isoladas)
+        run: |
+          python -m pip install -e .
+          python -m pip install pytest
+          python -m pip install -r tests/oracle/requirements.txt
+
+      - name: Kernel vs scipy em 10.000 casos (seed fixa 20260702)
+        run: pytest -q tests/oracle/scipy_oracle.py
+
+  # Fase de hardening (pós-v1.0, agendada no ROADMAP): job nightly com
+  # Hypothesis 10k exemplos aleatórios + mutmut (Linux-only) + QuantLib
+  # como segundo oráculo. Não prometido sem slot — ver docs/VV-PLAN.md §7.
