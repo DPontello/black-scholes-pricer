@@ -14,8 +14,9 @@ from options_engine.domain.model.conventions import (
     RiskFreeRate,
     Volatility,
 )
-from options_engine.domain.model.enums import ExerciseStyle, OptionType
+from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side
 from options_engine.domain.model.market import MarketSnapshot
+from options_engine.domain.model.strategy import StrategyLeg
 
 VENCIMENTO_PADRAO = date(2026, 12, 18)
 
@@ -38,6 +39,22 @@ def make_terms(
 
 def make_contract(symbol: str = "PETRA300", terms: OptionTerms | None = None) -> OptionContract:
     return OptionContract(symbol=symbol, terms=terms if terms is not None else make_terms())
+
+
+def make_leg(
+    symbol: str = "PETRA300",
+    terms: OptionTerms | None = None,
+    side: Side = Side.BUY,
+    quantity: int = 10,
+    premium: float | None = None,
+) -> StrategyLeg:
+    return StrategyLeg(
+        symbol=symbol,
+        terms=terms if terms is not None else make_terms(),
+        side=side,
+        quantity=quantity,
+        premium=premium,
+    )
 
 
 def make_snapshot(
