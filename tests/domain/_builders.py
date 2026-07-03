@@ -57,6 +57,104 @@ def make_leg(
     )
 
 
+# --- legs canônicas das estruturas nomeadas ---------------------------------
+# Condor de crédito padrão: prêmios com crédito líquido unitário = 1.00
+# ((0.80 + 0.85) - (0.30 + 0.35)) -> breakevens em forma fechada K2-1=27 e
+# K3+1=33, convenientes para os testes exatos.
+
+STRIKES_CONDOR = (26.0, 28.0, 32.0, 34.0)
+PREMIOS_CONDOR = (0.30, 0.80, 0.85, 0.35)
+
+
+def _symbol_por(tipo: OptionType, strike: float) -> str:
+    letra = "C" if tipo is OptionType.CALL else "P"
+    return f"PETR{letra}{round(strike * 100)}"
+
+
+def make_condor_legs(
+    direction: Side = Side.SELL,
+    quantity: int = 10,
+    premiums: tuple[float, float, float, float] | None = PREMIOS_CONDOR,
+    strikes: tuple[float, float, float, float] = STRIKES_CONDOR,
+) -> list[StrategyLeg]:
+    """Condor com corpo em ``direction`` (SELL = crédito clássico)."""
+    tipos = (OptionType.PUT, OptionType.PUT, OptionType.CALL, OptionType.CALL)
+    lados = (direction.opposite, direction, direction, direction.opposite)
+    return [
+        make_leg(
+            symbol=_symbol_por(tipo, k),
+            terms=make_terms(strike=k, option_type=tipo),
+            side=lado,
+            quantity=quantity,
+            premium=None if premiums is None else premiums[i],
+        )
+        for i, (k, tipo, lado) in enumerate(zip(strikes, tipos, lados, strict=True))
+    ]
+
+
+def make_straddle_legs(
+    direction: Side = Side.BUY,
+    strike: float = 30.0,
+    quantity: int = 10,
+    premiums: tuple[float, float] | None = (1.90, 1.55),
+) -> list[StrategyLeg]:
+    """Straddle em ``strike``: (call, put), ambas em ``direction``."""
+    tipos = (OptionType.CALL, OptionType.PUT)
+    return [
+        make_leg(
+            symbol=_symbol_por(tipo, strike),
+            terms=make_terms(strike=strike, option_type=tipo),
+            side=direction,
+            quantity=quantity,
+            premium=None if premiums is None else premiums[i],
+        )
+        for i, tipo in enumerate(tipos)
+    ]
+
+
+def make_strangle_legs(
+    direction: Side = Side.BUY,
+    put_strike: float = 28.0,
+    call_strike: float = 32.0,
+    quantity: int = 10,
+    premiums: tuple[float, float] | None = (0.80, 0.85),
+) -> list[StrategyLeg]:
+    """Strangle: (put abaixo, call acima), ambas em ``direction``."""
+    especs = ((OptionType.PUT, put_strike), (OptionType.CALL, call_strike))
+    return [
+        make_leg(
+            symbol=_symbol_por(tipo, k),
+            terms=make_terms(strike=k, option_type=tipo),
+            side=direction,
+            quantity=quantity,
+            premium=None if premiums is None else premiums[i],
+        )
+        for i, (tipo, k) in enumerate(especs)
+    ]
+
+
+def make_butterfly_legs(
+    direction: Side = Side.BUY,
+    strikes: tuple[float, float, float] = (28.0, 30.0, 32.0),
+    quantity: int = 10,
+    premiums: tuple[float, float, float] | None = (2.60, 1.35, 0.55),
+    option_type: OptionType = OptionType.CALL,
+) -> list[StrategyLeg]:
+    """Butterfly 1x/2x/1x com asas em ``direction`` e corpo no oposto."""
+    lados = (direction, direction.opposite, direction)
+    quantidades = (quantity, 2 * quantity, quantity)
+    return [
+        make_leg(
+            symbol=_symbol_por(option_type, k),
+            terms=make_terms(strike=k, option_type=option_type),
+            side=lado,
+            quantity=qty,
+            premium=None if premiums is None else premiums[i],
+        )
+        for i, (k, lado, qty) in enumerate(zip(strikes, lados, quantidades, strict=True))
+    ]
+
+
 def make_snapshot(
     underlying_symbol: str = "PETR4",
     spot: float = 30.0,
