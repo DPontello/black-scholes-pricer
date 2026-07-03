@@ -52,6 +52,19 @@ ABS_SIGMA_CONTINUITY_PER_SPOT = 1e-9
 # transcrição da última casa + ~1 ulp de variação de libm entre plataformas.
 ABS_CDF_TABULATED = 1e-12
 
+# --- payoff no vencimento (só somas/máximos, sem transcendentais) -------------
+# Aritmética trivial: fsum de max() lineares. Tabela VV-PLAN §1.2, linha
+# "Payoff no vencimento".
+REL_PAYOFF = 1e-12
+ABS_PAYOFF = 1e-12
+
+# --- breakevens vs forma fechada ----------------------------------------------
+# Fórmula exata, sem transcendentais; a interpolação linear entre kinks
+# amplifica ~ulps quando o segmento é raso. Tabela VV-PLAN §1.2, linha
+# "Breakevens do Iron Condor".
+REL_BREAKEVEN = 1e-12
+ABS_BREAKEVEN = 1e-9
+
 # --- folga para desigualdades (bounds, monotonia) ----------------------------
 # Desigualdade estrita vira `>= -folga` para não flakar exatamente no limite.
 INEQ_SLACK = 1e-9  # escalar pela escala do problema

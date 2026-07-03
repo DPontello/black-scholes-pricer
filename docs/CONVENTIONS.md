@@ -27,6 +27,26 @@ ratificada nº 8) — nunca ao kernel, nunca ao domínio.
 Referência executável: docstring de `src/options_engine/domain/kernel/black_scholes.py`
 (as unidades fazem parte do contrato da função).
 
+### 1.1 Unidades de cenário e grid de estresse (Sprint 2, ratificado)
+
+Os VOs de cenário (`domain/model/scenarios.py`) seguem a mesma disciplina —
+decimal em tudo, nunca pontos percentuais. O choque de spot é
+**multiplicativo**; os de vol e taxa são **aditivos**:
+
+| Campo | Semântica | Exemplo | Nunca |
+|---|---|---|---|
+| `StressScenario.spot_shift` | **multiplicativo**; spot E book (bid/mid/ask) escalam pelo mesmo fator; sempre `> 0` | `1.10` = spot +10% | aditivo em moeda (`+4.20`) |
+| `StressScenario.vol_shift` | **aditivo**, em vol decimal | `0.02` = +2 pontos de vol | pontos percentuais (`2`) |
+| `StressScenario.rate_shift` | **aditivo**, sobre a taxa em capitalização **contínua** (base canônica do kernel — casa com `rho`) | `-0.0050` = −50 bps | choque sobre o CDI efetivo |
+| `ScenarioGrid` (eixos) | valores **absolutos**: spot na moeda do subjacente; vol anualizada decimal, na MESMA base de anualização do `tau` | spot `[80, 120]`, vol `[0.15, 0.45]` | shifts relativos |
+
+- Choque que levaria a vol abaixo de zero é **irrepresentável**: o VO
+  `Volatility` rejeita na construção — o cenário falha alto, nunca precifica
+  com vol negativa.
+- Célula do grid com posição vencida (`tau = 0`) vale o **intrínseco
+  descontado** (decisão nº 5); o VO de resultado rejeita NaN/inf por
+  construção.
+
 ## 2. Day count — política ratificada
 
 **Decisão da mesa (2026-07-02, nº 1): default `BUSINESS_252`** (padrão
@@ -66,13 +86,29 @@ qualquer port**: sempre acompanhada da convenção de capitalização.
 
 ## 5. Payoff vs P&L — semânticas distintas, nomes distintos
 
-- `payoff_at_expiry` — valor **bruto** da estrutura no vencimento (não
-  considera prêmio pago/recebido).
-- `pnl` — resultado **líquido** do prêmio. Prêmio é **opcional e informado
-  pelo chamador** (decisão nº 4); sem prêmio, o sistema entrega apenas o
-  payoff bruto e os breakevens não são calculáveis.
-- Curva de P&L a mercado (mark-to-model, reprecificação com `tau`
-  remanescente) é uma terceira coisa — `pnl_curve` (Sprint 2).
+Materializado na Sprint 2 em `domain/simulation/engine.py`: três funções com
+nomes distintos, nenhuma se mistura.
+
+- `payoff_at_expiry(strategy, spot)` — valor **bruto** da estrutura no
+  vencimento (não considera prêmio pago/recebido).
+- `pnl(strategy, spot)` — resultado **líquido** no vencimento: payoff bruto
+  + fluxo de prêmios. Prêmio é **opcional e informado pelo chamador**
+  (decisão nº 4); faltando em qualquer leg → `MissingPremiumError` — sem
+  prêmio o sistema entrega apenas o payoff bruto, e breakevens/P&L não são
+  calculáveis.
+- `pnl_curve(strategy, spots, ...)` — P&L **a mercado** (mark-to-model):
+  reprecifica cada leg via kernel com o `tau` REMANESCENTE e soma o fluxo de
+  prêmios. Também exige prêmio em todas as legs e verifica que vol e `tau`
+  estão na mesma base de anualização (§2 → `MixedAnnualizationBaseError`).
+
+Convenção de sinal do fluxo de prêmios (`net_premium_cashflow`):
+**positivo = crédito recebido** (vendas superam compras), negativo = débito
+pago — o oposto do sinal de exposição da leg (comprar paga, vender recebe).
+
+Breakevens e extremos (max gain/loss) do `PayoffProfile` saem da análise em
+**forma fechada** do kernel de payoff (kinks nos strikes), nunca de
+interpolação do eixo amostrado — o eixo de spots só determina onde a curva é
+amostrada para exibição.
 
 ## 6. Política numérica
 

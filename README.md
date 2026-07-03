@@ -104,8 +104,8 @@ Documentação completa em [`docs/`](docs/):
 | Sprint | Escopo | Status |
 |---|---|---|
 | 1 — Fundação Matemática | Kernel BSM + gregas, V&V de 4 camadas, CI, oráculo | ✅ `v0.1.0` |
-| 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | próxima |
-| 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests | planejada |
+| 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
+| 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests | próxima |
 | 4 — API e Portfólio | FastAPI como adapter fino, benchmark, ADRs | planejada |
 
 Fora do MVP (mapeado no roadmap): implied vol, dividendos discretos, exercício americano

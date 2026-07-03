@@ -239,7 +239,7 @@ Norma única referenciada por arquitetura, V&V e roadmap — resolve "quem valid
 | `tau → 0⁺`, `sigma → 0⁺` | Legal | Kernel, fórmula normal | Contínuo com os ramos exatos; `math.isfinite` garantido em todas as saídas |
 | Exercício AMERICAN | Legal no domínio, fora do modelo | `supports()` no use case | `UnsupportedExerciseStyleError` — nunca preço silenciosamente errado (fase 6: binomial) |
 
-Hierarquia de exceções (`domain/model/errors.py`): raiz `DomainError`; filhas `InvalidKernelInputError`, `EmptyStrategyError`, `MixedUnderlyingError`, `InvalidStrategyError`, `UnsupportedExerciseStyleError`, `UnknownSymbolError`. Catálogo canônico único — pré-requisito do mapeamento HTTP da Sprint 4.
+Hierarquia de exceções (`domain/model/errors.py`): raiz `DomainError`; filhas `InvalidKernelInputError`, `InvalidDomainValueError` (invariante de VO violada na construção), `EmptyStrategyError`, `MixedUnderlyingError`, `MixedExpiryError` (decisão nº 6), `InvalidStrategyError`, `UnsupportedExerciseStyleError`, `MissingPremiumError` (decisão nº 4: `pnl` sem prêmio), `MixedAnnualizationBaseError` (vol e τ em bases distintas — a armadilha do CONVENTIONS §2 tornada detectável), `UnknownSymbolError`. Catálogo canônico único — pré-requisito do mapeamento HTTP da Sprint 4.
 
 ---
 
