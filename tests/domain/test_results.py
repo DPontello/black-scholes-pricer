@@ -4,7 +4,7 @@ import pytest
 
 from options_engine.domain.model.conventions import DayCountConvention, TimeToExpiry
 from options_engine.domain.model.errors import InvalidDomainValueError
-from options_engine.domain.model.results import Greeks, PricingResult
+from options_engine.domain.model.results import Greeks, PayoffProfile, PricingResult
 from tests.domain._builders import make_snapshot
 
 
@@ -71,4 +71,119 @@ def test_model_id_vazio_e_irrepresentavel() -> None:
             model_id="",
             snapshot=make_snapshot(),
             time_to_expiry=TimeToExpiry.from_days(126),
+        )
+
+
+# ---------------------------------------------------------------------------
+# PayoffProfile — payoff bruto vs pnl líquido, por tipo
+# ---------------------------------------------------------------------------
+
+
+def _perfil_com_premio() -> PayoffProfile:
+    return PayoffProfile(
+        spots=(24.0, 30.0, 36.0),
+        payoff_at_expiry=(-2.0, 0.0, -2.0),
+        pnl=(-1.0, 1.0, -1.0),
+        breakevens=(27.0, 33.0),
+        max_gain=1.0,
+        max_loss=-1.0,
+    )
+
+
+def test_perfil_com_premio_carrega_pnl_e_breakevens() -> None:
+    perfil = _perfil_com_premio()
+    assert perfil.pnl is not None
+    assert perfil.breakevens == (27.0, 33.0)
+
+
+def test_perfil_sem_premio_nao_tem_pnl_nem_breakevens() -> None:
+    """Decisão nº 4: sem prêmio, só o payoff bruto existe — e o tipo
+    distingue 'não calculável' (None) de 'sem cruzamento' (tupla vazia)."""
+    perfil = PayoffProfile(
+        spots=(24.0, 30.0, 36.0),
+        payoff_at_expiry=(-2.0, 0.0, -2.0),
+        pnl=None,
+        breakevens=None,
+        max_gain=0.0,
+        max_loss=-2.0,
+    )
+    assert perfil.pnl is None
+    assert perfil.breakevens is None
+
+
+def test_pnl_e_breakevens_andam_juntos() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(24.0, 30.0),
+            payoff_at_expiry=(0.0, 0.0),
+            pnl=None,
+            breakevens=(27.0,),
+            max_gain=None,
+            max_loss=None,
+        )
+
+
+def test_max_gain_none_significa_ilimitado_e_e_legal() -> None:
+    perfil = PayoffProfile(
+        spots=(90.0, 100.0, 110.0),
+        payoff_at_expiry=(0.0, 0.0, 10.0),
+        pnl=(-5.0, -5.0, 5.0),
+        breakevens=(105.0,),
+        max_gain=None,  # call comprada: ganho ilimitado
+        max_loss=-5.0,
+    )
+    assert perfil.max_gain is None
+
+
+def test_eixo_de_spots_fora_de_ordem_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(30.0, 24.0),
+            payoff_at_expiry=(0.0, 0.0),
+            pnl=None,
+            breakevens=None,
+            max_gain=0.0,
+            max_loss=0.0,
+        )
+
+
+def test_curvas_com_comprimento_errado_sao_irrepresentaveis() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(24.0, 30.0, 36.0),
+            payoff_at_expiry=(0.0, 0.0),
+            pnl=None,
+            breakevens=None,
+            max_gain=0.0,
+            max_loss=0.0,
+        )
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(24.0, 30.0),
+            payoff_at_expiry=(0.0, 0.0),
+            pnl=(0.0,),
+            breakevens=(),
+            max_gain=0.0,
+            max_loss=0.0,
+        )
+
+
+def test_valores_nao_finitos_sao_irrepresentaveis() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(24.0, 30.0),
+            payoff_at_expiry=(float("nan"), 0.0),
+            pnl=None,
+            breakevens=None,
+            max_gain=0.0,
+            max_loss=0.0,
+        )
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(24.0, 30.0),
+            payoff_at_expiry=(0.0, 0.0),
+            pnl=None,
+            breakevens=None,
+            max_gain=float("inf"),  # ilimitado se escreve None, nunca inf
+            max_loss=0.0,
         )

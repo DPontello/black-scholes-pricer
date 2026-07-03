@@ -13,7 +13,7 @@ from options_engine.domain.model.conventions import TimeToExpiry
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.market import MarketSnapshot
 
-__all__ = ["Greeks", "PricingResult"]
+__all__ = ["Greeks", "PayoffProfile", "PricingResult"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,3 +65,64 @@ class PricingResult:
             raise InvalidDomainValueError(f"price deve ser finito; recebido {self.price!r}")
         if not self.model_id:
             raise InvalidDomainValueError("model_id não pode ser vazio")
+
+
+@dataclass(frozen=True, slots=True)
+class PayoffProfile:
+    """Perfil de payoff/P&L no vencimento sobre um eixo crescente de spots.
+
+    Semânticas distintas por NOME (CONVENTIONS §5) — nenhum campo mistura:
+
+    - ``payoff_at_expiry``: valor BRUTO no vencimento; sempre presente.
+    - ``pnl``: resultado LÍQUIDO do prêmio; ``None`` quando alguma leg não
+      tem prêmio informado (decisão nº 4 — prêmio é opcional).
+    - ``breakevens``: zeros do pnl. ``None`` = não calculável (sem prêmio);
+      tupla vazia = calculável e sem cruzamento. As duas coisas são
+      diferentes e o tipo as distingue.
+    - ``max_gain`` / ``max_loss``: extremos da curva de RESULTADO
+      disponível — pnl quando há prêmio, payoff bruto caso contrário.
+      ``None`` = ILIMITADO (explícito no tipo, não convenção mágica).
+      ``max_loss`` é o pior VALOR da curva (tipicamente negativo), não uma
+      magnitude: |max_loss| é a perda máxima.
+    """
+
+    spots: tuple[float, ...]
+    payoff_at_expiry: tuple[float, ...]
+    pnl: tuple[float, ...] | None
+    breakevens: tuple[float, ...] | None
+    max_gain: float | None
+    max_loss: float | None
+
+    def __post_init__(self) -> None:
+        if len(self.spots) == 0:
+            raise InvalidDomainValueError("perfil exige ao menos um ponto de spot")
+        if any(not isfinite(s) for s in self.spots):
+            raise InvalidDomainValueError("eixo de spots deve ser todo finito")
+        if any(not (a < b) for a, b in zip(self.spots, self.spots[1:], strict=False)):
+            raise InvalidDomainValueError("eixo de spots deve ser estritamente crescente")
+        if len(self.payoff_at_expiry) != len(self.spots):
+            raise InvalidDomainValueError(
+                f"payoff_at_expiry tem {len(self.payoff_at_expiry)} pontos para "
+                f"{len(self.spots)} spots"
+            )
+        if any(not isfinite(v) for v in self.payoff_at_expiry):
+            raise InvalidDomainValueError("payoff_at_expiry deve ser todo finito")
+        if (self.pnl is None) != (self.breakevens is None):
+            raise InvalidDomainValueError(
+                "pnl e breakevens andam juntos: ambos presentes (com prêmio) "
+                "ou ambos None (sem prêmio, decisão nº 4)"
+            )
+        if self.pnl is not None:
+            if len(self.pnl) != len(self.spots):
+                raise InvalidDomainValueError(
+                    f"pnl tem {len(self.pnl)} pontos para {len(self.spots)} spots"
+                )
+            if any(not isfinite(v) for v in self.pnl):
+                raise InvalidDomainValueError("pnl deve ser todo finito")
+        if self.breakevens is not None and any(not isfinite(b) for b in self.breakevens):
+            raise InvalidDomainValueError("breakevens devem ser todos finitos")
+        for nome, extremo in (("max_gain", self.max_gain), ("max_loss", self.max_loss)):
+            if extremo is not None and not isfinite(extremo):
+                raise InvalidDomainValueError(
+                    f"{nome} deve ser finito ou None (= ilimitado); recebido {extremo!r}"
+                )
