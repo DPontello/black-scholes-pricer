@@ -140,3 +140,14 @@ def test_celula_nao_finita_e_rejeitada() -> None:
             vols=valido.vols,
             values=((1.0, 1.1), (0.5, float("nan")), (-0.2, -0.1)),
         )
+
+
+def test_numero_de_linhas_diferente_dos_spots_e_rejeitado() -> None:
+    valido = _resultado_valido()
+    with pytest.raises(InvalidDomainValueError):
+        StressGridResult(
+            grid=valido.grid,
+            spots=valido.spots,
+            vols=valido.vols,
+            values=((1.0, 1.1), (0.5, 0.6)),  # 2 linhas para 3 spots
+        )

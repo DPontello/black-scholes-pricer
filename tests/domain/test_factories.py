@@ -260,3 +260,10 @@ def test_butterfly_com_corpo_no_mesmo_lado_das_asas() -> None:
 def test_butterfly_com_strikes_coincidentes() -> None:
     with pytest.raises(InvalidStrategyError):
         butterfly(make_butterfly_legs(strikes=(28.0, 30.0, 30.0)))
+
+
+def test_butterfly_com_asas_em_lados_distintos() -> None:
+    legs = make_butterfly_legs()
+    legs[0] = legs[0].mirrored()  # asa baixa muda de lado; a alta não
+    with pytest.raises(InvalidStrategyError):
+        butterfly(legs)

@@ -7,6 +7,8 @@ assinatura de VO espalhe edições por dezenas de testes.
 
 from datetime import UTC, date, datetime
 
+from hypothesis import strategies as st
+
 from options_engine.domain.model.contracts import OptionContract, OptionTerms
 from options_engine.domain.model.conventions import (
     Compounding,
@@ -16,7 +18,7 @@ from options_engine.domain.model.conventions import (
 )
 from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side
 from options_engine.domain.model.market import MarketSnapshot
-from options_engine.domain.model.strategy import StrategyLeg
+from options_engine.domain.model.strategy import Strategy, StrategyLeg
 
 VENCIMENTO_PADRAO = date(2026, 12, 18)
 
@@ -177,3 +179,35 @@ def make_snapshot(
         volatility=Volatility(vol, vol_base),
         timestamp=timestamp,
     )
+
+
+# --- estratégias Hypothesis (estruturas aleatórias válidas) ------------------
+# Strikes em meios-pontos e prêmios em quartos: valores exatos em binário,
+# para que as propriedades de 1e-12 midam a lógica, não ruído de parsing.
+
+
+@st.composite
+def st_strategy(
+    draw: st.DrawFn,
+    min_legs: int = 1,
+    max_legs: int = 5,
+    with_premiums: bool = False,
+) -> Strategy:
+    n = draw(st.integers(min_value=min_legs, max_value=max_legs))
+    legs = []
+    for i in range(n):
+        strike = draw(st.integers(min_value=20, max_value=120)) / 2.0
+        tipo = draw(st.sampled_from([OptionType.CALL, OptionType.PUT]))
+        lado = draw(st.sampled_from([Side.BUY, Side.SELL]))
+        quantity = draw(st.integers(min_value=1, max_value=20))
+        premium = draw(st.integers(min_value=0, max_value=40)) / 4.0 if with_premiums else None
+        legs.append(
+            make_leg(
+                symbol=f"LEG{i}",
+                terms=make_terms(strike=strike, option_type=tipo),
+                side=lado,
+                quantity=quantity,
+                premium=premium,
+            )
+        )
+    return Strategy.create("estrutura aleatória", legs)

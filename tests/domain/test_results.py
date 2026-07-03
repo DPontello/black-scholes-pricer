@@ -187,3 +187,51 @@ def test_valores_nao_finitos_sao_irrepresentaveis() -> None:
             max_gain=float("inf"),  # ilimitado se escreve None, nunca inf
             max_loss=0.0,
         )
+
+
+def test_perfil_sem_pontos_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(),
+            payoff_at_expiry=(),
+            pnl=None,
+            breakevens=None,
+            max_gain=0.0,
+            max_loss=0.0,
+        )
+
+
+def test_spot_nao_finito_no_eixo_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(24.0, float("inf")),
+            payoff_at_expiry=(0.0, 0.0),
+            pnl=None,
+            breakevens=None,
+            max_gain=0.0,
+            max_loss=0.0,
+        )
+
+
+def test_pnl_nao_finito_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(24.0, 30.0),
+            payoff_at_expiry=(0.0, 0.0),
+            pnl=(0.0, float("nan")),
+            breakevens=(),
+            max_gain=0.0,
+            max_loss=0.0,
+        )
+
+
+def test_breakeven_nao_finito_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        PayoffProfile(
+            spots=(24.0, 30.0),
+            payoff_at_expiry=(0.0, 0.0),
+            pnl=(0.0, 0.0),
+            breakevens=(float("nan"),),
+            max_gain=0.0,
+            max_loss=0.0,
+        )
