@@ -2,13 +2,17 @@
 
 import pytest
 
+from options_engine.domain.model.conventions import DayCountConvention, TimeToExpiry
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.scenarios import (
     ScenarioGrid,
+    ScenarioOutcome,
     SpotAxis,
     StressGridResult,
     StressScenario,
+    StressTestReport,
 )
+from tests.domain._builders import make_snapshot
 
 # ---------------------------------------------------------------------------
 # StressScenario
@@ -189,3 +193,77 @@ def test_spot_axis_degenerado_com_min_igual_max_e_legal() -> None:
     """Amostrar um único spot é caso legítimo — espelho do contrato de linspace."""
     axis = SpotAxis(spot_min=30.0, spot_max=30.0, steps=1)
     assert axis.steps == 1
+
+
+# ---------------------------------------------------------------------------
+# ScenarioOutcome e StressTestReport
+# ---------------------------------------------------------------------------
+
+TTX_252 = TimeToExpiry(0.5, DayCountConvention.BUSINESS_252)
+
+
+def _outcome(label: str, value: float = 1.0) -> ScenarioOutcome:
+    return ScenarioOutcome(scenario=StressScenario(label=label), value=value)
+
+
+def _report_valido(
+    outcomes: tuple[ScenarioOutcome, ...] | None = None,
+    base_value: float = 2.0,
+    strategy_name: str = "iron condor vendido (crédito)",
+) -> StressTestReport:
+    return StressTestReport(
+        strategy_name=strategy_name,
+        base_snapshot=make_snapshot(),
+        time_to_expiry=TTX_252,
+        base_value=base_value,
+        outcomes=(
+            outcomes if outcomes is not None else (_outcome("crise", 0.5), _outcome("alta", 2.6))
+        ),
+    )
+
+
+def test_outcome_carrega_cenario_e_valor() -> None:
+    outcome = _outcome("crise", 0.5)
+    assert outcome.scenario.label == "crise"
+    assert outcome.value == 0.5
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_outcome_nao_finito_e_irrepresentavel(value: float) -> None:
+    with pytest.raises(InvalidDomainValueError):
+        _outcome("crise", value)
+
+
+def test_report_valido_e_variacao_derivada() -> None:
+    """A variação contra a base é MÉTODO, nunca campo — sem dupla fonte de verdade."""
+    report = _report_valido(base_value=2.0)
+    assert report.change_from_base(report.outcomes[0]) == 0.5 - 2.0
+    assert report.change_from_base(report.outcomes[1]) == 2.6 - 2.0
+
+
+def test_report_sem_cenarios_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        _report_valido(outcomes=())
+
+
+def test_report_com_labels_duplicados_e_irrepresentavel() -> None:
+    """Label é a chave de rastreabilidade do relatório — duplicado é ambíguo."""
+    with pytest.raises(InvalidDomainValueError):
+        _report_valido(outcomes=(_outcome("crise", 0.5), _outcome("crise", 0.6)))
+
+
+def test_report_com_nome_vazio_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        _report_valido(strategy_name="")
+
+
+@pytest.mark.parametrize("base_value", [float("nan"), float("inf")])
+def test_report_com_base_nao_finita_e_irrepresentavel(base_value: float) -> None:
+    with pytest.raises(InvalidDomainValueError):
+        _report_valido(base_value=base_value)
+
+
+def test_report_e_imutavel() -> None:
+    report = _report_valido()
+    with pytest.raises(AttributeError):
+        report.base_value = 0.0  # type: ignore[misc]

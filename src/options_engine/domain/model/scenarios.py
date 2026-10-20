@@ -8,13 +8,17 @@ kernel (``linspace``) e é orquestrada pelo motor de simulação.
 from dataclasses import dataclass
 from math import isfinite
 
+from options_engine.domain.model.conventions import TimeToExpiry
 from options_engine.domain.model.errors import InvalidDomainValueError
+from options_engine.domain.model.market import MarketSnapshot
 
 __all__ = [
     "ScenarioGrid",
+    "ScenarioOutcome",
     "SpotAxis",
     "StressGridResult",
     "StressScenario",
+    "StressTestReport",
 ]
 
 
@@ -148,3 +152,66 @@ class StressGridResult:
                 # posição vencida vira intrínseco descontado, nunca buraco.
                 if not isfinite(valor):
                     raise InvalidDomainValueError(f"célula ({i}, {j}) não é finita: {valor!r}")
+
+
+@dataclass(frozen=True, slots=True)
+class ScenarioOutcome:
+    """Resultado de UM cenário nomeado: o choque aplicado e o valor obtido.
+
+    ``value`` é o valor mark-to-model BRUTO da estrutura sob o cenário (sem
+    fluxo de prêmios — CONVENTIONS §5), vindo do motor de simulação. A
+    variação contra a base não é campo: deriva no ``StressTestReport``
+    (``change_from_base``), para que não exista dupla fonte de verdade.
+    """
+
+    scenario: StressScenario
+    value: float
+
+    def __post_init__(self) -> None:
+        if not isfinite(self.value):
+            # Decisão nº 5: posição vencida vale intrínseco descontado,
+            # nunca NaN — um buraco no relatório é bug, não dado.
+            raise InvalidDomainValueError(
+                f"value do cenário {self.scenario.label!r} não é finito: {self.value!r}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class StressTestReport:
+    """Relatório auditável de estresse por cenários nomeados.
+
+    Mesma disciplina de auditoria do ``PricingResult``: carrega o snapshot
+    base e o tau usados, para que todo número seja reconstruível a
+    posteriori. SEM ``model_id`` — os valores vêm do motor de simulação
+    (kernel), não de um ``PricingModel``, consistente com o
+    ``StressGridResult``.
+    """
+
+    strategy_name: str
+    base_snapshot: MarketSnapshot
+    time_to_expiry: TimeToExpiry
+    base_value: float
+    outcomes: tuple[ScenarioOutcome, ...]
+
+    def __post_init__(self) -> None:
+        if not self.strategy_name:
+            raise InvalidDomainValueError("strategy_name não pode ser vazio")
+        if not isfinite(self.base_value):
+            raise InvalidDomainValueError(
+                f"base_value deve ser finito; recebido {self.base_value!r}"
+            )
+        if len(self.outcomes) == 0:
+            raise InvalidDomainValueError(
+                "relatório de estresse exige ao menos um cenário — um report vazio "
+                "não responde nenhuma pergunta de risco"
+            )
+        labels = [outcome.scenario.label for outcome in self.outcomes]
+        if len(set(labels)) != len(labels):
+            raise InvalidDomainValueError(
+                f"labels de cenário devem ser únicos no relatório (rastreabilidade); "
+                f"recebido {labels!r}"
+            )
+
+    def change_from_base(self, outcome: ScenarioOutcome) -> float:
+        """Variação do valor sob o cenário contra o valor base (mesma unidade)."""
+        return outcome.value - self.base_value
