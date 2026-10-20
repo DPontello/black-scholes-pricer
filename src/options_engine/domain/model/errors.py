@@ -13,6 +13,7 @@ exige — nenhuma é especulativa.
 __all__ = [
     "DomainError",
     "EmptyStrategyError",
+    "ExpiredOptionError",
     "InvalidDomainValueError",
     "InvalidKernelInputError",
     "InvalidStrategyError",
@@ -98,6 +99,16 @@ class MixedAnnualizationBaseError(DomainError):
     Vol em base 252 com tau em base 365 produz preço errado sem nenhum erro
     de runtime — os VOs carregam a base exatamente para que esta checagem
     exista na fronteira do motor.
+    """
+
+
+class ExpiredOptionError(DomainError):
+    """Vencimento ANTERIOR à data de valoração num caminho de precificação.
+
+    ``expiry == hoje`` é legal — resta 0 dia útil, tau = 0 e a posição vale
+    o intrínseco descontado (decisão nº 5). ``expiry < hoje`` não tem preço
+    a termo: é a guarda dos use cases (Sprint 3), disparada ANTES da
+    contagem de dias — o ``TradingCalendar`` só recebe ``start <= end``.
     """
 
 
