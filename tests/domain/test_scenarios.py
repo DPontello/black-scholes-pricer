@@ -1,9 +1,14 @@
-"""StressScenario, ScenarioGrid e StressGridResult — invariantes de especificação."""
+"""VOs de cenário — invariantes de especificação e de relatório."""
 
 import pytest
 
 from options_engine.domain.model.errors import InvalidDomainValueError
-from options_engine.domain.model.scenarios import ScenarioGrid, StressGridResult, StressScenario
+from options_engine.domain.model.scenarios import (
+    ScenarioGrid,
+    SpotAxis,
+    StressGridResult,
+    StressScenario,
+)
 
 # ---------------------------------------------------------------------------
 # StressScenario
@@ -151,3 +156,36 @@ def test_numero_de_linhas_diferente_dos_spots_e_rejeitado() -> None:
             vols=valido.vols,
             values=((1.0, 1.1), (0.5, 0.6)),  # 2 linhas para 3 spots
         )
+
+
+# ---------------------------------------------------------------------------
+# SpotAxis
+# ---------------------------------------------------------------------------
+
+
+def test_spot_axis_valido() -> None:
+    axis = SpotAxis(spot_min=24.0, spot_max=36.0, steps=13)
+    assert (axis.spot_min, axis.spot_max, axis.steps) == (24.0, 36.0, 13)
+
+
+@pytest.mark.parametrize(
+    ("spot_min", "spot_max", "steps"),
+    [
+        (0.0, 36.0, 13),  # spot precisa ser > 0
+        (-1.0, 36.0, 13),
+        (40.0, 36.0, 13),  # min > max
+        (24.0, 36.0, 0),
+        (24.0, 36.0, 1),  # eixo degenerado exige min == max
+        (24.0, float("nan"), 13),
+        (float("inf"), 36.0, 13),
+    ],
+)
+def test_spot_axis_ilegal_e_irrepresentavel(spot_min: float, spot_max: float, steps: int) -> None:
+    with pytest.raises(InvalidDomainValueError):
+        SpotAxis(spot_min=spot_min, spot_max=spot_max, steps=steps)
+
+
+def test_spot_axis_degenerado_com_min_igual_max_e_legal() -> None:
+    """Amostrar um único spot é caso legítimo — espelho do contrato de linspace."""
+    axis = SpotAxis(spot_min=30.0, spot_max=30.0, steps=1)
+    assert axis.steps == 1
