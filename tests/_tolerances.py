@@ -65,6 +65,14 @@ ABS_PAYOFF = 1e-12
 REL_BREAKEVEN = 1e-12
 ABS_BREAKEVEN = 1e-9
 
+# --- teste estatístico do GBM (seed fixa — determinístico, não flaky) --------
+# Margem em erros-padrão sobre média e desvio dos log-retornos amostrados.
+# Com seed fixa o teste é determinístico; o z só precisa acomodar o sorteio
+# DESTA seed. z = 4.0 é folga estatística honesta (~6e-5 de massa além de 4sigma)
+# e ainda mata erro de fórmula: um sqrt(dt) esquecido escala o desvio por
+# ~16x (√252), dezenas de erros-padrão no N usado.
+GBM_STAT_Z = 4.0
+
 # --- folga para desigualdades (bounds, monotonia) ----------------------------
 # Desigualdade estrita vira `>= -folga` para não flakar exatamente no limite.
 INEQ_SLACK = 1e-9  # escalar pela escala do problema
