@@ -68,6 +68,9 @@ Critério único e objetivo:
 | `StressScenario` | Choque nomeado e imutável: `spot_shift` multiplicativo, `vol_shift` aditivo em pontos de vol, `rate_shift`. `label` permite relatório auditável. |
 | `ScenarioGrid` | Especificação declarativa do grid (`spot_min`, `spot_max`, `steps`, eixo de vol). Separar **especificação** (VO barato) de **materialização** (floats no kernel) é parte do functional core (§5). |
 | `PayoffProfile` | Pontos + breakevens + max gain/loss (`float \| None`, onde `None` = ilimitado — explícito no tipo, não convenção mágica). Distingue **`payoff_at_expiry`** (bruto) de **`pnl`** (líquido de prêmio) — nomes diferentes porque são semânticas diferentes. |
+| `SpotAxis` *(Sprint 3)* | Eixo declarativo 1D de spots para amostragem de payoff. Compartilha a validação de eixo do `ScenarioGrid` (helper único em `scenarios.py`); materialização via `linspace` do kernel é do use case. |
+| `ScenarioOutcome` *(Sprint 3)* | Choque aplicado + valor mark-to-model BRUTO obtido (finito por construção). A variação contra a base **não é campo** — deriva no report (`change_from_base`), sem dupla fonte de verdade. |
+| `StressTestReport` *(Sprint 3)* | Relatório auditável de estresse: nome da estrutura + snapshot base + τ + valor base + outcomes (≥ 1, labels únicos). **Sem `model_id`** — os valores vêm do motor de simulação (kernel), não de um `PricingModel`, consistente com `StressGridResult`. |
 
 **O que deliberadamente NÃO é VO:** preço/strike como `Decimal`/`Money`. Veredito fechado (ADR): o kernel opera em `float64` IEEE-754 — padrão da indústria para analytics de derivativos. `Decimal` pertence a contabilidade/liquidação, é 50–100× mais lento e não melhora um modelo cujo erro dominante é o próprio modelo.
 
@@ -159,11 +162,18 @@ class RandomSource(Protocol):
 
 ### 4.2 Inbound (use cases) — `application/ports/inbound.py`
 
+> **Emenda de 2026-07-04 (painel de design da Sprint 3)** — dois desvios do desenho original, ambos ratificados:
+> 1. **`PriceOptionCommand` perdeu o campo `underlying_symbol`**: os termos já o contêm (`terms.underlying`), e um campo redundante seria uma segunda fonte de verdade que o `PricingRequest` teria de reconciliar. Uma property derivada preserva a conveniência de acesso.
+> 2. **`AnalyzeStrategyPayoffUseCase` recebe `SpotAxis` (eixo 1D), não `ScenarioGrid` (2D)**: payoff no vencimento não tem eixo de vol — exigir o grid completo forçaria todo chamador a inventar um eixo fantasma. `SpotAxis` compartilha a validação de eixo do `ScenarioGrid` (mesmo helper em `scenarios.py`).
+
 ```python
 @dataclass(frozen=True, slots=True)
 class PriceOptionCommand:
-    underlying_symbol: str
     terms: OptionTerms
+
+    @property
+    def underlying_symbol(self) -> str:   # derivado — fonte única de verdade
+        return self.terms.underlying
 
 
 class PriceOptionUseCase(Protocol):
@@ -173,7 +183,7 @@ class PriceOptionUseCase(Protocol):
 class AnalyzeStrategyPayoffUseCase(Protocol):
     """Retorna payoff_at_expiry (bruto) sempre; pnl (líquido) apenas quando
     todas as legs têm prêmio informado (decisão ratificada #4)."""
-    def execute(self, strategy: Strategy, grid: ScenarioGrid) -> PayoffProfile: ...
+    def execute(self, strategy: Strategy, axis: SpotAxis) -> PayoffProfile: ...
 
 
 class StressTestUseCase(Protocol):
@@ -183,6 +193,8 @@ class StressTestUseCase(Protocol):
 ```
 
 Os adapters inbound (CLI hoje, FastAPI na Sprint 4) dependem **apenas** destes Protocols. O endpoint FastAPI será ~10 linhas de tradução HTTP→command — prova concreta de que o framework é adapter, não fundação.
+
+**Política de valoração (Sprint 3):** `day_count` (default `BUSINESS_252`) e `valuation_timezone` vivem no **construtor** dos services, decididos no composition root — o chamador de borda pede um preço, não escolhe convenção a cada request. A data de valoração é sempre `clock.now().astimezone(valuation_timezone).date()` (B3 = UTC−3 fixo, DST abolido em 2019) — nunca o `.date()` cru do UTC, que entre 21h e meia-noite de São Paulo já virou o dia seguinte. Vencimento anterior à data de valoração → `ExpiredOptionError`; no próprio dia é legal (τ = 0, intrínseco descontado — decisão nº 5).
 
 ---
 
@@ -239,7 +251,7 @@ Norma única referenciada por arquitetura, V&V e roadmap — resolve "quem valid
 | `tau → 0⁺`, `sigma → 0⁺` | Legal | Kernel, fórmula normal | Contínuo com os ramos exatos; `math.isfinite` garantido em todas as saídas |
 | Exercício AMERICAN | Legal no domínio, fora do modelo | `supports()` no use case | `UnsupportedExerciseStyleError` — nunca preço silenciosamente errado (fase 6: binomial) |
 
-Hierarquia de exceções (`domain/model/errors.py`): raiz `DomainError`; filhas `InvalidKernelInputError`, `InvalidDomainValueError` (invariante de VO violada na construção), `EmptyStrategyError`, `MixedUnderlyingError`, `MixedExpiryError` (decisão nº 6), `InvalidStrategyError`, `UnsupportedExerciseStyleError`, `MissingPremiumError` (decisão nº 4: `pnl` sem prêmio), `MixedAnnualizationBaseError` (vol e τ em bases distintas — a armadilha do CONVENTIONS §2 tornada detectável), `UnknownSymbolError`. Catálogo canônico único — pré-requisito do mapeamento HTTP da Sprint 4.
+Hierarquia de exceções (`domain/model/errors.py`): raiz `DomainError`; filhas `InvalidKernelInputError`, `InvalidDomainValueError` (invariante de VO violada na construção), `EmptyStrategyError`, `MixedUnderlyingError`, `MixedExpiryError` (decisão nº 6), `InvalidStrategyError`, `UnsupportedExerciseStyleError`, `MissingPremiumError` (decisão nº 4: `pnl` sem prêmio), `MixedAnnualizationBaseError` (vol e τ em bases distintas — a armadilha do CONVENTIONS §2 tornada detectável), `UnknownSymbolError`, `ExpiredOptionError` (Sprint 3: vencimento anterior à data de valoração num caminho de precificação; no próprio dia é legal — τ = 0). Catálogo canônico único — pré-requisito do mapeamento HTTP da Sprint 4.
 
 ---
 
