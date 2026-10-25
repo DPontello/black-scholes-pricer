@@ -15,6 +15,7 @@ _CATALOGO: list[type[DomainError]] = [
     errors.InvalidKernelInputError,
     errors.InvalidDomainValueError,
     errors.EmptyStrategyError,
+    errors.ExpiredOptionError,
     errors.MixedUnderlyingError,
     errors.MixedExpiryError,
     errors.InvalidStrategyError,

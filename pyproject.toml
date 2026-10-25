@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "options-engine"
-version = "0.2.0"
+version = "0.3.0"
 description = "Options pricing, simulation and risk analytics engine — Black-Scholes core, hexagonal architecture, stdlib-only domain"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -39,18 +39,28 @@ branch = true
 # da Sprint 1 (verificado por inspeção do relatório no review).
 fail_under = 95
 
-# Regra de arquitetura executável (docs/ARCHITECTURE.md): o domínio é
-# stdlib-only — nenhum framework, nenhuma lib numérica, nenhum adapter.
-# O contrato de camadas completo (adapters -> application -> domain) entra
-# quando os pacotes application/ e adapters/ existirem (Sprint 3).
+# Regras de arquitetura executáveis (docs/ARCHITECTURE.md §1): a regra de
+# dependência aponta sempre para dentro e quebra o build quando violada.
 [tool.importlinter]
 root_packages = ["options_engine"]
 include_external_packages = true
 
+# Contrato de camadas (Sprint 3): config -> adapters -> application -> domain.
+# Camada de cima pode importar as de baixo; o inverso quebra o build.
 [[tool.importlinter.contracts]]
-name = "domain é stdlib-only (sem frameworks, sem libs numéricas)"
+name = "camadas hexagonais (config -> adapters -> application -> domain)"
+type = "layers"
+layers = [
+    "options_engine.config",
+    "options_engine.adapters",
+    "options_engine.application",
+    "options_engine.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "domain e application são stdlib-only (sem frameworks, sem libs numéricas)"
 type = "forbidden"
-source_modules = ["options_engine.domain"]
+source_modules = ["options_engine.domain", "options_engine.application"]
 forbidden_modules = [
     "fastapi",
     "pydantic",

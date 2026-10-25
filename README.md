@@ -64,6 +64,15 @@ pip install -r tests/oracle/requirements.txt
 pytest -q tests/oracle/scipy_oracle.py
 ```
 
+Smoke executável — documentação viva do hexágono. Precifica uma call e um iron condor de
+crédito via mock GBM (relógio congelado em 2026-07-03), imprime gregas, payoff e estresse
+nomeado. **Saída 100% reprodutível dada a seed** (default 42):
+
+```bash
+python -m options_engine        # seed 42
+python -m options_engine 123    # outra seed, outro caminho de mercado
+```
+
 Uso do kernel:
 
 ```python
@@ -78,17 +87,54 @@ out.vega_per_vol_unit  # 8.813415   — por 1.00 de vol; conversões são da cam
 
 ## Arquitetura
 
-```
-adapters (CLI, FastAPI, mock order book)   ──►  application (use cases, ports)  ──►  domain
-                                                                                     ├─ model/   VOs, entidades, exceções
-regra de dependência: sempre para dentro                                             ├─ pricing/ PricingModel (batch-first)
-(verificada por import-linter no CI)                                                 └─ kernel/  funções puras, stdlib only
+Hexagonal (ports & adapters), com a regra de dependência apontando sempre para dentro —
+verificada por contrato de camadas do `import-linter` no CI (regra que não quebra o build
+é sugestão, não regra):
+
+```mermaid
+flowchart LR
+    subgraph config["config/ — composition root"]
+        COMP["composition.py<br/>wiring manual, sem DI framework"]
+    end
+
+    subgraph inbound["adapters inbound (driving)"]
+        SMOKE["python -m options_engine<br/>(smoke CLI)"]
+        REST["FastAPI (Sprint 4)"]
+    end
+
+    subgraph app["application/"]
+        UC["use cases<br/>PriceOptionService<br/>AnalyzeStrategyPayoffService<br/>StressTestService"]
+        PORTS["ports (Protocols)<br/>inbound + outbound"]
+    end
+
+    subgraph outbound["adapters outbound (driven)"]
+        MOCK["MockOrderBookAdapter<br/>(GBM seedado)"]
+        CAL["StaticHolidayCalendar<br/>(CSV B3 versionado)"]
+        CLK["SystemClock / FixedClock"]
+        RND["SeededRandomSource"]
+    end
+
+    subgraph domain["domain/ — stdlib only, zero I/O"]
+        MODEL["model/ — VOs, agregados, exceções"]
+        PRICING["pricing/ — PricingModel (batch-first)"]
+        KERNEL["kernel/ — funções puras (floats)"]
+    end
+
+    COMP -. instancia e injeta .-> UC
+    SMOKE --> PORTS
+    REST --> PORTS
+    UC --> PORTS
+    PORTS --> outbound
+    UC --> domain
+    outbound --> domain
 ```
 
 O motor de cálculo não sabe como os dados chegam: feeds, HTTP e persistência são adapters
-plugados por ports (`Protocol`). O contrato de precificação é **batch-first**
-(`price_many`) desde o dia 1 — a única decisão irreversível do projeto, tomada para que a
-vetorização futura (NumPy/Numba) seja troca de backend, não reescrita.
+plugados por ports (`Protocol`), e qualquer adapter futuro de dados de mercado nasce com a
+**suíte de contrato herdável** (`tests/contract/`) como gate de conformidade. O contrato de
+precificação é **batch-first** (`price_many`) desde o dia 1 — a única decisão irreversível
+do projeto, tomada para que a vetorização futura (NumPy/Numba) seja troca de backend, não
+reescrita.
 
 Documentação completa em [`docs/`](docs/):
 
@@ -105,8 +151,8 @@ Documentação completa em [`docs/`](docs/):
 |---|---|---|
 | 1 — Fundação Matemática | Kernel BSM + gregas, V&V de 4 camadas, CI, oráculo | ✅ `v0.1.0` |
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
-| 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests | próxima |
-| 4 — API e Portfólio | FastAPI como adapter fino, benchmark, ADRs | planejada |
+| 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
+| 4 — API e Portfólio | FastAPI como adapter fino, benchmark, ADRs | próxima |
 
 Fora do MVP (mapeado no roadmap): implied vol, dividendos discretos, exercício americano
 (B3: opções de ações), Monte Carlo, persistência.

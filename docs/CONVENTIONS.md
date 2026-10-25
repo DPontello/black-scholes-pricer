@@ -61,8 +61,22 @@ para compatibilidade com a literatura (Hull publica em anos calendário).
   base. Vol em base 252 com `tau` em base 365 produz preço errado sem
   nenhum erro de runtime. O VO `Volatility` (Sprint 2) carrega a base.
 - Calendário de feriados: **arquivo estático versionado** no repositório
-  (decisão nº 7); fonte e atualização documentadas quando o adapter entrar
-  (Sprint 3).
+  (decisão nº 7) — `adapters/outbound/data/b3_holidays.csv`, uma data ISO
+  por linha, fonte e data de verificação no cabeçalho do próprio arquivo.
+  Consulta fora da cobertura declarada → exceção (nunca contar feriado
+  desconhecido como dia útil).
+- **Contagem de dias úteis é MEIO-ABERTA `[start, end)`** (Sprint 3,
+  ratificado): `start == end` → 0 (no dia do vencimento resta 0 dia útil,
+  `tau = 0`, intrínseco descontado — decisão nº 5); um dia útil antes do
+  vencimento → 1 (o pregão de hoje ainda conta); `start > end` →
+  `InvalidDomainValueError`. Casa com a convenção de accrual do CDI.
+- **Data de valoração** (Sprint 3, ratificado): sempre
+  `clock.now().astimezone(valuation_timezone).date()` com o fuso injetado
+  no service (B3 = **UTC−3 fixo**, DST abolido em 2019 — constante
+  `B3_UTC_OFFSET` no adapter de calendário). O `.date()` cru do UTC é bug:
+  entre 21h e meia-noite de São Paulo, o dia UTC já virou — a opção
+  "venceria" um pregão mais cedo. Vencimento anterior à data de valoração →
+  `ExpiredOptionError`; no próprio dia é legal (`tau = 0`).
 - Os golden-masters do Hull usam frações de ano diretamente — são neutros
   quanto à convenção e permanecem válidos.
 
@@ -147,3 +161,5 @@ commit. Proveniência é parte do teste (fonte, arredondamento, método).
 | `OptionContract` | instrumento listado com ticker (Entity) | `EuropeanOption` |
 | `Strategy` | estrutura multi-leg (Aggregate, Composite) | `StructuredPosition` |
 | `tau` | tempo até o vencimento em anos | `T`, `t`, `dias` |
+| `*UseCase` | Protocol inbound — o CONTRATO que a borda consome (`PriceOptionUseCase`) | implementação chamada `*UseCase` |
+| `*Service` | implementação concreta do use case (`PriceOptionService`) | `*UseCaseImpl`, `*Interactor`, `*Handler` |
