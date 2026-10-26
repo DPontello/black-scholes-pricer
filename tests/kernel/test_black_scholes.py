@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from options_engine.domain.kernel.black_scholes import bs_outputs, bs_price, d1_d2
@@ -193,6 +193,41 @@ def test_price_bounds_no_arbitrage(params: BSParams) -> None:
     slack = INEQ_SLACK * max(s, k)
     assert max(fwd_s - disc_k, 0.0) - slack <= c <= fwd_s + slack
     assert max(disc_k - fwd_s, 0.0) - slack <= p <= disc_k + slack
+    # O piso é exato, sem folga: a folga acima existe para o intrínseco
+    # calculado no teste, não para um preço negativo (VV-PLAN §6, Deep OTM).
+    assert c >= 0.0
+    assert p >= 0.0
+
+
+@st.composite
+def _deep_otm_params(draw: st.DrawFn) -> tuple[BSParams, bool]:
+    """OTM profundo em desvios-padrão: a região do cancelamento no preço.
+
+    sigma e tau curtos frente à distância log do strike levam d1 e d2 à
+    cauda, onde o preço é a diferença de dois números minúsculos. Medido
+    por amostragem uniforme na fórmula sem piso: ~6e-4 dos preços saíam
+    negativos aqui contra ~5e-6 no domínio de ``_bs_params`` — mais de 100x
+    mais denso, ao alcance do perfil nightly. A regressão determinística
+    fica com ``TestPriceNeverNegative``; esta propriedade explora além da
+    grade.
+    """
+    is_call = draw(st.booleans())
+    s = draw(st.floats(1.0, 5000.0))
+    log_otm = draw(st.floats(0.01, math.log(10.0)))  # até S/K = 0.1 (VV-PLAN §6)
+    k = s * math.exp(log_otm if is_call else -log_otm)
+    tau = draw(st.floats(1.0 / 252.0, 0.25))
+    r = draw(st.floats(-0.05, 0.5))
+    sigma = draw(st.floats(1e-3, 0.3))
+    q = draw(st.floats(0.0, 0.12))
+    return (s, k, tau, r, sigma, q), is_call
+
+
+@given(_deep_otm_params())
+@example(((77.531, 80.440, 0.01122, 0.1054, 0.00875, 0.0), True))  # devolvia -1e-323
+def test_price_nonneg_deep_otm(case: tuple[BSParams, bool]) -> None:
+    """Preço >= 0.0 estrito, sem folga, onde o cancelamento em float morde."""
+    (s, k, tau, r, sigma, q), is_call = case
+    assert bs_price(s, k, tau, r, sigma, q, is_call=is_call) >= 0.0
 
 
 @given(_bs_params())
