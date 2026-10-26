@@ -11,10 +11,16 @@ from options_engine.domain.income.costs import (
     OperationCosts,
     estimate_operation_costs,
 )
+from options_engine.domain.income.metrics import (
+    annualize_yield_252,
+    excess_over_cdi_annual_252,
+)
 
 __all__ = [
     "REFERENCE_POSITION_SHARES",
     "CostSchedule",
     "OperationCosts",
+    "annualize_yield_252",
     "estimate_operation_costs",
+    "excess_over_cdi_annual_252",
 ]
