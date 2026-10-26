@@ -7,15 +7,20 @@ vem da cota do solver. O oráculo independente (scipy) vive em
 ``tests/oracle/scipy_oracle.py``.
 
 Camadas: contrato de status (cada desfecho com teste dedicado), entradas
-ilegais, ida e volta em grade determinística, rótulos do solver e
+ilegais, ida e volta em grade determinística, rótulos do solver,
 propriedades Hypothesis (ida e volta no domínio identificável; preço
-arbitrário sempre vira status, nunca exceção nem NaN).
+arbitrário sempre vira status, nunca exceção nem NaN), casos de borda
+(preço exatamente nos limites, vega ~0, tau minúsculo) e camada
+*published* do golden (preço de livro -> sigma do livro).
 
 Todas as tolerâncias vêm de ``tests/_tolerances.py`` — nenhuma inline.
 """
 
+import json
 import math
 from collections.abc import Callable
+from pathlib import Path
+from typing import Any
 
 import pytest
 from hypothesis import example, given
@@ -35,6 +40,7 @@ from options_engine.domain.kernel.implied_vol import (
 from options_engine.domain.model.errors import InvalidKernelInputError
 from tests._tolerances import (
     ABS_IV_ROUNDTRIP_PRICE_FLOOR,
+    ABS_IV_SIGMA,
     EPS_MACHINE,
     IV_ROUNDOFF_ULPS,
     assert_close,
@@ -375,3 +381,207 @@ def test_qualquer_preco_vira_status_nunca_excecao_nem_nan(
             abs_=ABS_IV_ROUNDTRIP_PRICE_FLOOR * max(s, k),
             label=f"preço reavaliado: {params!r} is_call={is_call} -> {result!r}",
         )
+
+
+# ---------------------------------------------------------------------------
+# 6. CASOS DE BORDA
+# ---------------------------------------------------------------------------
+
+
+def _assert_converged_and_repriced(
+    price: float, s: float, k: float, tau: float, r: float, q: float, *, is_call: bool
+) -> ImpliedVolResult:
+    """CONVERGED e o preço de entrada é reproduzido (sem sigma de referência)."""
+    result = implied_vol(price, s, k, tau, r, q, is_call=is_call)
+    assert result.status is ImpliedVolStatus.CONVERGED, result
+    assert result.sigma is not None
+    repriced = bs_price(s, k, tau, r, result.sigma, q, is_call=is_call)
+    assert_close(
+        repriced,
+        price,
+        rel=0.0,
+        abs_=ABS_IV_ROUNDTRIP_PRICE_FLOOR * max(s, k),
+        label=f"preço reavaliado -> {result!r}",
+    )
+    return result
+
+
+class TestPriceExactlyAtBounds:
+    """Preço exatamente no intrínseco, a 1 ulp dos limites e entre os dois intrínsecos."""
+
+    @pytest.mark.parametrize(
+        ("s", "k", "is_call"),
+        [
+            (_S, _K_ITM_CALL, True),  # call ITM: limite = S·e^(-q·tau) - K·e^(-r·tau)
+            (_K_ITM_CALL, _S, False),  # put ITM: limite = K·e^(-r·tau) - S·e^(-q·tau)
+            (_K_ITM_CALL, _S, True),  # call OTM: limite = 0, preço 0.0
+            (_S, _K_ITM_CALL, False),  # put OTM: limite = 0, preço 0.0
+        ],
+        ids=["call-itm", "put-itm", "call-otm-zero", "put-otm-zero"],
+    )
+    def test_preco_no_intrinseco_descontado_e_sigma_zero(
+        self, s: float, k: float, is_call: bool
+    ) -> None:
+        lower = bs_price(s, k, _TAU, _R, 0.0, _Q, is_call=is_call)
+        result = implied_vol(lower, s, k, _TAU, _R, _Q, is_call=is_call)
+        # Igualdade exata: forma fechada, e o caminho de reprecificação é o
+        # mesmo ramo sigma = 0 do kernel que produziu o limite.
+        assert result == ImpliedVolResult(0.0, ImpliedVolStatus.CONVERGED, 0, METHOD_CLOSED_FORM)
+        assert bs_price(s, k, _TAU, _R, 0.0, _Q, is_call=is_call) == lower
+
+    def test_put_no_intrinseco_nao_descontado_tem_solucao(self) -> None:
+        """K - S > K·e^(-r·tau) - S com r > 0: cotação típica de put ITM é solúvel.
+
+        Prova de que BELOW_INTRINSIC usa o intrínseco DESCONTADO: o
+        intrínseco cru de uma put europeia ITM fica ACIMA do limite inferior.
+        """
+        s, k = 100.0, 150.0
+        result = _assert_converged_and_repriced(k - s, s, k, 1.0, 0.15, 0.0, is_call=False)
+        assert result.sigma is not None
+        assert result.sigma > 0.0
+
+    def test_call_entre_os_dois_intrinsecos_tem_solucao(self) -> None:
+        """Com carry q > 0, S·e^(-q·tau) - K·e^(-r·tau) < S - K: o meio é solúvel."""
+        s, k, tau, r, q = 100.0, 50.0, 1.0, 0.0, 0.10
+        lower = s * math.exp(-q * tau) - k * math.exp(-r * tau)
+        price = 0.5 * (lower + (s - k))
+        _assert_converged_and_repriced(price, s, k, tau, r, q, is_call=True)
+
+    def test_um_ulp_acima_do_limite_inferior_converge(self) -> None:
+        """Valor-tempo de 1 ulp: sigma minúsculo, Newton + bisseção, preço reproduzido."""
+        lower = bs_price(_S, _K_ITM_CALL, _TAU, _R, 0.0, _Q, is_call=True)
+        price = math.nextafter(lower, math.inf)
+        _assert_converged_and_repriced(price, _S, _K_ITM_CALL, _TAU, _R, _Q, is_call=True)
+
+    def test_um_ulp_abaixo_do_limite_inferior_e_below_intrinsic(self) -> None:
+        """Comparação sem folga: 1 ulp abaixo já não tem solução."""
+        lower = bs_price(_S, _K_ITM_CALL, _TAU, _R, 0.0, _Q, is_call=True)
+        price = math.nextafter(lower, 0.0)
+        result = implied_vol(price, _S, _K_ITM_CALL, _TAU, _R, _Q, is_call=True)
+        _assert_unsolved(result, ImpliedVolStatus.BELOW_INTRINSIC)
+
+    @pytest.mark.parametrize("is_call", [True, False], ids=["call", "put"])
+    def test_um_ulp_abaixo_do_limite_superior_converge(self, is_call: bool) -> None:
+        """sigma enorme, mas finito e dentro do bracket — o preço é reproduzido."""
+        upper = _S * math.exp(-_Q * _TAU) if is_call else _K_ITM_CALL * math.exp(-_R * _TAU)
+        price = math.nextafter(upper, 0.0)
+        result = _assert_converged_and_repriced(
+            price, _S, _K_ITM_CALL, _TAU, _R, _Q, is_call=is_call
+        )
+        assert result.sigma is not None
+        assert math.isfinite(result.sigma)
+
+
+class TestVegaNearZero:
+    """vega -> 0: Newton perde a alavanca e as salvaguardas assumem."""
+
+    @pytest.mark.parametrize(
+        ("k", "is_call"),
+        [(200.0, True), (300.0, True), (500.0, True), (30.0, False), (50.0, False)],
+        ids=["call-k200", "call-k300", "call-k500", "put-k30", "put-k50"],
+    )
+    def test_otm_profundo_recupera_sigma(self, k: float, is_call: bool) -> None:
+        """Preço ~1e-11 a ~1e-57 e vega ~1e-9 a ~1e-54 (medidos).
+
+        Na cauda OTM o ruído do preço é RELATIVO ao próprio preço — o kernel
+        avalia N(x) por erfc, que preserva precisão relativa até ~1e-300
+        (distributions.py) —, e vega/preço é moderado (~|d|/sigma). Logo sigma
+        fica determinado muito abaixo da cota do solver: a tolerância é a
+        própria ``ABS_IV_SIGMA``, sem o termo de escala de ``iv_sigma_abs_tol``
+        (que seria vácuo aqui: escala/vega ~1e56). Medido: |Δsigma| <= 6e-15.
+        """
+        s, tau, r, sigma = 100.0, 0.25, 0.05, 0.20
+        price = bs_price(s, k, tau, r, sigma, is_call=is_call)
+        result = implied_vol(price, s, k, tau, r, is_call=is_call)
+        assert result.status is ImpliedVolStatus.CONVERGED, result
+        assert result.sigma is not None
+        assert_close(result.sigma, sigma, rel=0.0, abs_=ABS_IV_SIGMA, label=f"k={k}")
+
+    @pytest.mark.parametrize(
+        ("k", "is_call"), [(50.0, True), (150.0, False)], ids=["call-k50", "put-k150"]
+    )
+    def test_itm_profundo_ida_e_volta(self, k: float, is_call: bool) -> None:
+        """ITM profundo: o ruído é da ESCALA (preço ~ intrínseco) e o vega cai
+        (~5e-5 na call K=50) — a tolerância em sigma cresce como escala/vega,
+        pelo helper."""
+        _assert_round_trip((100.0, k, 0.5, 0.05, 0.20, 0.0), is_call=is_call)
+
+    def test_vega_nulo_ate_a_convergencia(self) -> None:
+        """Chute em sigma = 0 (vega == 0) e raiz ~1e-325: converge sem exceção.
+
+        Complementa ``test_vega_nulo_no_chute_forca_bissecao``: com o orçamento
+        default, a bisseção sai do ramo de vega nulo e Newton termina; a raiz
+        está abaixo do menor subnormal, então sigma fica dentro da cota do
+        solver em torno de 0.
+        """
+        tiniest = math.ulp(0.0)
+        result = implied_vol(tiniest, 100.0, 100.0, 1.0, 0.0, is_call=True)
+        assert result.status is ImpliedVolStatus.CONVERGED, result
+        assert result.method == METHOD_NEWTON_BISECTION
+        assert result.sigma is not None
+        assert_close(result.sigma, 0.0, rel=0.0, abs_=ABS_IV_SIGMA, label="raiz ~0")
+
+
+class TestTinyTau:
+    @pytest.mark.parametrize("k", [100.0, 100.0001], ids=["atm", "otm-0.5desvio"])
+    @pytest.mark.parametrize("is_call", [True, False], ids=["call", "put"])
+    def test_tau_1e_10_ida_e_volta(self, k: float, is_call: bool) -> None:
+        """tau = 1e-10 (tabela de fronteiras): vega ~4e-4, preço ~1e-5."""
+        _assert_round_trip((100.0, k, 1e-10, 0.05, 0.20, 0.0), is_call=is_call)
+
+    def test_preco_em_underflow_cai_no_limite_inferior(self) -> None:
+        """tau = 1e-250: o valor-tempo ATM (~1e-124) se perde no cancelamento.
+
+        O kernel devolve preço 0.0 == limite inferior — sem informação sobre
+        sigma, a resposta coerente é sigma = 0 em forma fechada, que
+        reprecifica exatamente.
+        """
+        price = bs_price(100.0, 100.0, 1e-250, 0.05, 0.20, is_call=True)
+        result = implied_vol(price, 100.0, 100.0, 1e-250, 0.05, is_call=True)
+        assert result == ImpliedVolResult(0.0, ImpliedVolStatus.CONVERGED, 0, METHOD_CLOSED_FORM)
+        assert bs_price(100.0, 100.0, 1e-250, 0.05, 0.0, is_call=True) == price
+
+    def test_logo_acima_da_guarda_de_representabilidade_ainda_itera(self) -> None:
+        """tau = 6e-305 (sigma_max ~1.3e154, quadrado ainda finito): resolve."""
+        result = _assert_converged_and_repriced(1.0, 100.0, 100.0, 6e-305, 0.05, 0.0, is_call=True)
+        assert result.iterations >= 1
+
+
+# ---------------------------------------------------------------------------
+# 7. GOLDEN — camada *published*: preço de livro -> sigma do livro
+# ---------------------------------------------------------------------------
+# O preço publicado é arredondado (abs_tol da fonte); invertê-lo propaga esse
+# arredondamento por 1/vega — a tolerância em sigma é abs_tol / vega, pelo
+# mesmo helper do condicionamento.
+
+_GOLDEN_PATH = Path(__file__).resolve().parents[1] / "data" / "golden" / "bs_european.json"
+_GOLDEN: dict[str, Any] = json.loads(_GOLDEN_PATH.read_text(encoding="utf-8"))
+_PUBLISHED_PRICES: list[tuple[str, dict[str, float], bool, float, float]] = [
+    (case["label"], case["inputs"], field == "call", float(value), float(published["abs_tol"]))
+    for case in _GOLDEN["cases"]
+    if (published := case.get("published")) is not None
+    for field, value in published["values"].items()
+    if field in ("call", "put")
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "inputs", "is_call", "published_price", "abs_tol"),
+    _PUBLISHED_PRICES,
+    ids=[f"{p[0]}-{'call' if p[2] else 'put'}" for p in _PUBLISHED_PRICES],
+)
+def test_preco_publicado_recupera_sigma_do_livro(
+    label: str, inputs: dict[str, float], is_call: bool, published_price: float, abs_tol: float
+) -> None:
+    s, k, tau, r, sigma, q = (inputs[f] for f in ("s", "k", "tau", "r", "sigma", "q"))
+    result = implied_vol(published_price, s, k, tau, r, q, is_call=is_call)
+    assert result.status is ImpliedVolStatus.CONVERGED, result
+    assert result.sigma is not None
+    vega = bs_outputs(s, k, tau, r, sigma, q, is_call=is_call).vega_per_vol_unit
+    assert_close(
+        result.sigma,
+        sigma,
+        rel=0.0,
+        abs_=iv_sigma_abs_tol(abs_tol, vega),
+        label=f"{label} ({'call' if is_call else 'put'})",
+    )
