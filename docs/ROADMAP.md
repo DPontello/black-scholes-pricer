@@ -1,6 +1,6 @@
 # Roadmap — Options Analytics Engine
 
-> **Status:** Sprint 3 **concluída em 2026-10-25** (tag `v0.3.0`) — hexágono formal: ports inbound/outbound como Protocols, 3 use cases (`PriceOptionService`, `AnalyzeStrategyPayoffService`, `StressTestService`), contrato `PricingModel` batch-first materializado, adapters outbound (mock GBM seedado, calendário B3 estático com guarda de cobertura, taxa fixa CDI, clock, random), suíte de contrato herdável do `MarketDataPort`, composition root manual e smoke `python -m options_engine` reprodutível por seed. Gates verificados localmente: 2063 testes, cobertura 100% em `application/` e `adapters/` (≥ 90% exigido), import-linter com contrato de camadas. Emendas datadas no ARCH §4.2 (command sem campo redundante; payoff via `SpotAxis`). Próxima: Sprint 4 (API e Polimento).
+> **Status:** Sprint 3 **concluída em 2026-10-25** (tag `v0.3.0`) — hexágono formal: ports inbound/outbound como Protocols, 3 use cases (`PriceOptionService`, `AnalyzeStrategyPayoffService`, `StressTestService`), contrato `PricingModel` batch-first materializado, adapters outbound (mock GBM seedado, calendário B3 estático com guarda de cobertura, taxa fixa CDI, clock, random), suíte de contrato herdável do `MarketDataPort`, composition root manual e smoke `python -m options_engine` reprodutível por seed. Gates verificados localmente: 2063 testes, cobertura 100% em `application/` e `adapters/` (≥ 90% exigido), import-linter com contrato de camadas. Emendas datadas no ARCH §4.2 (command sem campo redundante; payoff via `SpotAxis`). Próxima: **Sprint 5 (Painel de Renda)**, antecipada para antes da Sprint 4 pela [ADR-0001](adr/0001-renda-antes-da-api.md) em 2026-10-26.
 >
 > **Premissas:** Python 3.12+, stdlib-only no core até a Sprint 4, arquitetura hexagonal desde o commit inicial (o layout `domain/ → application/ → adapters/` nasce na Sprint 1, ainda que parcialmente vazio — refatorar layout de pacote depois é custo puro). Esforço relativo: **S** (≤ 3 dias-pessoa), **M** (4–7), **L** (8–12), assumindo 1 dev sênior em dedicação parcial de portfólio.
 >
@@ -15,13 +15,28 @@ Estas decisões estavam registradas como "em aberto" na Entrega 1 e foram fechad
 | # | Decisão | Resolução |
 |---|---|---|
 | 1 | Day count default | **`BUSINESS_252`** (aderência B3). Parâmetro **com default** — continua parametrizado, nunca hardcoded; `CALENDAR_365` disponível para validação contra literatura (Hull). |
-| 2 | Escopo de instrumentos | **Europeias apenas no MVP.** Exercício americano (ações B3) estritamente na Fase 6, via seam já preparado (`ExerciseStyle` + `supports()`). |
+| 2 | Escopo de instrumentos | **Europeias apenas no MVP.** Exercício americano (ações B3) estritamente na Fase 6, via seam já preparado (`ExerciseStyle` + `supports()`). **Emenda 2026-10-26 ([ADR-0002](adr/0002-calls-americanas-como-europeias.md)):** calls americanas de ação aceitas como aproximação europeia (`q = 0`, com marca de aproximação); puts americanas continuam rejeitadas. |
 | 3 | Direção do Iron Condor | Factories aceitam **ambas as direções** (crédito e débito). Teste de vega **condicionado à direção** (vendido = short vega não-crescente sob vol up; comprado = espelho). |
 | 4 | Origem do prêmio da leg | **Opcional, informado pelo chamador.** Sem prêmio → sistema calcula apenas payoff bruto (`payoff_at_expiry`); P&L líquido (`pnl`) exige prêmio. |
 | 5 | Posição vencida no grid | **Intrínseco descontado** (ramo fechado da tabela normativa de fronteiras do kernel). |
 | 6 | Legs da mesma estrutura | **Mesmo subjacente e mesmo vencimento obrigatórios na Fase 1** (invariantes do agregado; relaxáveis em fase futura — calendar spreads, cross-asset). |
 | 7 | Calendário de feriados | **Arquivo estático versionado** no repo (mock simples para o MVP). |
 | 8 | Exibição das gregas | Kernel mantém unidades canônicas (Θ/ano, vega por 1.00 de vol). **Toda conversão de visualização (Θ/dia útil, vega/ponto) é do adapter de apresentação, Sprint 4.** |
+
+## Decisões de negócio do Painel de Renda (mesa de operações, 2026-10-26)
+
+Registradas como ADRs em [`docs/adr/`](adr/README.md). Itens marcados como pendentes não bloqueiam o início da Sprint 5, mas precisam ser fechados antes do seu fim.
+
+| # | Decisão | Resolução | ADR |
+|---|---|---|---|
+| 9 | Prioridade | **Sprint 5 (renda) antes da Sprint 4 (API).** | [0001](adr/0001-renda-antes-da-api.md) |
+| 10 | Calls americanas de ação | **Precificadas como europeias** (`q = 0`, marca de aproximação); puts americanas rejeitadas. Emenda a decisão nº 2. | [0002](adr/0002-calls-americanas-como-europeias.md) |
+| 11 | Cadeia de opções | **`OptionChainPort` novo**; lado de book ausente é `None`, nunca `0`; vol do subjacente = vol realizada, vol por série = implícita. | [0003](adr/0003-option-chain-port.md) |
+| 12 | Livro vazio | **Perna vendida usa bid, comprada usa ask**; `last` do pregão = `INDICATIVO`; sem negócio = `TEORICO`; só `EXECUTAVEL` entra no ranking padrão. Pendente: valores padrão dos filtros de liquidez. | [0004](adr/0004-preco-executavel-e-livro-vazio.md) |
+| 13 | Rendimento | **Put coberta = prêmio / strike; anualização composta 252 du; excesso sobre o CDI; custos (emolumentos B3, corretagem Necton, IR 15%) parametrizáveis.** Pendentes: base da venda coberta, retorno da trava, tamanho de referência, ordenação padrão. | [0005](adr/0005-metricas-de-rendimento.md) |
+| 14 | Fontes de dados | **COTAHIST na fase 1**; brapi descartada; intraday via Necton (MT5 → ProfitDLL → RTD) fora da Sprint 5. | [0006](adr/0006-fontes-de-dados-de-opcoes.md) |
+| 15 | Painel | **Relatório HTML estático**, stdlib, acionado pela CLI. | [0007](adr/0007-painel-html-estatico.md) |
+| 16 | Universo e filtros | **Lista de ativos informada pelo usuário**; filtros padrão: delta entre 0,15 e 0,35 (em módulo) e os 2 próximos vencimentos — todos parametrizáveis. | — |
 
 ---
 
@@ -200,7 +215,89 @@ DoD anteriores, mais: contract tests documentados como gate para qualquer adapte
 
 ---
 
+## Sprint 5 — Painel de Renda (Esforço: **L**) → tag `v0.4.0`
+
+> Antecipada para antes da Sprint 4 pela [ADR-0001](adr/0001-renda-antes-da-api.md). Decisões de negócio: nº 9 a 16 (tabela acima).
+
+### Objetivo
+
+Comparar oportunidades de **renda com opções** — venda coberta, put coberta e travas de crédito — entre vários ativos, com dados reais de fim de dia da B3, volatilidade implícita por série, preço executável pelo lado correto do book e rendimento bruto e líquido comparável ao CDI, num relatório HTML estático.
+
+### Pré-requisitos
+
+- Tag `v0.3.0` criada e CI verde (regra de corte).
+- **Spike de verificação (timebox: 1 dia, primeira tarefa da sprint)** — fecha as premissas das ADRs antes de qualquer código que dependa delas:
+  - ajuste de strike por proventos em dinheiro na B3 (ADR-0002 — se não se confirmar, a ADR é reaberta);
+  - layout vigente do COTAHIST e fonte do estilo de exercício por série (ADR-0006);
+  - tabela de emolumentos da B3 e de corretagem da Necton para opções; tratamento de IR (ADR-0005).
+- Pendências da mesa (ADR-0004 e ADR-0005) podem ser fechadas durante a sprint; o código nasce parametrizado.
+
+### Escopo IN
+
+- **Kernel — volatilidade implícita:** `implied_vol(price, s, k, tau, r, q, *, is_call)` com Newton salvaguardado e bisseção como fallback, checagem prévia dos limites de não-arbitragem e retorno rico `ImpliedVolResult(sigma, status, iterations, method)` — preço fora dos limites ou não convergência viram **status**, nunca exceção nem `NaN`.
+- **Domínio — cadeia e preço executável:** VOs `OptionQuote` e `OptionChain` (ADR-0003); enum de qualidade `EXECUTAVEL` / `INDICATIVO` / `TEORICO` e `executable_premium(quote, side)` (ADR-0004); interpolação do smile por vencimento para o preço `TEORICO`.
+- **Domínio — precificação:** `supports()` aceita CALL + AMERICAN com marca de aproximação; PUT + AMERICAN segue rejeitada (ADR-0002).
+- **Domínio — renda (`domain/income/`):** métricas em forma fechada por estrutura — prêmio executável, rendimento no período, anualizado (252 du), excesso sobre o CDI, bruto e líquido de custos, proteção, breakeven, ganho máximo, perda máxima, delta e N(d2) rotulado como probabilidade risco-neutra, liquidez. Travas de crédito reutilizam `Strategy`, payoff, breakevens e `stress_grid` existentes (factory nova de trava vertical, nas duas direções).
+- **Port outbound:** `OptionChainPort.get_chain(underlying_symbol) -> OptionChain` + suíte de contrato herdável `OptionChainPortContract`.
+- **Adapter outbound:** `CotahistOptionChainAdapter` (parser de largura fixa, fator de cotação, zero → `None`, cache por pregão em `sqlite3`, vol realizada do subjacente).
+- **Configuração de custos:** tabelas de emolumentos e corretagem e alíquota de IR versionadas com data de vigência (ADR-0005).
+- **Use case:** `RankIncomeOpportunitiesService` com command (`underlyings`, estruturas, filtros: faixa de delta, número de vencimentos, mínimo de negócios, spread máximo, critério de ordenação) devolvendo candidatos ordenados com qualidade e motivo de exclusão quando aplicável.
+- **Adapter de apresentação:** relatório HTML estático via `python -m options_engine` (ADR-0007), com conversões de exibição só ali (decisão nº 8) e escape de todo texto externo.
+- **Documentação:** ARCH §4.1 (port novo), CONVENTIONS (unidades de rendimento, vol realizada vs implícita), README (como gerar o painel).
+
+### Escopo OUT
+
+- Dados intraday e adapters Necton (MT5, ProfitDLL, RTD) — ADR-0006.
+- Perna de ação no agregado `Strategy` (gráfico de payoff da venda coberta) — as métricas de venda coberta e put coberta são em forma fechada nesta sprint.
+- Precificação americana exata (Fase 6), dividendos discretos.
+- Margem real da B3 (largura da trava como proxy de risco), cálculo fiscal (o IR é estimativa por operação).
+- Persistência de histórico além do cache de pregões; API REST (Sprint 4); envio de ordens.
+
+### Entregáveis
+
+1. `implied_vol` no kernel com V&V próprio.
+2. VOs de cadeia, regra de preço executável e módulo `domain/income/`.
+3. `OptionChainPort` + suíte de contrato + `CotahistOptionChainAdapter` com cache.
+4. `RankIncomeOpportunitiesService` + configuração de custos.
+5. Relatório HTML gerado pela CLI, reprodutível para um pregão fixo (fixture COTAHIST versionada em `tests/data/`).
+6. ADRs 0002–0007 com premissas verificadas (ou reabertas) e pendências fechadas.
+
+### Critérios de Aceite (verificáveis)
+
+- [ ] Ida e volta preço → volatilidade implícita → preço dentro da tolerância do oráculo em toda a faixa testada; scipy como oráculo em `tests/oracle/`.
+- [ ] Preço abaixo do intrínseco descontado ou acima do limite superior → status próprio, sem exceção e sem `NaN` (teste dedicado).
+- [ ] `pytest -q tests/contract` verde com o adapter COTAHIST plugado na `OptionChainPortContract`.
+- [ ] Teste de fronteira: campo zerado na fonte chega ao domínio como `None` (nunca `0.0`).
+- [ ] Tabela da ADR-0004 coberta linha a linha por testes do domínio (cada situação × perna vendida/comprada).
+- [ ] CALL + AMERICAN precificada com marca de aproximação; PUT + AMERICAN → `UnsupportedExerciseStyleError`.
+- [ ] Métricas de rendimento com golden cases calculados à mão (put coberta, venda coberta, trava de alta com put, trava de baixa com call), brutos e líquidos.
+- [ ] `python -m options_engine` gera o HTML para o pregão da fixture; teste verifica que a saída é idêntica para a mesma entrada.
+- [ ] Grep-guard do core continua vazio; `mypy --strict` zero erros; ruff limpo; import-linter com contratos mantidos; cobertura ≥ 95% global e kernel em 100%.
+- [ ] CI verde; tag `v0.4.0`.
+
+### Casos de Teste (mínimo)
+
+- **Positivos:** cadeia completa com bid e ask → ranking só com `EXECUTAVEL`, ordenado pelo critério configurado; put coberta com prêmio / strike; anualização composta com `du` do calendário B3 atravessando feriado.
+- **Negativos:** ativo desconhecido → `UnknownSymbolError`; book cruzado (`bid > ask`) rejeitado pelo contrato; PUT americana rejeitada; arquivo COTAHIST truncado ou com linha de tamanho errado → erro explícito com número da linha.
+- **Borda:** vencimento hoje (0 du → sem anualização, valor intrínseco); série só com bid usada como perna comprada (fora do ranking); trava com crédito ≥ largura (arbitragem/dado inconsistente → excluída com motivo); volatilidade implícita sem convergência (série exibida como `TEORICO` ou excluída, nunca com número inventado); subjacente sem preço utilizável → fora do painel do dia com motivo.
+
+### Riscos
+
+- **Ranking que premia iliquidez:** maior rendimento costuma estar na série de spread largo. Mitigação: preço executável por lado (ADR-0004) + filtros de liquidez.
+- **Assincronia de fim de dia:** último negócio da opção bem anterior ao fechamento da ação distorce a volatilidade implícita. Mitigação: `last` só como `INDICATIVO`.
+- **Premissa da ADR-0002 não se confirmar** no spike: venda coberta volta a depender da Fase 6. Mitigação: spike é a primeira tarefa.
+- **Volatilidade implícita alta tem motivo** (balanço, evento): o painel mostra números, não recomendação; sem filtro de eventos nesta sprint.
+- **Escopo L em dedicação parcial:** timebox — kernel + domínio + adapter primeiro (60%), apresentação depois (40%).
+
+### Definition of Done
+
+DoD anteriores, mais: spike registrado nas ADRs; pendências da mesa fechadas; suíte de contrato do `OptionChainPort` documentada como gate para os adapters intraday; relatório HTML reprodutível documentado no README; tag `v0.4.0`.
+
+---
+
 ## Sprint 4 — API e Polimento de Portfólio (Esforço: **M**) → tag `v1.0.0`
+
+> Executada **depois da Sprint 5** ([ADR-0001](adr/0001-renda-antes-da-api.md)). Os endpoints passam a poder expor também o use case de renda.
 
 ### Objetivo
 
@@ -216,7 +313,7 @@ Expor o motor via FastAPI como **adapter inbound fino** (pydantic só na borda, 
 - Composition root da API reutilizando `config/composition.py` (mock por default; troca por env é 1 linha).
 - **Benchmark documentado** (`BENCHMARKS.md`): preço+gregas unitário e grid N×M típico, com hardware/versões; requisito de referência: grid 50×50 × 4 legs < 300 ms p95 em CPython puro. Entrega é a medição honesta + análise, não otimização.
 - **README de portfólio:** pitch, diagrama Mermaid, quickstart (`uvicorn` + `curl` retornando o caso HULL), badges (CI, coverage, python, ruff, mypy), seção de trade-offs linkando ADRs.
-- **ADRs** (`docs/adr/`, MADR curto), ≥ 6: (1) float64 vs Decimal; (2) stdlib-only no core; (3) contrato batch-first; (4) hexagonal + composition root manual sem DI framework; (5) **day count default `BUSINESS_252` — decisão ratificada pela mesa em 2026-07-02** (contexto B3 vs literatura 365); (6) async/CPU-bound; (7) pydantic só na borda; (8) escopo europeu-only com rejeição explícita de americano (contexto B3: ações americanas, índice europeias).
+- **ADRs** (`docs/adr/`, MADR curto), ≥ 6: (1) float64 vs Decimal; (2) stdlib-only no core; (3) contrato batch-first; (4) hexagonal + composition root manual sem DI framework; (5) **day count default `BUSINESS_252` — decisão ratificada pela mesa em 2026-07-02** (contexto B3 vs literatura 365); (6) async/CPU-bound; (7) pydantic só na borda; (8) escopo europeu-only com rejeição explícita de americano (contexto B3: ações americanas, índice europeias) — já emendado pela [ADR-0002](adr/0002-calls-americanas-como-europeias.md) para calls de ação; a ADR da S4 registra a decisão original e aponta a emenda. Numeração continua após a série 0001–0007 da S5.
 - Testes da borda: `TestClient` cobrindo happy path por endpoint + cada classe de erro + payload inválido (422 pydantic).
 
 ### Escopo OUT
@@ -263,14 +360,14 @@ Repo inteiro passa lint + mypy strict + testes no CI; guard de framework ativo n
 
 | Item | Por que está fora | Sprint futura | Pré-requisitos / seam preparado |
 |---|---|---|---|
-| **Implied volatility** (Newton salvaguardado + fallback Brent; ref. Jäckel, *Let's Be Rational*) | Política de convergência e bounds são mini-projeto próprio | **S5** | Kernel expõe vega; retorno rico `(sigma, converged, iterations, method)`; V&V próprio (round-trip preço→IV→preço) |
-| **Dividendos discretos / proventos B3** | Yield contínuo `q` **já está na assinatura do kernel desde a S1** — sem quebra de contrato | **S5** | Golden cases com dividendos |
-| **Hardening de V&V** (QuantLib como 2º oráculo, `mutmut` ≥ 90%, nightly Hypothesis 10k) | Pacote nível banco sem slot no MVP; gate sem slot é ficção | **S5–S6** | `mutmut` não roda em Windows — gate exclusivo do CI Linux |
-| **Opções americanas** (binomial CRR / Bjerksund-Stensland) | Modelo numérico distinto; decisão 2 fixa a Fase 6 | **S6** | Seam pronto: `ExerciseStyle` + `supports()`; V&V próprio (convergência de malha) |
+| **Implied volatility** (Newton salvaguardado + fallback Brent; ref. Jäckel, *Let's Be Rational*) | Política de convergência e bounds são mini-projeto próprio | **S5 — Painel de Renda** (antecipada, ADR-0001) | Kernel expõe vega; retorno rico `(sigma, converged, iterations, method)`; V&V próprio (round-trip preço→IV→preço) |
+| **Dividendos discretos / proventos B3** | Yield contínuo `q` **já está na assinatura do kernel desde a S1** — sem quebra de contrato | **A replanejar após a S5** (fora do Painel de Renda, ADR-0001) | Golden cases com dividendos |
+| **Hardening de V&V** (QuantLib como 2º oráculo, `mutmut` ≥ 90%, nightly Hypothesis 10k) | Pacote nível banco sem slot no MVP; gate sem slot é ficção | **A replanejar após a S5** | `mutmut` não roda em Windows — gate exclusivo do CI Linux |
+| **Opções americanas** (binomial CRR / Bjerksund-Stensland) | Modelo numérico distinto; decisão 2 fixa a Fase 6 | **S6** | Seam pronto: `ExerciseStyle` + `supports()`; V&V próprio (convergência de malha). Calls de ação já aceitas como aproximação europeia desde a S5 (ADR-0002) |
 | **Monte Carlo** | Custo alto e redundante para europeias vanilla | **S7** | Segundo motor atrás do mesmo `PricingModel` batch-first; BS analítico vira golden do MC; provável ADR revendo stdlib-only (NumPy) |
 | **Persistência** (estratégias salvas, histórico) | Stateless por design até haver caso de uso real | **S8** | `StrategyRepositoryPort` + SQLite; contract tests da S3 como molde |
 
-**Ordem recomendada pós-MVP: 5 → 6 → 7 → 8.**
+**Ordem de execução a partir de 2026-10-26 (ADR-0001): S5 (Painel de Renda) → S4 (API) → 6 → 7 → 8**; dividendos discretos e hardening de V&V são replanejados ao fim da S5.
 
 ## Resumo de esforço e dependências
 
@@ -279,4 +376,5 @@ Repo inteiro passa lint + mypy strict + testes no CI; guard de framework ativo n
 | 1 — Fundação Matemática | M | — | Kernel BS (+q, +rho) + V&V + CI (`v0.1.0`) |
 | 2 — Domínio e Simulação | **L** (caminho crítico) | S1 | Composite + payoff/P&L + stress grid (`v0.2.0`) |
 | 3 — Ports & Adapters | M | S2 | Hexágono formal + mock GBM + contract tests (`v0.3.0`) |
-| 4 — API e Polimento | M | S3 | FastAPI na borda + benchmark + ADRs (`v1.0.0`) |
+| 5 — Painel de Renda | L | S3 | Volatilidade implícita + cadeia COTAHIST + métricas de renda + relatório HTML (`v0.4.0`) |
+| 4 — API e Polimento | M | **S5** (ADR-0001) | FastAPI na borda + benchmark + ADRs (`v1.0.0`) |
