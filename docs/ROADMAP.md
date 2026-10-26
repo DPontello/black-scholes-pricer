@@ -1,6 +1,6 @@
 # Roadmap — Options Analytics Engine
 
-> **Status:** Sprint 3 **concluída em 2026-10-25** (tag `v0.3.0`) — hexágono formal: ports inbound/outbound como Protocols, 3 use cases (`PriceOptionService`, `AnalyzeStrategyPayoffService`, `StressTestService`), contrato `PricingModel` batch-first materializado, adapters outbound (mock GBM seedado, calendário B3 estático com guarda de cobertura, taxa fixa CDI, clock, random), suíte de contrato herdável do `MarketDataPort`, composition root manual e smoke `python -m options_engine` reprodutível por seed. Gates verificados localmente: 2063 testes, cobertura 100% em `application/` e `adapters/` (≥ 90% exigido), import-linter com contrato de camadas. Emendas datadas no ARCH §4.2 (command sem campo redundante; payoff via `SpotAxis`). Próxima: Sprint 4 (API e Polimento).
+> **Status:** Sprint 3 **concluída em 2026-10-25** (tag `v0.3.0`) — hexágono formal: ports inbound/outbound como Protocols, 3 use cases (`PriceOptionService`, `AnalyzeStrategyPayoffService`, `StressTestService`), contrato `PricingModel` batch-first materializado, adapters outbound (mock GBM seedado, calendário B3 estático com guarda de cobertura, taxa fixa CDI, clock, random), suíte de contrato herdável do `MarketDataPort`, composition root manual e smoke `python -m options_engine` reprodutível por seed. Gates verificados localmente: 2063 testes, cobertura 100% em `application/` e `adapters/` (≥ 90% exigido), import-linter com contrato de camadas. Emendas datadas no ARCH §4.2 (command sem campo redundante; payoff via `SpotAxis`). Próxima: **Sprint 5 (Painel de Renda)**, antecipada para antes da Sprint 4 pela [ADR-0001](adr/0001-renda-antes-da-api.md) em 2026-10-26.
 >
 > **Premissas:** Python 3.12+, stdlib-only no core até a Sprint 4, arquitetura hexagonal desde o commit inicial (o layout `domain/ → application/ → adapters/` nasce na Sprint 1, ainda que parcialmente vazio — refatorar layout de pacote depois é custo puro). Esforço relativo: **S** (≤ 3 dias-pessoa), **M** (4–7), **L** (8–12), assumindo 1 dev sênior em dedicação parcial de portfólio.
 >
@@ -15,13 +15,28 @@ Estas decisões estavam registradas como "em aberto" na Entrega 1 e foram fechad
 | # | Decisão | Resolução |
 |---|---|---|
 | 1 | Day count default | **`BUSINESS_252`** (aderência B3). Parâmetro **com default** — continua parametrizado, nunca hardcoded; `CALENDAR_365` disponível para validação contra literatura (Hull). |
-| 2 | Escopo de instrumentos | **Europeias apenas no MVP.** Exercício americano (ações B3) estritamente na Fase 6, via seam já preparado (`ExerciseStyle` + `supports()`). |
+| 2 | Escopo de instrumentos | **Europeias apenas no MVP.** Exercício americano (ações B3) estritamente na Fase 6, via seam já preparado (`ExerciseStyle` + `supports()`). **Emenda 2026-10-26 ([ADR-0002](adr/0002-calls-americanas-como-europeias.md)):** calls americanas de ação aceitas como aproximação europeia (`q = 0`, com marca de aproximação); puts americanas continuam rejeitadas. |
 | 3 | Direção do Iron Condor | Factories aceitam **ambas as direções** (crédito e débito). Teste de vega **condicionado à direção** (vendido = short vega não-crescente sob vol up; comprado = espelho). |
 | 4 | Origem do prêmio da leg | **Opcional, informado pelo chamador.** Sem prêmio → sistema calcula apenas payoff bruto (`payoff_at_expiry`); P&L líquido (`pnl`) exige prêmio. |
 | 5 | Posição vencida no grid | **Intrínseco descontado** (ramo fechado da tabela normativa de fronteiras do kernel). |
 | 6 | Legs da mesma estrutura | **Mesmo subjacente e mesmo vencimento obrigatórios na Fase 1** (invariantes do agregado; relaxáveis em fase futura — calendar spreads, cross-asset). |
 | 7 | Calendário de feriados | **Arquivo estático versionado** no repo (mock simples para o MVP). |
 | 8 | Exibição das gregas | Kernel mantém unidades canônicas (Θ/ano, vega por 1.00 de vol). **Toda conversão de visualização (Θ/dia útil, vega/ponto) é do adapter de apresentação, Sprint 4.** |
+
+## Decisões de negócio do Painel de Renda (mesa de operações, 2026-10-26)
+
+Registradas como ADRs em [`docs/adr/`](adr/README.md). Itens marcados como pendentes não bloqueiam o início da Sprint 5, mas precisam ser fechados antes do seu fim.
+
+| # | Decisão | Resolução | ADR |
+|---|---|---|---|
+| 9 | Prioridade | **Sprint 5 (renda) antes da Sprint 4 (API).** | [0001](adr/0001-renda-antes-da-api.md) |
+| 10 | Calls americanas de ação | **Precificadas como europeias** (`q = 0`, marca de aproximação); puts americanas rejeitadas. Emenda a decisão nº 2. | [0002](adr/0002-calls-americanas-como-europeias.md) |
+| 11 | Cadeia de opções | **`OptionChainPort` novo**; lado de book ausente é `None`, nunca `0`; vol do subjacente = vol realizada, vol por série = implícita. | [0003](adr/0003-option-chain-port.md) |
+| 12 | Livro vazio | **Perna vendida usa bid, comprada usa ask**; `last` do pregão = `INDICATIVO`; sem negócio = `TEORICO`; só `EXECUTAVEL` entra no ranking padrão. Pendente: valores padrão dos filtros de liquidez. | [0004](adr/0004-preco-executavel-e-livro-vazio.md) |
+| 13 | Rendimento | **Put coberta = prêmio / strike; anualização composta 252 du; excesso sobre o CDI; custos (emolumentos B3, corretagem Necton, IR 15%) parametrizáveis.** Pendentes: base da venda coberta, retorno da trava, tamanho de referência, ordenação padrão. | [0005](adr/0005-metricas-de-rendimento.md) |
+| 14 | Fontes de dados | **COTAHIST na fase 1**; brapi descartada; intraday via Necton (MT5 → ProfitDLL → RTD) fora da Sprint 5. | [0006](adr/0006-fontes-de-dados-de-opcoes.md) |
+| 15 | Painel | **Relatório HTML estático**, stdlib, acionado pela CLI. | [0007](adr/0007-painel-html-estatico.md) |
+| 16 | Universo e filtros | **Lista de ativos informada pelo usuário**; filtros padrão: delta entre 0,15 e 0,35 (em módulo) e os 2 próximos vencimentos — todos parametrizáveis. | — |
 
 ---
 
