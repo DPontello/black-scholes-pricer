@@ -65,6 +65,17 @@ ABS_PAYOFF = 1e-12
 REL_BREAKEVEN = 1e-12
 ABS_BREAKEVEN = 1e-9
 
+# --- métricas de renda (domain/income/) — forma fechada -----------------------
+# Custos e rendimentos são produtos, razões e fsum de poucos termos, mais UMA
+# potência na anualização (via log1p/expm1: erro relativo ~x·ulp no expoente
+# x <= ~700 antes do overflow, i.e. <= ~2e-13). Os golden cases são literais
+# calculados à mão (decimais exatos ou 16 algarismos significativos): 1e-12
+# dá margem >= 5x sobre o pior caso e ainda mata qualquer erro de fórmula. O
+# piso absoluto cobre valores ~0 (IR nulo, rendimento de prêmio zero), onde o
+# relativo não tem significado.
+REL_INCOME = 1e-12
+ABS_INCOME = 1e-12
+
 # --- teste estatístico do GBM (seed fixa — determinístico, não flaky) --------
 # Margem em erros-padrão sobre média e desvio dos log-retornos amostrados.
 # Com seed fixa o teste é determinístico; o z só precisa acomodar o sorteio
