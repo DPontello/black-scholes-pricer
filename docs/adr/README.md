@@ -20,3 +20,4 @@ pydantic só na borda) continuam a numeração a partir da última existente.
 | [0004](0004-preco-executavel-e-livro-vazio.md) | Preço executável por lado e regra de livro vazio | Aceita | 2026-10-26 |
 | [0005](0005-metricas-de-rendimento.md) | Métricas de rendimento, anualização e custos | Aceita (itens pendentes marcados) | 2026-10-26 |
 | [0006](0006-fontes-de-dados-de-opcoes.md) | COTAHIST como fonte da fase 1; intraday via Necton depois | Aceita | 2026-10-26 |
+| [0007](0007-painel-html-estatico.md) | Painel como relatório HTML estático | Aceita | 2026-10-26 |
