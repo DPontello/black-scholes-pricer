@@ -52,11 +52,11 @@ class OptionQuote:
     serve só para exibir o smile, nunca para calcular rendimento (ADR-0004)
     — derivá-lo é da apresentação.
 
-    ``trades`` (número de negócios) e ``volume`` (volume negociado) são do
-    pregão de referência e alimentam os filtros de liquidez, que são
-    parâmetros do comando, não invariantes deste VO (ADR-0004). A unidade de
-    ``volume`` (financeiro ou quantidade de contratos) não é fixada pela
-    ADR-0003; o domínio só exige finito e ``>= 0``.
+    ``trades`` (número de negócios) e ``volume`` são do pregão de referência
+    e alimentam os filtros de liquidez, que são parâmetros do comando, não
+    invariantes deste VO (ADR-0004). ``volume`` é o volume FINANCEIRO
+    negociado, na moeda do subjacente — não a quantidade de contratos; o
+    domínio só exige finito e ``>= 0``.
 
     Não há invariante cruzando ``last`` e ``trades``: uma fonte pode trazer
     o último preço de um pregão anterior com ``trades == 0``, e
