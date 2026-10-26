@@ -1,12 +1,22 @@
-"""Cadeia de opções (ADR-0003) — invariantes dos VOs da cotação e da cadeia."""
+"""Cadeia de opções (ADR-0003) e preço executável por lado (ADR-0004)."""
 
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime, timedelta, tzinfo
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
-from options_engine.domain.model.chain import OptionChain, OptionQuote
+from options_engine.domain.model.chain import (
+    LegPremium,
+    OptionChain,
+    OptionQuote,
+    PriceQuality,
+    executable_premium,
+    worst_quality,
+)
 from options_engine.domain.model.contracts import OptionContract
+from options_engine.domain.model.enums import Side
 from options_engine.domain.model.errors import InvalidDomainValueError
 from tests.domain._builders import make_contract, make_snapshot, make_terms
 
@@ -197,3 +207,206 @@ def test_cadeia_e_imutavel() -> None:
     chain = OptionChain(underlying=make_snapshot(), quotes=(make_quote(),))
     with pytest.raises(FrozenInstanceError):
         chain.quotes = ()  # type: ignore[misc]  # justificativa: atribuição ilegal é o próprio teste
+
+
+# ---------------------------------------------------------------------------
+# PriceQuality e worst_quality (ADR-0004)
+# ---------------------------------------------------------------------------
+
+
+def test_qualidades_declaradas_do_melhor_para_o_pior() -> None:
+    """A ordem de declaração É a ordem de qualidade usada por worst_quality —
+    reordenar os membros muda o ranking em silêncio; este teste trava isso."""
+    assert list(PriceQuality) == [
+        PriceQuality.EXECUTAVEL,
+        PriceQuality.INDICATIVO,
+        PriceQuality.TEORICO,
+    ]
+
+
+EXEC, IND, TEO = PriceQuality.EXECUTAVEL, PriceQuality.INDICATIVO, PriceQuality.TEORICO
+
+
+@pytest.mark.parametrize(
+    ("pernas", "esperada"),
+    [
+        ((EXEC,), EXEC),
+        ((IND,), IND),
+        ((TEO,), TEO),
+        ((EXEC, EXEC, EXEC, EXEC), EXEC),
+        ((EXEC, IND), IND),
+        ((IND, EXEC), IND),
+        ((EXEC, TEO, IND), TEO),
+        ((TEO, EXEC, EXEC, EXEC), TEO),
+    ],
+)
+def test_estrutura_vale_a_pior_perna(
+    pernas: tuple[PriceQuality, ...], esperada: PriceQuality
+) -> None:
+    assert worst_quality(pernas) is esperada
+
+
+def test_pior_qualidade_aceita_iteravel_de_uma_passada() -> None:
+    """Iterable, não Sequence: um gerador sobre as pernas é consumido uma vez só."""
+    assert worst_quality(q for q in (EXEC, IND, EXEC)) is IND
+
+
+def test_pior_qualidade_de_nenhuma_perna_e_erro() -> None:
+    """Vazio não é EXECUTAVEL: rotularia como executável algo que não existe."""
+    with pytest.raises(InvalidDomainValueError):
+        worst_quality(())
+
+
+@given(pernas=st.lists(st.sampled_from(PriceQuality), min_size=1, max_size=6))
+def test_pior_qualidade_independe_da_ordem_das_pernas(pernas: list[PriceQuality]) -> None:
+    assert worst_quality(pernas) is worst_quality(reversed(pernas))
+    assert worst_quality(pernas) in pernas
+
+
+# ---------------------------------------------------------------------------
+# LegPremium — prêmio nunca sai sem rótulo
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("quality", list(PriceQuality))
+@pytest.mark.parametrize("premium", [-0.01, float("nan"), float("inf")])
+def test_premio_negativo_ou_nao_finito_e_irrepresentavel(
+    premium: float, quality: PriceQuality
+) -> None:
+    with pytest.raises(InvalidDomainValueError):
+        LegPremium(premium, quality)
+
+
+@pytest.mark.parametrize("quality", [EXEC, IND])
+def test_preco_observado_nunca_e_zero(quality: PriceQuality) -> None:
+    """Lado ausente é None (ADR-0003): zero observado é sentinela vazada."""
+    with pytest.raises(InvalidDomainValueError, match="ADR-0003"):
+        LegPremium(0.0, quality)
+
+
+def test_teorico_admite_zero() -> None:
+    """BS de série muito fora do dinheiro pode valer zero — informação, não erro."""
+    assert LegPremium(0.0, TEO).premium == 0.0
+
+
+# ---------------------------------------------------------------------------
+# executable_premium — a tabela da ADR-0004, linha a linha
+# ---------------------------------------------------------------------------
+
+BID, ASK, LAST = 1.20, 1.25, 1.22
+
+
+@pytest.mark.parametrize(
+    ("bid", "ask", "trades", "side", "esperado"),
+    [
+        # bid e ask presentes: vendida usa bid, comprada usa ask — nunca o mid.
+        (BID, ASK, 37, Side.SELL, LegPremium(BID, EXEC)),
+        (BID, ASK, 37, Side.BUY, LegPremium(ASK, EXEC)),
+        # só bid: EXECUTAVEL só para venda; a perna comprada fica sem preço.
+        (BID, None, 37, Side.SELL, LegPremium(BID, EXEC)),
+        (BID, None, 37, Side.BUY, None),
+        # só ask: EXECUTAVEL só para compra; a perna vendida fica sem preço.
+        (None, ASK, 37, Side.SELL, None),
+        (None, ASK, 37, Side.BUY, LegPremium(ASK, EXEC)),
+        # nenhum lado, com negócio no pregão: last, INDICATIVO nos dois lados.
+        (None, None, 37, Side.SELL, LegPremium(LAST, IND)),
+        (None, None, 37, Side.BUY, LegPremium(LAST, IND)),
+        # nenhum lado, sem negócio: TEORICO, calculado fora da regra pura.
+        (None, None, 0, Side.SELL, None),
+        (None, None, 0, Side.BUY, None),
+    ],
+    ids=[
+        "book-completo-vendida",
+        "book-completo-comprada",
+        "so-bid-vendida",
+        "so-bid-comprada",
+        "so-ask-vendida",
+        "so-ask-comprada",
+        "book-vazio-com-negocio-vendida",
+        "book-vazio-com-negocio-comprada",
+        "book-vazio-sem-negocio-vendida",
+        "book-vazio-sem-negocio-comprada",
+    ],
+)
+def test_tabela_da_adr_0004(
+    bid: float | None,
+    ask: float | None,
+    trades: int,
+    side: Side,
+    esperado: LegPremium | None,
+) -> None:
+    # `last` sempre presente: prova que ele só é usado na linha do book vazio.
+    quote = make_quote(bid=bid, ask=ask, last=LAST, trades=trades)
+    assert executable_premium(quote, side) == esperado
+
+
+def test_book_de_um_lado_so_nao_cai_para_o_last() -> None:
+    """Só bid + perna comprada é "sem preço" na ADR-0004, mesmo com negócio no
+    pregão: INDICATIVO é exclusivo do book vazio, não um fallback por perna."""
+    quote = make_quote(bid=BID, ask=None, last=LAST, trades=37)
+    assert executable_premium(quote, Side.BUY) is None
+    assert not quote.is_book_empty
+
+
+def test_last_sem_negocio_no_pregao_nao_e_indicativo() -> None:
+    """trades == 0: o last pode ser de pregão anterior — vai para o TEORICO."""
+    quote = make_quote(bid=None, ask=None, last=LAST, trades=0)
+    assert executable_premium(quote, Side.SELL) is None
+    assert quote.is_book_empty
+
+
+def test_negocio_sem_last_nao_inventa_preco() -> None:
+    quote = make_quote(bid=None, ask=None, last=None, trades=37)
+    assert executable_premium(quote, Side.SELL) is None
+
+
+@pytest.mark.parametrize(
+    ("bid", "ask", "vazio"),
+    [(BID, ASK, False), (BID, None, False), (None, ASK, False), (None, None, True)],
+)
+def test_book_vazio_so_sem_nenhum_lado(bid: float | None, ask: float | None, vazio: bool) -> None:
+    assert make_quote(bid=bid, ask=ask).is_book_empty is vazio
+
+
+# --- propriedades sobre cotações arbitrárias ---------------------------------
+# Preços em centavos inteiros: valores exatos, a igualdade mede a regra.
+
+_LADO = st.one_of(st.none(), st.integers(min_value=1, max_value=5_000).map(lambda c: c / 100))
+
+
+@st.composite
+def st_quote(draw: st.DrawFn) -> OptionQuote:
+    bid, ask = draw(_LADO), draw(_LADO)
+    if bid is not None and ask is not None and bid > ask:
+        bid, ask = ask, bid
+    return make_quote(
+        bid=bid,
+        ask=ask,
+        last=draw(_LADO),
+        trades=draw(st.integers(min_value=0, max_value=500)),
+    )
+
+
+@given(quote=st_quote(), side=st.sampled_from(Side))
+def test_preco_nunca_e_inventado(quote: OptionQuote, side: Side) -> None:
+    """O prêmio é sempre um preço observado da própria série (nunca mid,
+    nunca interpolado) e o last só aparece com o book vazio."""
+    resultado = executable_premium(quote, side)
+    if resultado is None:
+        return
+    if resultado.quality is PriceQuality.EXECUTAVEL:
+        assert resultado.premium == (quote.bid if side is Side.SELL else quote.ask)
+    else:
+        assert resultado.quality is PriceQuality.INDICATIVO
+        assert quote.is_book_empty
+        assert resultado.premium == quote.last
+
+
+@given(quote=st_quote())
+def test_vender_nunca_recebe_mais_do_que_comprar_paga(quote: OptionQuote) -> None:
+    """Com as duas pernas executáveis, prêmio da venda <= prêmio da compra —
+    a assimetria que impede o ranking de premiar spread largo."""
+    venda = executable_premium(quote, Side.SELL)
+    compra = executable_premium(quote, Side.BUY)
+    if venda is not None and compra is not None:
+        assert venda.premium <= compra.premium
