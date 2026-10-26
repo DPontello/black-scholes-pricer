@@ -230,7 +230,8 @@ Comparar oportunidades de **renda com opções** — venda coberta, put coberta 
   - ajuste de strike por proventos em dinheiro na B3 (ADR-0002 — se não se confirmar, a ADR é reaberta);
   - layout vigente do COTAHIST e fonte do estilo de exercício por série (ADR-0006);
   - tabela de emolumentos da B3 e de corretagem da Necton para opções; tratamento de IR (ADR-0005).
-- Pendências da mesa (ADR-0004 e ADR-0005) fechadas em 2026-10-26; o código nasce parametrizado mesmo assim.
+  - **Spike concluído em 2026-10-26** — premissas das [ADR-0002](adr/0002-calls-americanas-como-europeias.md), [0005](adr/0005-metricas-de-rendimento.md) e [0006](adr/0006-fontes-de-dados-de-opcoes.md) verificadas; ver as ADRs.
+- Pendências da mesa (ADR-0004 e ADR-0005) fechadas em 2026-10-26; o código nasce parametrizado mesmo assim. Dois itens do modelo de custos levantados na implementação seguem em decisão pela mesa ([ADR-0005](adr/0005-metricas-de-rendimento.md)).
 
 ### Escopo IN
 
