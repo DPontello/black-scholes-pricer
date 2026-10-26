@@ -144,6 +144,7 @@ Documentação completa em [`docs/`](docs/):
 | [`VV-PLAN.md`](docs/VV-PLAN.md) | Política de tolerâncias, corpus golden verificado, invariantes, gates |
 | [`ROADMAP.md`](docs/ROADMAP.md) | Sprints com critérios de aceite verificáveis por comando |
 | [`CONVENTIONS.md`](docs/CONVENTIONS.md) | Unidades canônicas, day count (BUS/252), CDI→contínua, léxico |
+| [`adr/`](docs/adr/README.md) | Architecture Decision Records (Painel de Renda: 0001–0007) |
 
 ## Status e roadmap
 
@@ -152,10 +153,12 @@ Documentação completa em [`docs/`](docs/):
 | 1 — Fundação Matemática | Kernel BSM + gregas, V&V de 4 camadas, CI, oráculo | ✅ `v0.1.0` |
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
-| 4 — API e Portfólio | FastAPI como adapter fino, benchmark, ADRs | próxima |
+| 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | próxima ([ADR-0001](docs/adr/0001-renda-antes-da-api.md)) |
+| 4 — API e Portfólio | FastAPI como adapter fino, benchmark, ADRs | após a Sprint 5 |
 
-Fora do MVP (mapeado no roadmap): implied vol, dividendos discretos, exercício americano
-(B3: opções de ações), Monte Carlo, persistência.
+Fora do MVP (mapeado no roadmap): dividendos discretos, exercício americano exato
+(B3: opções de ações; calls já aceitas como aproximação europeia na Sprint 5), Monte Carlo,
+persistência. Implied vol entra na Sprint 5.
 
 ## Decisões de projeto (resumo)
 
