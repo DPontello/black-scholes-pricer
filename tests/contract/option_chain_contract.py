@@ -8,6 +8,9 @@ fábricas — nasce com a bateria de conformidade pronta.
 As verificações de book repetem de propósito invariantes que os VOs já
 impõem na construção: o port é julgado pelo que ENTREGA, não pelo que o
 tipo promete (um adapter que devolvesse um duck type escaparia dos VOs).
+Pelo mesmo motivo o snapshot do subjacente passa pelas mesmas checagens
+da suíte do ``MarketDataPort``: o ``MarketSnapshot`` não confere em runtime
+o tipo da taxa nem o da vol.
 
 Nada aqui depende de fonte, data ou liquidez específica. Promessas de uma
 implementação (ex.: cadeia idêntica em consultas repetidas de um arquivo de
@@ -22,8 +25,10 @@ from math import isfinite
 import pytest
 
 from options_engine.application.ports.outbound import OptionChainPort
-from options_engine.domain.model.chain import OptionChain
+from options_engine.domain.model.chain import OptionChain, OptionQuote
+from options_engine.domain.model.conventions import RiskFreeRate, Volatility
 from options_engine.domain.model.errors import UnknownSymbolError
+from options_engine.domain.model.market import MarketSnapshot
 
 __all__ = ["OptionChainPortContract"]
 
@@ -64,6 +69,24 @@ class OptionChainPortContract(ABC):
             f"known_symbol {self.known_symbol()!r} sem séries: as verificações por "
             f"cotação desta suíte passariam no vazio"
         )
+
+    def test_cotacoes_sao_option_quote(self) -> None:
+        """Um duck type escaparia das invariantes que o VO impõe na construção."""
+        for quote in self._chain().quotes:
+            assert isinstance(quote, OptionQuote), type(quote).__name__
+
+    # --- snapshot do subjacente (molde do MarketDataPort, ARCH §8) -----------
+
+    def test_subjacente_e_snapshot_com_spot_e_vol_positivos(self) -> None:
+        underlying = self._chain().underlying
+        assert isinstance(underlying, MarketSnapshot)
+        assert underlying.spot > 0.0
+        assert isinstance(underlying.volatility, Volatility)
+        assert underlying.volatility.value > 0.0
+
+    def test_taxa_do_subjacente_sempre_como_vo_com_compounding_explicito(self) -> None:
+        """Taxa como float nu é proibida em qualquer port (CONVENTIONS §3)."""
+        assert isinstance(self._chain().underlying.risk_free_rate, RiskFreeRate)
 
     # --- book: lado ausente é None, nunca 0 (contratos 1 e 2) ---------------
 

@@ -60,7 +60,10 @@ class OptionChainPort(Protocol):
        ausente é ``None``, NUNCA ``0``; a tradução "zero da fonte → None" é
        exclusiva do adapter;
     2. com os dois lados presentes, ``bid <= ask``;
-    3. a cadeia e todas as suas cotações são do subjacente pedido;
+    3. a cadeia e todas as suas cotações são do subjacente pedido; o
+       subjacente é um ``MarketSnapshot`` com ``spot > 0``, vol como
+       ``Volatility`` com ``value > 0`` e taxa como ``RiskFreeRate`` (as
+       mesmas checagens do contrato do ``MarketDataPort``);
     4. timestamps tz-aware (snapshot do subjacente e cotações);
     5. símbolo desconhecido → ``UnknownSymbolError`` (exceção de domínio),
        nunca ``KeyError``, ``None`` ou exceção de lib de I/O vazando;
