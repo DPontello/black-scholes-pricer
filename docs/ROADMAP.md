@@ -215,6 +215,86 @@ DoD anteriores, mais: contract tests documentados como gate para qualquer adapte
 
 ---
 
+## Sprint 5 — Painel de Renda (Esforço: **L**) → tag `v0.4.0`
+
+> Antecipada para antes da Sprint 4 pela [ADR-0001](adr/0001-renda-antes-da-api.md). Decisões de negócio: nº 9 a 16 (tabela acima).
+
+### Objetivo
+
+Comparar oportunidades de **renda com opções** — venda coberta, put coberta e travas de crédito — entre vários ativos, com dados reais de fim de dia da B3, volatilidade implícita por série, preço executável pelo lado correto do book e rendimento bruto e líquido comparável ao CDI, num relatório HTML estático.
+
+### Pré-requisitos
+
+- Tag `v0.3.0` criada e CI verde (regra de corte).
+- **Spike de verificação (timebox: 1 dia, primeira tarefa da sprint)** — fecha as premissas das ADRs antes de qualquer código que dependa delas:
+  - ajuste de strike por proventos em dinheiro na B3 (ADR-0002 — se não se confirmar, a ADR é reaberta);
+  - layout vigente do COTAHIST e fonte do estilo de exercício por série (ADR-0006);
+  - tabela de emolumentos da B3 e de corretagem da Necton para opções; tratamento de IR (ADR-0005).
+- Pendências da mesa (ADR-0004 e ADR-0005) podem ser fechadas durante a sprint; o código nasce parametrizado.
+
+### Escopo IN
+
+- **Kernel — volatilidade implícita:** `implied_vol(price, s, k, tau, r, q, *, is_call)` com Newton salvaguardado e bisseção como fallback, checagem prévia dos limites de não-arbitragem e retorno rico `ImpliedVolResult(sigma, status, iterations, method)` — preço fora dos limites ou não convergência viram **status**, nunca exceção nem `NaN`.
+- **Domínio — cadeia e preço executável:** VOs `OptionQuote` e `OptionChain` (ADR-0003); enum de qualidade `EXECUTAVEL` / `INDICATIVO` / `TEORICO` e `executable_premium(quote, side)` (ADR-0004); interpolação do smile por vencimento para o preço `TEORICO`.
+- **Domínio — precificação:** `supports()` aceita CALL + AMERICAN com marca de aproximação; PUT + AMERICAN segue rejeitada (ADR-0002).
+- **Domínio — renda (`domain/income/`):** métricas em forma fechada por estrutura — prêmio executável, rendimento no período, anualizado (252 du), excesso sobre o CDI, bruto e líquido de custos, proteção, breakeven, ganho máximo, perda máxima, delta e N(d2) rotulado como probabilidade risco-neutra, liquidez. Travas de crédito reutilizam `Strategy`, payoff, breakevens e `stress_grid` existentes (factory nova de trava vertical, nas duas direções).
+- **Port outbound:** `OptionChainPort.get_chain(underlying_symbol) -> OptionChain` + suíte de contrato herdável `OptionChainPortContract`.
+- **Adapter outbound:** `CotahistOptionChainAdapter` (parser de largura fixa, fator de cotação, zero → `None`, cache por pregão em `sqlite3`, vol realizada do subjacente).
+- **Configuração de custos:** tabelas de emolumentos e corretagem e alíquota de IR versionadas com data de vigência (ADR-0005).
+- **Use case:** `RankIncomeOpportunitiesService` com command (`underlyings`, estruturas, filtros: faixa de delta, número de vencimentos, mínimo de negócios, spread máximo, critério de ordenação) devolvendo candidatos ordenados com qualidade e motivo de exclusão quando aplicável.
+- **Adapter de apresentação:** relatório HTML estático via `python -m options_engine` (ADR-0007), com conversões de exibição só ali (decisão nº 8) e escape de todo texto externo.
+- **Documentação:** ARCH §4.1 (port novo), CONVENTIONS (unidades de rendimento, vol realizada vs implícita), README (como gerar o painel).
+
+### Escopo OUT
+
+- Dados intraday e adapters Necton (MT5, ProfitDLL, RTD) — ADR-0006.
+- Perna de ação no agregado `Strategy` (gráfico de payoff da venda coberta) — as métricas de venda coberta e put coberta são em forma fechada nesta sprint.
+- Precificação americana exata (Fase 6), dividendos discretos.
+- Margem real da B3 (largura da trava como proxy de risco), cálculo fiscal (o IR é estimativa por operação).
+- Persistência de histórico além do cache de pregões; API REST (Sprint 4); envio de ordens.
+
+### Entregáveis
+
+1. `implied_vol` no kernel com V&V próprio.
+2. VOs de cadeia, regra de preço executável e módulo `domain/income/`.
+3. `OptionChainPort` + suíte de contrato + `CotahistOptionChainAdapter` com cache.
+4. `RankIncomeOpportunitiesService` + configuração de custos.
+5. Relatório HTML gerado pela CLI, reprodutível para um pregão fixo (fixture COTAHIST versionada em `tests/data/`).
+6. ADRs 0002–0007 com premissas verificadas (ou reabertas) e pendências fechadas.
+
+### Critérios de Aceite (verificáveis)
+
+- [ ] Ida e volta preço → volatilidade implícita → preço dentro da tolerância do oráculo em toda a faixa testada; scipy como oráculo em `tests/oracle/`.
+- [ ] Preço abaixo do intrínseco descontado ou acima do limite superior → status próprio, sem exceção e sem `NaN` (teste dedicado).
+- [ ] `pytest -q tests/contract` verde com o adapter COTAHIST plugado na `OptionChainPortContract`.
+- [ ] Teste de fronteira: campo zerado na fonte chega ao domínio como `None` (nunca `0.0`).
+- [ ] Tabela da ADR-0004 coberta linha a linha por testes do domínio (cada situação × perna vendida/comprada).
+- [ ] CALL + AMERICAN precificada com marca de aproximação; PUT + AMERICAN → `UnsupportedExerciseStyleError`.
+- [ ] Métricas de rendimento com golden cases calculados à mão (put coberta, venda coberta, trava de alta com put, trava de baixa com call), brutos e líquidos.
+- [ ] `python -m options_engine` gera o HTML para o pregão da fixture; teste verifica que a saída é idêntica para a mesma entrada.
+- [ ] Grep-guard do core continua vazio; `mypy --strict` zero erros; ruff limpo; import-linter com contratos mantidos; cobertura ≥ 95% global e kernel em 100%.
+- [ ] CI verde; tag `v0.4.0`.
+
+### Casos de Teste (mínimo)
+
+- **Positivos:** cadeia completa com bid e ask → ranking só com `EXECUTAVEL`, ordenado pelo critério configurado; put coberta com prêmio / strike; anualização composta com `du` do calendário B3 atravessando feriado.
+- **Negativos:** ativo desconhecido → `UnknownSymbolError`; book cruzado (`bid > ask`) rejeitado pelo contrato; PUT americana rejeitada; arquivo COTAHIST truncado ou com linha de tamanho errado → erro explícito com número da linha.
+- **Borda:** vencimento hoje (0 du → sem anualização, valor intrínseco); série só com bid usada como perna comprada (fora do ranking); trava com crédito ≥ largura (arbitragem/dado inconsistente → excluída com motivo); volatilidade implícita sem convergência (série exibida como `TEORICO` ou excluída, nunca com número inventado); subjacente sem preço utilizável → fora do painel do dia com motivo.
+
+### Riscos
+
+- **Ranking que premia iliquidez:** maior rendimento costuma estar na série de spread largo. Mitigação: preço executável por lado (ADR-0004) + filtros de liquidez.
+- **Assincronia de fim de dia:** último negócio da opção bem anterior ao fechamento da ação distorce a volatilidade implícita. Mitigação: `last` só como `INDICATIVO`.
+- **Premissa da ADR-0002 não se confirmar** no spike: venda coberta volta a depender da Fase 6. Mitigação: spike é a primeira tarefa.
+- **Volatilidade implícita alta tem motivo** (balanço, evento): o painel mostra números, não recomendação; sem filtro de eventos nesta sprint.
+- **Escopo L em dedicação parcial:** timebox — kernel + domínio + adapter primeiro (60%), apresentação depois (40%).
+
+### Definition of Done
+
+DoD anteriores, mais: spike registrado nas ADRs; pendências da mesa fechadas; suíte de contrato do `OptionChainPort` documentada como gate para os adapters intraday; relatório HTML reprodutível documentado no README; tag `v0.4.0`.
+
+---
+
 ## Sprint 4 — API e Polimento de Portfólio (Esforço: **M**) → tag `v1.0.0`
 
 ### Objetivo
