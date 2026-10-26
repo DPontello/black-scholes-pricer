@@ -5,12 +5,16 @@ from datetime import UTC, datetime, timedelta, tzinfo
 
 import pytest
 
-from options_engine.domain.model.chain import OptionQuote
+from options_engine.domain.model.chain import OptionChain, OptionQuote
 from options_engine.domain.model.contracts import OptionContract
 from options_engine.domain.model.errors import InvalidDomainValueError
-from tests.domain._builders import make_contract
+from tests.domain._builders import make_contract, make_snapshot, make_terms
 
 INSTANTE = datetime(2026, 10, 23, 18, 0, tzinfo=UTC)
+
+
+def make_series(symbol: str, strike: float = 30.0, underlying: str = "PETR4") -> OptionContract:
+    return make_contract(symbol=symbol, terms=make_terms(underlying=underlying, strike=strike))
 
 
 def make_quote(
@@ -136,3 +140,60 @@ def test_cotacao_e_imutavel() -> None:
     quote = make_quote()
     with pytest.raises(FrozenInstanceError):
         quote.bid = 0.0  # type: ignore[misc]  # justificativa: atribuição ilegal é o próprio teste
+
+
+# ---------------------------------------------------------------------------
+# OptionChain — mesmo subjacente, tickers únicos
+# ---------------------------------------------------------------------------
+
+
+def test_cadeia_valida_preserva_o_subjacente_e_a_ordem_das_series() -> None:
+    quotes = (
+        make_quote(contract=make_series("PETRK300", strike=30.0)),
+        make_quote(contract=make_series("PETRK320", strike=32.0)),
+    )
+    chain = OptionChain(underlying=make_snapshot(), quotes=quotes)
+    assert chain.underlying.underlying_symbol == "PETR4"
+    assert chain.quotes == quotes
+
+
+def test_cadeia_vazia_e_legal() -> None:
+    """Subjacente sem séries no pregão é informação para o painel, não erro."""
+    chain = OptionChain(underlying=make_snapshot(), quotes=())
+    assert chain.quotes == ()
+
+
+def test_serie_de_outro_subjacente_e_irrepresentavel() -> None:
+    quotes = (
+        make_quote(contract=make_series("PETRK300")),
+        make_quote(contract=make_series("VALEK600", strike=60.0, underlying="VALE3")),
+    )
+    with pytest.raises(InvalidDomainValueError, match="VALEK600"):
+        OptionChain(underlying=make_snapshot(underlying_symbol="PETR4"), quotes=quotes)
+
+
+def test_ticker_repetido_e_irrepresentavel() -> None:
+    """Duas cotações da mesma série tornariam ambíguo o book dela."""
+    quotes = (
+        make_quote(contract=make_series("PETRK300"), bid=1.20),
+        make_quote(contract=make_series("PETRK320", strike=32.0)),
+        make_quote(contract=make_series("PETRK300"), bid=1.10),
+    )
+    with pytest.raises(InvalidDomainValueError, match="PETRK300"):
+        OptionChain(underlying=make_snapshot(), quotes=quotes)
+
+
+def test_termos_identicos_com_tickers_distintos_sao_legais() -> None:
+    """Identidade é o ticker (ARCH §2.2): mesmos termos, instrumentos distintos."""
+    quotes = (
+        make_quote(contract=make_series("PETRK300")),
+        make_quote(contract=make_series("PETRK300E")),
+    )
+    chain = OptionChain(underlying=make_snapshot(), quotes=quotes)
+    assert len(chain.quotes) == 2
+
+
+def test_cadeia_e_imutavel() -> None:
+    chain = OptionChain(underlying=make_snapshot(), quotes=(make_quote(),))
+    with pytest.raises(FrozenInstanceError):
+        chain.quotes = ()  # type: ignore[misc]  # justificativa: atribuição ilegal é o próprio teste

@@ -8,14 +8,16 @@ A tradução "zero da fonte → ``None``" acontece exclusivamente no adapter
 (ARCH §1) — aqui ``0`` é irrepresentável.
 """
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite
 
 from options_engine.domain.model.contracts import OptionContract
 from options_engine.domain.model.errors import InvalidDomainValueError
+from options_engine.domain.model.market import MarketSnapshot
 
-__all__ = ["OptionQuote"]
+__all__ = ["OptionChain", "OptionQuote"]
 
 
 def _is_tz_aware(timestamp: datetime) -> bool:
@@ -81,4 +83,45 @@ class OptionQuote:
             raise InvalidDomainValueError(
                 f"timestamp de {self.contract.symbol!r} deve ser tz-aware; "
                 f"recebido {self.timestamp!r}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class OptionChain:
+    """Todas as séries de um subjacente num pregão, junto com o próprio subjacente.
+
+    ``underlying`` reutiliza o ``MarketSnapshot`` (ADR-0003): a vol dele é a
+    vol REALIZADA de referência, calculada pelo adapter a partir do
+    histórico; a vol por série é a implícita, aplicada por perna com
+    ``dataclasses.replace(snapshot, volatility=...)`` — o VO não muda.
+
+    Invariantes: toda cotação é do subjacente do snapshot (cadeia que mistura
+    ativos-objeto é bug de adapter, não dado) e os tickers são únicos (duas
+    cotações da mesma série tornariam ambígua a pergunta "qual o bid de
+    PETRA250?"). Termos idênticos com tickers distintos são legais — são
+    instrumentos distintos (ARCH §2.2).
+
+    Cadeia vazia é legal: um subjacente sem séries no pregão é informação
+    para o painel, não estado inválido.
+    """
+
+    underlying: MarketSnapshot
+    quotes: tuple[OptionQuote, ...]
+
+    def __post_init__(self) -> None:
+        simbolo = self.underlying.underlying_symbol
+        alheias = sorted(
+            quote.contract.symbol
+            for quote in self.quotes
+            if quote.contract.terms.underlying != simbolo
+        )
+        if alheias:
+            raise InvalidDomainValueError(
+                f"cadeia de {simbolo!r} contém séries de outro subjacente: {alheias!r}"
+            )
+        contagem = Counter(quote.contract.symbol for quote in self.quotes)
+        duplicados = sorted(ticker for ticker, vezes in contagem.items() if vezes > 1)
+        if duplicados:
+            raise InvalidDomainValueError(
+                f"cadeia de {simbolo!r} repete séries (tickers devem ser únicos): {duplicados!r}"
             )
