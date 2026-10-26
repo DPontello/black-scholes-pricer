@@ -305,23 +305,30 @@ BID, ASK, LAST = 1.20, 1.25, 1.22
 
 
 @pytest.mark.parametrize(
-    ("bid", "ask", "trades", "side", "esperado"),
+    ("bid", "ask", "last", "trades", "side", "esperado"),
     [
         # bid e ask presentes: vendida usa bid, comprada usa ask — nunca o mid.
-        (BID, ASK, 37, Side.SELL, LegPremium(BID, EXEC)),
-        (BID, ASK, 37, Side.BUY, LegPremium(ASK, EXEC)),
+        (BID, ASK, LAST, 37, Side.SELL, LegPremium(BID, EXEC)),
+        (BID, ASK, LAST, 37, Side.BUY, LegPremium(ASK, EXEC)),
         # só bid: EXECUTAVEL só para venda; a perna comprada fica sem preço.
-        (BID, None, 37, Side.SELL, LegPremium(BID, EXEC)),
-        (BID, None, 37, Side.BUY, None),
+        (BID, None, LAST, 37, Side.SELL, LegPremium(BID, EXEC)),
+        (BID, None, LAST, 37, Side.BUY, None),
         # só ask: EXECUTAVEL só para compra; a perna vendida fica sem preço.
-        (None, ASK, 37, Side.SELL, None),
-        (None, ASK, 37, Side.BUY, LegPremium(ASK, EXEC)),
+        (None, ASK, LAST, 37, Side.SELL, None),
+        (None, ASK, LAST, 37, Side.BUY, LegPremium(ASK, EXEC)),
+        # As mesmas linhas EXECUTAVEL sem negócio e sem last: o prêmio não
+        # muda. Filtro de liquidez é parâmetro do comando (ADR-0004), não
+        # condição escondida na regra de preço.
+        (BID, ASK, None, 0, Side.SELL, LegPremium(BID, EXEC)),
+        (BID, ASK, None, 0, Side.BUY, LegPremium(ASK, EXEC)),
+        (BID, None, None, 0, Side.SELL, LegPremium(BID, EXEC)),
+        (None, ASK, None, 0, Side.BUY, LegPremium(ASK, EXEC)),
         # nenhum lado, com negócio no pregão: last, INDICATIVO nos dois lados.
-        (None, None, 37, Side.SELL, LegPremium(LAST, IND)),
-        (None, None, 37, Side.BUY, LegPremium(LAST, IND)),
+        (None, None, LAST, 37, Side.SELL, LegPremium(LAST, IND)),
+        (None, None, LAST, 37, Side.BUY, LegPremium(LAST, IND)),
         # nenhum lado, sem negócio: TEORICO, calculado fora da regra pura.
-        (None, None, 0, Side.SELL, None),
-        (None, None, 0, Side.BUY, None),
+        (None, None, LAST, 0, Side.SELL, None),
+        (None, None, LAST, 0, Side.BUY, None),
     ],
     ids=[
         "book-completo-vendida",
@@ -330,6 +337,10 @@ BID, ASK, LAST = 1.20, 1.25, 1.22
         "so-bid-comprada",
         "so-ask-vendida",
         "so-ask-comprada",
+        "book-completo-sem-negocio-vendida",
+        "book-completo-sem-negocio-comprada",
+        "so-bid-sem-negocio-vendida",
+        "so-ask-sem-negocio-comprada",
         "book-vazio-com-negocio-vendida",
         "book-vazio-com-negocio-comprada",
         "book-vazio-sem-negocio-vendida",
@@ -339,12 +350,14 @@ BID, ASK, LAST = 1.20, 1.25, 1.22
 def test_tabela_da_adr_0004(
     bid: float | None,
     ask: float | None,
+    last: float | None,
     trades: int,
     side: Side,
     esperado: LegPremium | None,
 ) -> None:
-    # `last` sempre presente: prova que ele só é usado na linha do book vazio.
-    quote = make_quote(bid=bid, ask=ask, last=LAST, trades=trades)
+    # `last` presente nas linhas com book prova que ele só é usado com o book
+    # vazio; as linhas sem negócio provam que EXECUTAVEL não depende dele.
+    quote = make_quote(bid=bid, ask=ask, last=last, trades=trades)
     assert executable_premium(quote, side) == esperado
 
 
@@ -380,6 +393,10 @@ def test_book_vazio_so_sem_nenhum_lado(bid: float | None, ask: float | None, vaz
 # Preços em centavos inteiros: valores exatos, a igualdade mede a regra.
 
 _LADO = st.one_of(st.none(), st.integers(min_value=1, max_value=5_000).map(lambda c: c / 100))
+# "Sem negócio" (trades == 0) como ramo próprio: sorteado só como o mínimo
+# de um intervalo, raramente coincide com book vazio e last presente — a
+# fronteira entre INDICATIVO e TEORICO ficaria fora da propriedade.
+_TRADES = st.one_of(st.just(0), st.integers(min_value=1, max_value=500))
 
 
 @st.composite
@@ -391,23 +408,29 @@ def st_quote(draw: st.DrawFn) -> OptionQuote:
         bid=bid,
         ask=ask,
         last=draw(_LADO),
-        trades=draw(st.integers(min_value=0, max_value=500)),
+        trades=draw(_TRADES),
     )
 
 
 @given(quote=st_quote(), side=st.sampled_from(Side))
-def test_preco_nunca_e_inventado(quote: OptionQuote, side: Side) -> None:
-    """O prêmio é sempre um preço observado da própria série (nunca mid,
-    nunca interpolado) e o last só aparece com o book vazio."""
+def test_preco_nunca_e_inventado_nem_omitido(quote: OptionQuote, side: Side) -> None:
+    """Bicondicional, sem saída antecipada: toda cotação cai em exatamente
+    uma linha da tabela, e o prêmio é sempre um preço observado da própria
+    série (nunca mid, nunca interpolado).
+
+    - lado agredido presente → esse lado, EXECUTAVEL (com qualquer
+      ``trades`` e ``last``);
+    - book vazio, ``trades > 0`` e ``last`` presente → ``last``, INDICATIVO;
+    - qualquer outro caso → ``None``.
+    """
+    lado_agredido = quote.bid if side is Side.SELL else quote.ask
     resultado = executable_premium(quote, side)
-    if resultado is None:
-        return
-    if resultado.quality is PriceQuality.EXECUTAVEL:
-        assert resultado.premium == (quote.bid if side is Side.SELL else quote.ask)
+    if lado_agredido is not None:
+        assert resultado == LegPremium(lado_agredido, PriceQuality.EXECUTAVEL)
+    elif quote.is_book_empty and quote.trades > 0 and quote.last is not None:
+        assert resultado == LegPremium(quote.last, PriceQuality.INDICATIVO)
     else:
-        assert resultado.quality is PriceQuality.INDICATIVO
-        assert quote.is_book_empty
-        assert resultado.premium == quote.last
+        assert resultado is None
 
 
 @given(quote=st_quote())
