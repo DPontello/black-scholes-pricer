@@ -7,14 +7,19 @@ vem da cota do solver. O oráculo independente (scipy) vive em
 ``tests/oracle/scipy_oracle.py``.
 
 Camadas: contrato de status (cada desfecho com teste dedicado), entradas
-ilegais, ida e volta em grade determinística e rótulos do solver.
+ilegais, ida e volta em grade determinística, rótulos do solver e
+propriedades Hypothesis (ida e volta no domínio identificável; preço
+arbitrário sempre vira status, nunca exceção nem NaN).
 
 Todas as tolerâncias vêm de ``tests/_tolerances.py`` — nenhuma inline.
 """
 
 import math
+from collections.abc import Callable
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from options_engine.domain.kernel.black_scholes import bs_outputs, bs_price
 from options_engine.domain.kernel.implied_vol import (
@@ -286,3 +291,87 @@ def test_sigma_tol_frouxo_converge_em_menos_iteracoes() -> None:
     assert loose.iterations < default.iterations
     noise = iv_sigma_abs_tol(IV_ROUNDOFF_ULPS * EPS_MACHINE * s, out.vega_per_vol_unit)
     assert abs(loose.sigma - sigma) <= loose_tol + noise
+
+
+# ---------------------------------------------------------------------------
+# 5. PROPRIEDADES (Hypothesis)
+# ---------------------------------------------------------------------------
+# Domínio de identificabilidade: fora dele o valor-tempo cai abaixo do ulp do
+# preço e o preço não carrega informação sobre sigma (limitações no docstring
+# de implied_vol.py) — não é tolerância, é o domínio da propriedade.
+_MAX_STD_MONEYNESS = 3.0  # |ln(F/K)| <= 3 desvios-padrão da vol total
+_MAX_TOTAL_VOL = 3.0  # sigma·sqrt(tau) <= 3
+
+
+@st.composite
+def _identifiable_params(draw: st.DrawFn) -> IVParams:
+    s = draw(st.floats(1.0, 5000.0))
+    tau = draw(st.floats(1.0 / 252.0, 30.0))
+    sigma = draw(st.floats(0.01, min(2.0, _MAX_TOTAL_VOL / math.sqrt(tau))))
+    z = draw(st.floats(-_MAX_STD_MONEYNESS, _MAX_STD_MONEYNESS))
+    r = draw(st.floats(-0.05, 0.20))  # inclui r negativo e CDI alto
+    q = draw(st.one_of(st.just(0.0), st.floats(0.0, 0.12)))
+    return s, _strike_at_std_moneyness(s, tau, r, sigma, q, z), tau, r, sigma, q
+
+
+def _regime(z: float, tau: float, r: float, sigma: float, q: float) -> IVParams:
+    return 100.0, _strike_at_std_moneyness(100.0, tau, r, sigma, q, z), tau, r, sigma, q
+
+
+# Regimes nomeados, sempre exercitados além do sorteio (corpus explícito):
+# ATM curto com r alto, ITM longo com carry, OTM curto, OTM longo com carry.
+_NAMED_REGIMES = [
+    _regime(0.0, 1.0 / 252.0, 0.15, 0.30, 0.0),
+    _regime(2.0, 30.0, 0.15, 0.25, 0.04),
+    _regime(-2.5, 1.0 / 252.0, 0.05, 0.50, 0.0),
+    _regime(-2.0, 10.0, 0.15, 0.40, 0.04),
+]
+
+_RoundTripTest = Callable[[IVParams, bool], None]
+
+
+def _with_named_regimes(test: _RoundTripTest) -> _RoundTripTest:
+    """Aplica ``@example`` para cada regime nomeado, em call e put."""
+    for params in _NAMED_REGIMES:
+        for is_call in (True, False):
+            test = example(params=params, is_call=is_call)(test)
+    return test
+
+
+@_with_named_regimes
+@given(params=_identifiable_params(), is_call=st.booleans())
+def test_ida_e_volta_hypothesis(params: IVParams, is_call: bool) -> None:
+    _assert_round_trip(params, is_call=is_call)
+
+
+@given(params=_identifiable_params(), is_call=st.booleans(), fraction=st.floats(0.0, 1.5))
+def test_qualquer_preco_vira_status_nunca_excecao_nem_nan(
+    params: IVParams, is_call: bool, fraction: float
+) -> None:
+    """Preço arbitrário em [0, 1.5·limite superior]: o status segue os limites.
+
+    Critério de aceite da Sprint 5: fora dos limites -> status próprio, sem
+    exceção e sem NaN; dentro -> CONVERGED e o preço é reproduzido.
+    """
+    s, k, tau, r, _, q = params
+    upper = s * math.exp(-q * tau) if is_call else k * math.exp(-r * tau)
+    lower = bs_price(s, k, tau, r, 0.0, q, is_call=is_call)
+    price = fraction * upper
+    result = implied_vol(price, s, k, tau, r, q, is_call=is_call)
+    if price < lower:
+        _assert_unsolved(result, ImpliedVolStatus.BELOW_INTRINSIC)
+    elif price >= upper:
+        _assert_unsolved(result, ImpliedVolStatus.ABOVE_UPPER_BOUND)
+    else:
+        assert result.status is ImpliedVolStatus.CONVERGED, result
+        assert result.sigma is not None
+        assert math.isfinite(result.sigma)
+        assert result.sigma >= 0.0
+        repriced = bs_price(s, k, tau, r, result.sigma, q, is_call=is_call)
+        assert_close(
+            repriced,
+            price,
+            rel=0.0,
+            abs_=ABS_IV_ROUNDTRIP_PRICE_FLOOR * max(s, k),
+            label=f"preço reavaliado: {params!r} is_call={is_call} -> {result!r}",
+        )
