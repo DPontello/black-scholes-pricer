@@ -4,6 +4,8 @@ Estruturas de renda e a base de capital (denominador) de cada uma:
 
 - put coberta (``cash_secured_put_metrics``): prêmio / strike — o capital
   reservado em caixa, a base mais conservadora (ADR-0005 §1).
+- venda coberta (``covered_call_metrics``): prêmio / spot — o capital
+  empatado na ação (ADR-0005 item 5).
 
 Unidades no nome do campo (CONVENTIONS — unidade é contrato), todas em
 DECIMAL (0.02 == 2%), nunca pontos percentuais:
@@ -53,6 +55,7 @@ __all__ = [
     "IncomeStructure",
     "annualize_yield_252",
     "cash_secured_put_metrics",
+    "covered_call_metrics",
     "excess_over_cdi_annual_252",
 ]
 
@@ -340,6 +343,57 @@ def cash_secured_put_metrics(
         max_gain_per_share=premium_per_share,
         max_loss_per_share=-(strike - premium_per_share),
         downside_protection=None,
+        business_days=business_days,
+        cdi=cdi,
+        cost_schedule=cost_schedule,
+        reference_shares=reference_shares,
+    )
+
+
+def covered_call_metrics(
+    *,
+    spot: float,
+    strike: float,
+    premium_per_share: float,
+    business_days: int,
+    cdi: RiskFreeRate,
+    cost_schedule: CostSchedule,
+    reference_shares: int = REFERENCE_POSITION_SHARES,
+) -> IncomeMetrics:
+    """Venda coberta: ação em carteira + call vendida, em forma fechada.
+
+    Por ação (decisão da mesa, ADR-0005 item 5): rendimento = prêmio / spot
+    (o capital empatado na ação); proteção = prêmio / spot — fração de queda
+    do spot coberta pelo prêmio (mesmo número do rendimento por causa da
+    base escolhida, semântica distinta); breakeven = spot - prêmio; ganho
+    máximo = strike - spot + prêmio (exercida); pior resultado =
+    -(spot - prêmio) (ação a zero).
+
+    Custos: uma ordem, só a perna de opção — a compra da ação e o exercício
+    ficam fora (a perna de ação não é modelada na Sprint 5).
+
+    Limites de não-arbitragem: ``max(spot - strike, 0) <= prêmio < spot`` —
+    call abaixo do intrínseco ou valendo o spot inteiro é dado inconsistente
+    -> ``InvalidDomainValueError``.
+    """
+    _exige_preco("spot", spot)
+    _exige_preco("strike", strike)
+    _exige_premio(premium_per_share)
+    if not (max(spot - strike, 0.0) <= premium_per_share < spot):
+        raise InvalidDomainValueError(
+            f"venda coberta exige intrínseco <= prêmio < spot (arbitragem ou dado "
+            f"inconsistente); recebido prêmio={premium_per_share!r}, spot={spot!r}, "
+            f"strike={strike!r}"
+        )
+    return _metricas(
+        IncomeStructure.COVERED_CALL,
+        premium_per_share=premium_per_share,
+        capital_base_per_share=spot,
+        leg_premiums_per_share=(premium_per_share,),
+        breakeven=spot - premium_per_share,
+        max_gain_per_share=fsum((strike, -spot, premium_per_share)),
+        max_loss_per_share=-(spot - premium_per_share),
+        downside_protection=premium_per_share / spot,
         business_days=business_days,
         cdi=cdi,
         cost_schedule=cost_schedule,
