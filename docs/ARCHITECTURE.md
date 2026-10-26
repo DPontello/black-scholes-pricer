@@ -309,7 +309,7 @@ black-scholes-pricer/
 | # | Decisão | Resposta da mesa | Onde se materializa |
 |---|---|---|---|
 | 1 | Day count default | **`BUSINESS_252`** (aderência B3) | `DayCountConvention`; golden tests do Hull continuam usando frações de ano diretas (`CALENDAR_365` onde aplicável) |
-| 2 | Escopo de instrumentos | **Europeias only no MVP**; americano estritamente na Fase 6 | `ExerciseStyle` + `supports()` + `UnsupportedExerciseStyleError` |
+| 2 | Escopo de instrumentos | **Europeias only no MVP**; americano estritamente na Fase 6. *Emenda 2026-10-26 ([ADR-0002](adr/0002-calls-americanas-como-europeias.md)): calls americanas de ação aceitas como aproximação europeia; puts americanas rejeitadas* | `ExerciseStyle` + `supports()` + `UnsupportedExerciseStyleError` |
 | 3 | Direção do Iron Condor | **Aceita ambas** (crédito e débito); teste de vega **condicionado à direção** | Factory `iron_condor()`; propriedades de vol em `tests/domain/` |
 | 4 | Origem do prêmio da leg | **Opcional, informado pelo chamador**; sem prêmio → apenas payoff bruto | `StrategyLeg.premium: float \| None`; `payoff_at_expiry` vs `pnl` |
 | 5 | Posição vencida no grid | **Intrínseco descontado** | Ramo `tau = 0` do kernel (tabela §6) |
@@ -320,3 +320,5 @@ black-scholes-pricer/
 **Restrições conscientes do MVP (sinalizadas, não escondidas):** vol flat por subjacente (sem smile — cada strike de um Iron Condor real tem vol própria; primeira extensão natural junto com implied vol na Fase 5); sem dividendos no modelo (mas `q` na assinatura desde o dia 1); sem persistência; sem streaming.
 
 Cada decisão acima deve virar ADR curto em `docs/adr/` quando a sprint correspondente a materializar.
+
+**Painel de Renda (Sprint 5, mesa 2026-10-26):** as decisões nº 9 a 16 — prioridade, calls americanas, `OptionChainPort`, regra de livro vazio, métricas de rendimento, fontes de dados, painel e universo — estão na tabela do [ROADMAP](ROADMAP.md) e nas [ADRs 0001–0007](adr/README.md). Esta seção e o §4.1 recebem o detalhe de arquitetura quando a sprint as materializar; até lá, as ADRs são a fonte de verdade. A restrição "vol flat por subjacente" acima é a que a Sprint 5 remove (volatilidade implícita por série).
