@@ -12,7 +12,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from hypothesis import given
+from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from options_engine.domain.income import (
@@ -21,10 +21,27 @@ from options_engine.domain.income import (
     IncomeStructure,
     cash_secured_put_metrics,
     covered_call_metrics,
+    credit_spread_metrics,
 )
 from options_engine.domain.model.conventions import Compounding, RiskFreeRate
-from options_engine.domain.model.errors import InvalidDomainValueError
-from tests._tolerances import ABS_INCOME, INEQ_SLACK, REL_INCOME, assert_close
+from options_engine.domain.model.enums import OptionType, Side
+from options_engine.domain.model.errors import (
+    InvalidDomainValueError,
+    InvalidStrategyError,
+    MissingPremiumError,
+)
+from options_engine.domain.model.factories import vertical_spread
+from options_engine.domain.model.strategy import Strategy
+from options_engine.domain.simulation import payoff_profile
+from tests._tolerances import (
+    ABS_BREAKEVEN,
+    ABS_INCOME,
+    INEQ_SLACK,
+    REL_BREAKEVEN,
+    REL_INCOME,
+    assert_close,
+)
+from tests.domain._builders import make_straddle_legs, make_vertical_legs
 from tests.income._builders import make_cdi, make_cost_schedule, zero_cost_schedule
 
 
@@ -287,6 +304,223 @@ def test_venda_coberta_entradas_invalidas(overrides: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Trava de crédito — decisão da mesa: crédito / (largura - crédito)
+# ---------------------------------------------------------------------------
+
+
+def _bull_put(premiums: tuple[float, float] | None = (0.50, 0.90), quantity: int = 10) -> Strategy:
+    """Trava de alta com put: compra put 28 a 0,50, vende put 30 a 0,90."""
+    return vertical_spread(make_vertical_legs(premiums=premiums, quantity=quantity))
+
+
+def _bear_call(premiums: tuple[float, float] = (1.10, 0.35), quantity: int = 10) -> Strategy:
+    """Trava de baixa com call: vende call 32 a 1,10, compra call 34 a 0,35."""
+    return vertical_spread(
+        make_vertical_legs(
+            option_type=OptionType.CALL,
+            direction=Side.SELL,
+            strikes=(32.0, 34.0),
+            premiums=premiums,
+            quantity=quantity,
+        )
+    )
+
+
+def _spread(trava: Strategy, **overrides: Any) -> IncomeMetrics:
+    kwargs: dict[str, Any] = {
+        "business_days": 63,
+        "cdi": make_cdi(0.12),
+        "cost_schedule": make_cost_schedule(),
+    }
+    kwargs.update(overrides)
+    return credit_spread_metrics(trava, **kwargs)
+
+
+def test_trava_de_alta_com_put_golden_bruto() -> None:
+    """Compra put 28 a 0,50 e vende put 30 a 0,90, 63 du, CDI 12%.
+
+    crédito               = 0,90 - 0,50                     = 0,40
+    largura / risco       = 30 - 28 = 2,00;  2,00 - 0,40    = 1,60
+    retorno sobre risco   = 0,40 / 1,60                     = 0,25
+    anualizado            = 1,25^(252/63) - 1 = 1,25^4 - 1  = 1,44140625
+    excesso sobre o CDI   = 1,44140625 - 0,12               = 1,32140625
+    breakeven             = 30 - 0,40                       = 29,60
+    ganho máximo          = 0,40 x 100                      = 40,00
+    pior resultado        = -1,60 x 100                     = -160,00
+    """
+    m = _spread(_bull_put())
+    assert m.structure is IncomeStructure.CREDIT_SPREAD
+    _close(m.premium_per_share, 0.40, "crédito")
+    _close(m.capital_base_per_share, 1.60, "risco")
+    _close(m.yield_period, 0.25, "retorno sobre risco")
+    _close(m.yield_annual_252, 1.44140625, "anualizado")
+    _close(m.excess_over_cdi_annual_252, 1.32140625, "excesso")
+    _close(m.breakeven, 29.60, "breakeven")
+    _close(m.max_gain_per_position, 40.0, "ganho máximo")
+    _close(m.max_loss_per_position, -160.0, "pior resultado")
+    assert m.downside_protection is None
+
+
+def test_trava_de_alta_com_put_golden_liquido() -> None:
+    """Mesma trava, líquida de custos (100 ações, 2 ordens).
+
+    custos = 0,0005 x (50 + 90) = 0,07 (emol.) + 10,00 (corret.)
+             + 0,15 x (40,00 - 10,07) = 4,4895 (IR)            = 14,5595
+    resultado líquido   = 40,00 - 14,5595                     = 25,4405
+    retorno líquido     = 25,4405 / 160,00                    = 0,159003125
+    anualizado líquido  = 1,159003125^4 - 1                   = 0,804423305823195512...
+    excesso líquido     = 0,8044233058231955 - 0,12           = 0,6844233058231955
+    """
+    m = _spread(_bull_put())
+    _close(m.costs.total, 14.5595, "custos")
+    _close(m.net_yield_period, 0.159003125, "retorno líquido")
+    _close(m.net_yield_annual_252, 0.8044233058231955126, "anualizado líquido")
+    _close(m.net_excess_over_cdi_annual_252, 0.6844233058231955126, "excesso líquido")
+
+
+def test_trava_de_baixa_com_call_golden_bruto_e_liquido() -> None:
+    """Vende call 32 a 1,10 e compra call 34 a 0,35, 126 du, CDI 12%.
+
+    crédito = 1,10 - 0,35 = 0,75;  risco = 2,00 - 0,75 = 1,25
+    retorno sobre risco = 0,75 / 1,25 = 0,6;  anualizado = 1,6^2 - 1 = 1,56
+    excesso = 1,56 - 0,12 = 1,44;  breakeven = 32 + 0,75 = 32,75
+    ganho máximo = 75,00;  pior resultado = -125,00
+    custos = 0,0005 x (110 + 35) = 0,0725 + 10,00
+             + 0,15 x (75,00 - 10,0725) = 9,739125              = 19,811625
+    retorno líquido = (75,00 - 19,811625) / 125,00 = 55,188375 / 125 = 0,441507
+    anualizado líquido = 1,441507^2 - 1 = 1,077942431049;  excesso = 0,957942431049
+    """
+    m = _spread(_bear_call(), business_days=126)
+    _close(m.premium_per_share, 0.75, "crédito")
+    _close(m.yield_period, 0.6, "retorno sobre risco")
+    _close(m.yield_annual_252, 1.56, "anualizado")
+    _close(m.excess_over_cdi_annual_252, 1.44, "excesso")
+    _close(m.breakeven, 32.75, "breakeven")
+    _close(m.max_gain_per_position, 75.0, "ganho máximo")
+    _close(m.max_loss_per_position, -125.0, "pior resultado")
+    _close(m.costs.total, 19.811625, "custos")
+    _close(m.net_yield_period, 0.441507, "retorno líquido")
+    _close(m.net_yield_annual_252, 1.077942431049, "anualizado líquido")
+    _close(m.net_excess_over_cdi_annual_252, 0.957942431049, "excesso líquido")
+
+
+@pytest.mark.parametrize("trava", [_bull_put(quantity=100), _bear_call(quantity=100)])
+def test_trava_bate_com_o_perfil_de_payoff_do_motor(trava: Strategy) -> None:
+    """Oráculo independente: breakeven e extremos do kernel de payoff (forma fechada).
+
+    Com 100 contratos nas legs, o perfil do motor está na mesma escala dos
+    valores por posição (tamanho de referência de 100 ações).
+    """
+    m = _spread(trava)
+    perfil = payoff_profile(trava, (20.0, 40.0))
+    assert perfil.breakevens is not None
+    assert len(perfil.breakevens) == 1
+    assert_close(
+        m.breakeven, perfil.breakevens[0], rel=REL_BREAKEVEN, abs_=ABS_BREAKEVEN, label="BE"
+    )
+    assert perfil.max_gain is not None
+    assert perfil.max_loss is not None
+    _close(m.max_gain_per_position, perfil.max_gain, "ganho máximo")
+    _close(m.max_loss_per_position, perfil.max_loss, "pior resultado")
+
+
+def test_quantidade_das_legs_nao_muda_as_metricas() -> None:
+    """Métricas normalizadas por ação e reescaladas para o tamanho de referência."""
+    dez, mil = _spread(_bull_put(quantity=10)), _spread(_bull_put(quantity=1000))
+    _close(mil.yield_period, dez.yield_period, "rendimento")
+    _close(mil.net_yield_period, dez.net_yield_period, "rendimento líquido")
+    _close(mil.max_loss_per_position, dez.max_loss_per_position, "pior resultado")
+
+
+def test_trava_aceita_estrutura_montada_fora_da_factory() -> None:
+    """Legs fora de ordem num Strategy cru: a composição é revalidada e canonizada."""
+    cru = Strategy.create("bull put manual", list(reversed(make_vertical_legs())))
+    m = _spread(cru)
+    _close(m.breakeven, 29.60, "breakeven")
+
+
+def test_trava_vencendo_hoje_nao_anualiza() -> None:
+    m = _spread(_bull_put(), business_days=0)
+    _close(m.yield_period, 0.25, "retorno sobre risco")
+    assert m.yield_annual_252 is None
+    assert m.net_yield_annual_252 is None
+    assert m.excess_over_cdi_annual_252 is None
+    assert m.net_excess_over_cdi_annual_252 is None
+
+
+def test_trava_com_credito_zero() -> None:
+    """Prêmios iguais: crédito 0, retorno 0, breakeven no strike vendido, risco = largura.
+
+    líquido = -(0,0005 x (50 + 50) + 10,00) / 200,00 = -10,05 / 200 = -0,05025
+    """
+    m = _spread(_bull_put(premiums=(0.50, 0.50)))
+    _close(m.premium_per_share, 0.0, "crédito")
+    _close(m.yield_period, 0.0, "retorno")
+    _close(m.breakeven, 30.0, "breakeven")
+    _close(m.max_loss_per_position, -200.0, "pior resultado")
+    _close(m.net_yield_period, -0.05025, "retorno líquido")
+    assert m.costs.income_tax == 0.0
+
+
+@pytest.mark.parametrize("premiums", [(0.10, 2.10), (0.10, 2.50)])
+def test_trava_com_credito_maior_ou_igual_a_largura_e_inconsistente(
+    premiums: tuple[float, float],
+) -> None:
+    """Crédito >= largura: risco <= 0 (arbitragem/dado inconsistente) -> erro, nunca inf."""
+    with pytest.raises(InvalidDomainValueError):
+        _spread(_bull_put(premiums=premiums))
+
+
+def test_trava_de_credito_com_premios_formando_debito_e_inconsistente() -> None:
+    """Put 30 vendida mais barata que a put 28 comprada: viola não-arbitragem."""
+    with pytest.raises(InvalidDomainValueError):
+        _spread(_bull_put(premiums=(0.50, 0.40)))
+
+
+@pytest.mark.parametrize(
+    ("option_type", "strikes", "premiums"),
+    [
+        (OptionType.PUT, (28.0, 30.0), (0.50, 0.90)),  # trava de baixa com put
+        (OptionType.CALL, (32.0, 34.0), (1.10, 0.35)),  # trava de alta com call
+    ],
+)
+def test_trava_de_debito_nao_tem_metrica_de_credito(
+    option_type: OptionType, strikes: tuple[float, float], premiums: tuple[float, float]
+) -> None:
+    debito = vertical_spread(
+        make_vertical_legs(
+            option_type=option_type, direction=Side.BUY, strikes=strikes, premiums=premiums
+        )
+    )
+    with pytest.raises(InvalidStrategyError):
+        _spread(debito)
+
+
+def test_estrutura_que_nao_e_trava_e_rejeitada() -> None:
+    straddle = Strategy.create("straddle", make_straddle_legs(direction=Side.SELL))
+    with pytest.raises(InvalidStrategyError):
+        _spread(straddle)
+
+
+def test_trava_sem_premio_nao_tem_metrica() -> None:
+    with pytest.raises(MissingPremiumError):
+        _spread(_bull_put(premiums=None))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"business_days": -1},
+        {"reference_shares": 0},
+        {"cdi": RiskFreeRate(0.12, Compounding.CONTINUOUS)},
+    ],
+)
+def test_trava_entradas_invalidas(overrides: dict[str, Any]) -> None:
+    with pytest.raises(InvalidDomainValueError):
+        _spread(_bull_put(), **overrides)
+
+
+# ---------------------------------------------------------------------------
 # IncomeMetrics — invariantes do VO de resultado
 # ---------------------------------------------------------------------------
 
@@ -421,5 +655,97 @@ def test_venda_coberta_mais_custo_menos_liquido(
     }
     m_barata = _cc(cost_schedule=barata, **comum)
     m_cara = _cc(cost_schedule=_somar_tabelas(barata, acrescimo), **comum)
+    _assert_todos_nao_pioram(m_cara, m_barata)
+    _close(m_cara.yield_period, m_barata.yield_period, "bruto independe do custo")
+
+
+# Travas: corretagem pequena frente ao crédito (largura >= 0,50, crédito >=
+# 10% da largura) — mantém o retorno líquido acima de -100% (anualizável) e,
+# no teste de prêmio, o resultado líquido >= 0, região onde o retorno sobre
+# risco líquido é monótono no crédito (com resultado NEGATIVO, encolher o
+# risco torna a razão mais negativa — propriedade da razão, não bug).
+_largura = st.integers(min_value=50, max_value=1_000).map(lambda centavos: centavos / 100.0)
+_fracao_da_largura = st.floats(min_value=0.1, max_value=0.9)
+_premio_comprado = st.integers(min_value=0, max_value=200).map(lambda centavos: centavos / 100.0)
+_tabela_trava = st.builds(
+    make_cost_schedule,
+    exchange_fee_rate=st.floats(min_value=0.0, max_value=0.01),
+    brokerage_per_order=st.floats(min_value=0.0, max_value=2.0),
+    income_tax_rate=st.floats(min_value=0.0, max_value=0.3),
+)
+
+
+def _trava_de_credito(
+    option_type: OptionType, largura: float, credito: float, premio_comprado: float
+) -> Strategy:
+    """Trava de crédito com strike baixo 30 e prêmio vendido = comprado + crédito."""
+    vendido = premio_comprado + credito
+    premios = (
+        (premio_comprado, vendido) if option_type is OptionType.PUT else (vendido, premio_comprado)
+    )
+    return vertical_spread(
+        make_vertical_legs(
+            option_type=option_type,
+            direction=Side.SELL,
+            strikes=(30.0, 30.0 + largura),
+            premiums=premios,
+        )
+    )
+
+
+@given(
+    option_type=st.sampled_from([OptionType.PUT, OptionType.CALL]),
+    largura=_largura,
+    f1=_fracao_da_largura,
+    f2=_fracao_da_largura,
+    premio_comprado=_premio_comprado,
+    du=_du,
+    tabela=_tabela_trava,
+)
+def test_trava_mais_credito_mais_retorno(
+    option_type: OptionType,
+    largura: float,
+    f1: float,
+    f2: float,
+    premio_comprado: float,
+    du: int,
+    tabela: CostSchedule,
+) -> None:
+    baixo, alto = sorted((f1 * largura, f2 * largura))
+    menor = _spread(
+        _trava_de_credito(option_type, largura, baixo, premio_comprado),
+        business_days=du,
+        cost_schedule=tabela,
+    )
+    assume(menor.net_yield_period >= 0.0)
+    maior = _spread(
+        _trava_de_credito(option_type, largura, alto, premio_comprado),
+        business_days=du,
+        cost_schedule=tabela,
+    )
+    _assert_todos_nao_pioram(menor, maior)
+
+
+@given(
+    option_type=st.sampled_from([OptionType.PUT, OptionType.CALL]),
+    largura=_largura,
+    fracao=_fracao_da_largura,
+    premio_comprado=_premio_comprado,
+    du=_du,
+    barata=_tabela_trava,
+    acrescimo=_tabela_trava,
+)
+def test_trava_mais_custo_menos_liquido(
+    option_type: OptionType,
+    largura: float,
+    fracao: float,
+    premio_comprado: float,
+    du: int,
+    barata: CostSchedule,
+    acrescimo: CostSchedule,
+) -> None:
+    trava = _trava_de_credito(option_type, largura, fracao * largura, premio_comprado)
+    m_barata = _spread(trava, business_days=du, cost_schedule=barata)
+    m_cara = _spread(trava, business_days=du, cost_schedule=_somar_tabelas(barata, acrescimo))
     _assert_todos_nao_pioram(m_cara, m_barata)
     _close(m_cara.yield_period, m_barata.yield_period, "bruto independe do custo")

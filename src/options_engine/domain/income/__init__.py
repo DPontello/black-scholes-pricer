@@ -17,6 +17,7 @@ from options_engine.domain.income.metrics import (
     annualize_yield_252,
     cash_secured_put_metrics,
     covered_call_metrics,
+    credit_spread_metrics,
     excess_over_cdi_annual_252,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "annualize_yield_252",
     "cash_secured_put_metrics",
     "covered_call_metrics",
+    "credit_spread_metrics",
     "estimate_operation_costs",
     "excess_over_cdi_annual_252",
 ]

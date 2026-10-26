@@ -6,6 +6,9 @@ Estruturas de renda e a base de capital (denominador) de cada uma:
   reservado em caixa, a base mais conservadora (ADR-0005 §1).
 - venda coberta (``covered_call_metrics``): prêmio / spot — o capital
   empatado na ação (ADR-0005 item 5).
+- trava de crédito (``credit_spread_metrics``): crédito / (largura -
+  crédito) — retorno sobre risco, com a largura entre strikes como proxy do
+  risco; a margem real da B3 não é modelada (ADR-0005 item 6).
 
 Unidades no nome do campo (CONVENTIONS — unidade é contrato), todas em
 DECIMAL (0.02 == 2%), nunca pontos percentuais:
@@ -48,7 +51,11 @@ from options_engine.domain.model.conventions import (
     DayCountConvention,
     RiskFreeRate,
 )
-from options_engine.domain.model.errors import InvalidDomainValueError
+from options_engine.domain.model.enums import OptionType, Side
+from options_engine.domain.model.errors import InvalidDomainValueError, InvalidStrategyError
+from options_engine.domain.model.factories import vertical_spread, vertical_spread_direction
+from options_engine.domain.model.strategy import Strategy
+from options_engine.domain.simulation import net_premium_cashflow
 
 __all__ = [
     "IncomeMetrics",
@@ -56,6 +63,7 @@ __all__ = [
     "annualize_yield_252",
     "cash_secured_put_metrics",
     "covered_call_metrics",
+    "credit_spread_metrics",
     "excess_over_cdi_annual_252",
 ]
 
@@ -394,6 +402,73 @@ def covered_call_metrics(
         max_gain_per_share=fsum((strike, -spot, premium_per_share)),
         max_loss_per_share=-(spot - premium_per_share),
         downside_protection=premium_per_share / spot,
+        business_days=business_days,
+        cdi=cdi,
+        cost_schedule=cost_schedule,
+        reference_shares=reference_shares,
+    )
+
+
+def credit_spread_metrics(
+    spread: Strategy,
+    *,
+    business_days: int,
+    cdi: RiskFreeRate,
+    cost_schedule: CostSchedule,
+    reference_shares: int = REFERENCE_POSITION_SHARES,
+) -> IncomeMetrics:
+    """Trava de crédito — trava de alta com put ou trava de baixa com call.
+
+    Reutiliza o agregado (ROADMAP Sprint 5): a composição é revalidada por
+    ``vertical_spread``, a direção vem de ``vertical_spread_direction`` e o
+    crédito de ``net_premium_cashflow`` (sinal e prêmios num único lugar,
+    CONVENTIONS §4-5), normalizado por ação pela quantidade das pernas — os
+    valores por posição usam ``reference_shares``, não a quantidade das legs.
+
+    Por ação (decisão da mesa, ADR-0005 item 6): largura = K alto - K baixo;
+    risco = largura - crédito (largura como proxy — a margem da B3 não é
+    modelada); retorno sobre risco = crédito / risco; breakeven = K alto -
+    crédito (puts) ou K baixo + crédito (calls); ganho máximo = crédito;
+    pior resultado = -risco. Duas ordens; emolumento sobre cada perna.
+
+    Rejeições, todas com motivo explícito (o painel exclui o candidato):
+
+    - trava de débito ou estrutura que não é trava -> ``InvalidStrategyError``;
+    - prêmio ausente em alguma perna -> ``MissingPremiumError``;
+    - crédito < 0 (prêmios formam débito) ou crédito >= largura (risco nulo
+      ou negativo) -> ``InvalidDomainValueError``: arbitragem ou dado
+      inconsistente, nunca um retorno infinito.
+    """
+    trava = vertical_spread(spread.legs, name=spread.name)
+    if vertical_spread_direction(trava) is not Side.SELL:
+        raise InvalidStrategyError(
+            f"métricas de trava de crédito exigem a direção crédito (trava de alta com "
+            f"put ou de baixa com call); recebido {trava.name!r}"
+        )
+    perna_baixa, perna_alta = trava.legs
+    credito = net_premium_cashflow(trava) / perna_baixa.quantity
+    largura = perna_alta.terms.strike - perna_baixa.terms.strike
+    if not (0.0 <= credito < largura):
+        raise InvalidDomainValueError(
+            f"trava de crédito exige 0 <= crédito < largura (arbitragem ou dado "
+            f"inconsistente); recebido crédito={credito!r}, largura={largura!r}"
+        )
+    if perna_baixa.terms.option_type is OptionType.PUT:
+        breakeven = perna_alta.terms.strike - credito
+    else:
+        breakeven = perna_baixa.terms.strike + credito
+    # Todas as pernas têm prêmio (net_premium_cashflow já exigiu); o filtro
+    # só estreita o tipo para float.
+    premios = tuple(leg.premium for leg in trava.legs if leg.premium is not None)
+    return _metricas(
+        IncomeStructure.CREDIT_SPREAD,
+        premium_per_share=credito,
+        capital_base_per_share=largura - credito,
+        leg_premiums_per_share=premios,
+        breakeven=breakeven,
+        max_gain_per_share=credito,
+        max_loss_per_share=-(largura - credito),
+        downside_protection=None,
         business_days=business_days,
         cdi=cdi,
         cost_schedule=cost_schedule,
