@@ -297,6 +297,8 @@ DoD anteriores, mais: spike registrado nas ADRs; pendências da mesa fechadas; s
 
 ## Sprint 4 — API e Polimento de Portfólio (Esforço: **M**) → tag `v1.0.0`
 
+> Executada **depois da Sprint 5** ([ADR-0001](adr/0001-renda-antes-da-api.md)). Os endpoints passam a poder expor também o use case de renda.
+
 ### Objetivo
 
 Expor o motor via FastAPI como **adapter inbound fino** (pydantic só na borda, domínio intocado), mapear exceções de domínio para HTTP e transformar o repositório em peça de portfólio: benchmark documentado, README com diagrama e badges, ADRs das decisões-chave.
@@ -311,7 +313,7 @@ Expor o motor via FastAPI como **adapter inbound fino** (pydantic só na borda, 
 - Composition root da API reutilizando `config/composition.py` (mock por default; troca por env é 1 linha).
 - **Benchmark documentado** (`BENCHMARKS.md`): preço+gregas unitário e grid N×M típico, com hardware/versões; requisito de referência: grid 50×50 × 4 legs < 300 ms p95 em CPython puro. Entrega é a medição honesta + análise, não otimização.
 - **README de portfólio:** pitch, diagrama Mermaid, quickstart (`uvicorn` + `curl` retornando o caso HULL), badges (CI, coverage, python, ruff, mypy), seção de trade-offs linkando ADRs.
-- **ADRs** (`docs/adr/`, MADR curto), ≥ 6: (1) float64 vs Decimal; (2) stdlib-only no core; (3) contrato batch-first; (4) hexagonal + composition root manual sem DI framework; (5) **day count default `BUSINESS_252` — decisão ratificada pela mesa em 2026-07-02** (contexto B3 vs literatura 365); (6) async/CPU-bound; (7) pydantic só na borda; (8) escopo europeu-only com rejeição explícita de americano (contexto B3: ações americanas, índice europeias).
+- **ADRs** (`docs/adr/`, MADR curto), ≥ 6: (1) float64 vs Decimal; (2) stdlib-only no core; (3) contrato batch-first; (4) hexagonal + composition root manual sem DI framework; (5) **day count default `BUSINESS_252` — decisão ratificada pela mesa em 2026-07-02** (contexto B3 vs literatura 365); (6) async/CPU-bound; (7) pydantic só na borda; (8) escopo europeu-only com rejeição explícita de americano (contexto B3: ações americanas, índice europeias) — já emendado pela [ADR-0002](adr/0002-calls-americanas-como-europeias.md) para calls de ação; a ADR da S4 registra a decisão original e aponta a emenda. Numeração continua após a série 0001–0007 da S5.
 - Testes da borda: `TestClient` cobrindo happy path por endpoint + cada classe de erro + payload inválido (422 pydantic).
 
 ### Escopo OUT
@@ -358,14 +360,14 @@ Repo inteiro passa lint + mypy strict + testes no CI; guard de framework ativo n
 
 | Item | Por que está fora | Sprint futura | Pré-requisitos / seam preparado |
 |---|---|---|---|
-| **Implied volatility** (Newton salvaguardado + fallback Brent; ref. Jäckel, *Let's Be Rational*) | Política de convergência e bounds são mini-projeto próprio | **S5** | Kernel expõe vega; retorno rico `(sigma, converged, iterations, method)`; V&V próprio (round-trip preço→IV→preço) |
-| **Dividendos discretos / proventos B3** | Yield contínuo `q` **já está na assinatura do kernel desde a S1** — sem quebra de contrato | **S5** | Golden cases com dividendos |
-| **Hardening de V&V** (QuantLib como 2º oráculo, `mutmut` ≥ 90%, nightly Hypothesis 10k) | Pacote nível banco sem slot no MVP; gate sem slot é ficção | **S5–S6** | `mutmut` não roda em Windows — gate exclusivo do CI Linux |
-| **Opções americanas** (binomial CRR / Bjerksund-Stensland) | Modelo numérico distinto; decisão 2 fixa a Fase 6 | **S6** | Seam pronto: `ExerciseStyle` + `supports()`; V&V próprio (convergência de malha) |
+| **Implied volatility** (Newton salvaguardado + fallback Brent; ref. Jäckel, *Let's Be Rational*) | Política de convergência e bounds são mini-projeto próprio | **S5 — Painel de Renda** (antecipada, ADR-0001) | Kernel expõe vega; retorno rico `(sigma, converged, iterations, method)`; V&V próprio (round-trip preço→IV→preço) |
+| **Dividendos discretos / proventos B3** | Yield contínuo `q` **já está na assinatura do kernel desde a S1** — sem quebra de contrato | **A replanejar após a S5** (fora do Painel de Renda, ADR-0001) | Golden cases com dividendos |
+| **Hardening de V&V** (QuantLib como 2º oráculo, `mutmut` ≥ 90%, nightly Hypothesis 10k) | Pacote nível banco sem slot no MVP; gate sem slot é ficção | **A replanejar após a S5** | `mutmut` não roda em Windows — gate exclusivo do CI Linux |
+| **Opções americanas** (binomial CRR / Bjerksund-Stensland) | Modelo numérico distinto; decisão 2 fixa a Fase 6 | **S6** | Seam pronto: `ExerciseStyle` + `supports()`; V&V próprio (convergência de malha). Calls de ação já aceitas como aproximação europeia desde a S5 (ADR-0002) |
 | **Monte Carlo** | Custo alto e redundante para europeias vanilla | **S7** | Segundo motor atrás do mesmo `PricingModel` batch-first; BS analítico vira golden do MC; provável ADR revendo stdlib-only (NumPy) |
 | **Persistência** (estratégias salvas, histórico) | Stateless por design até haver caso de uso real | **S8** | `StrategyRepositoryPort` + SQLite; contract tests da S3 como molde |
 
-**Ordem recomendada pós-MVP: 5 → 6 → 7 → 8.**
+**Ordem de execução a partir de 2026-10-26 (ADR-0001): S5 (Painel de Renda) → S4 (API) → 6 → 7 → 8**; dividendos discretos e hardening de V&V são replanejados ao fim da S5.
 
 ## Resumo de esforço e dependências
 
@@ -374,4 +376,5 @@ Repo inteiro passa lint + mypy strict + testes no CI; guard de framework ativo n
 | 1 — Fundação Matemática | M | — | Kernel BS (+q, +rho) + V&V + CI (`v0.1.0`) |
 | 2 — Domínio e Simulação | **L** (caminho crítico) | S1 | Composite + payoff/P&L + stress grid (`v0.2.0`) |
 | 3 — Ports & Adapters | M | S2 | Hexágono formal + mock GBM + contract tests (`v0.3.0`) |
-| 4 — API e Polimento | M | S3 | FastAPI na borda + benchmark + ADRs (`v1.0.0`) |
+| 5 — Painel de Renda | L | S3 | Volatilidade implícita + cadeia COTAHIST + métricas de renda + relatório HTML (`v0.4.0`) |
+| 4 — API e Polimento | M | **S5** (ADR-0001) | FastAPI na borda + benchmark + ADRs (`v1.0.0`) |
