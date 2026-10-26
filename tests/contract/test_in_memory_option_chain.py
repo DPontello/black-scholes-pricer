@@ -6,6 +6,8 @@ adapter real (COTAHIST, ADR-0006) herda a mesma suíte do mesmo jeito.
 
 As séries de PETR4 cobrem as cinco situações de book da ADR-0004, para que
 a bateria exercite lados ausentes (``None``) e presentes na mesma cadeia.
+VALE3 é o segundo subjacente que a suíte exige: com ele, um port que
+ignorasse o símbolo pedido seria reprovado.
 """
 
 from dataclasses import dataclass
@@ -86,5 +88,5 @@ class TestInMemoryOptionChainContract(OptionChainPortContract):
     def make_port(self) -> InMemoryOptionChainSource:
         return InMemoryOptionChainSource(chains=(_cadeia_petr4(), _cadeia_vale3()))
 
-    def known_symbol(self) -> str:
-        return "PETR4"
+    def known_symbols(self) -> tuple[str, ...]:
+        return ("PETR4", "VALE3")
