@@ -59,8 +59,11 @@ class OptionQuote:
     ADR-0003; o domínio só exige finito e ``>= 0``.
 
     Não há invariante cruzando ``last`` e ``trades``: uma fonte pode trazer
-    o último preço de um pregão anterior com ``trades == 0``. Decidir se o
-    ``last`` é utilizável é da regra de preço, não da cotação.
+    o último preço de um pregão anterior com ``trades == 0``, e
+    ``trades > 0`` com ``last`` ausente é dado incoerente da fonte, mas
+    representável. O que cada combinação vale é decidido pela regra de
+    preço (``executable_premium``) e por ``is_theoretical_eligible``, não
+    pela cotação.
     """
 
     contract: OptionContract
@@ -105,11 +108,29 @@ class OptionQuote:
     def is_book_empty(self) -> bool:
         """Nenhum lado do book presente — pré-condição de INDICATIVO e TEORICO.
 
-        Distingue os dois "sem preço" da ADR-0004: com book de um lado só, a
-        perna no lado ausente fica sem preço; com book vazio, a série ainda
-        pode ter preço indicativo (``last`` do pregão) ou teórico.
+        Necessária, não suficiente: com book de um lado só, a perna no lado
+        ausente fica sem preço; com book vazio, a série pode ter preço
+        indicativo (``last`` do pregão), ser elegível ao teórico
+        (``is_theoretical_eligible``) ou ficar sem preço.
         """
         return self.bid is None and self.ask is None
+
+    @property
+    def is_theoretical_eligible(self) -> bool:
+        """Book vazio e nenhum negócio no pregão — a linha TEORICO da ADR-0004.
+
+        Separa os dois sentidos do ``None`` de ``executable_premium``:
+        elegível, a série pode receber o preço teórico (calculado fora da
+        regra pura); não elegível, fica sem preço.
+
+        O critério é ``trades == 0``, não "sem ``last`` utilizável": book
+        vazio com ``trades > 0`` e ``last`` ausente é dado incoerente (houve
+        negócio, mas a fonte não trouxe o preço). Rotulá-lo TEORICO trataria
+        como "sem negócio" uma série que negociou no pregão, por isso ela
+        fica sem preço. Já um ``last`` com ``trades == 0`` não impede o
+        TEORICO: pode ser de pregão anterior e não diz nada sobre hoje.
+        """
+        return self.is_book_empty and self.trades == 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,11 +183,17 @@ class PriceQuality(Enum):
 
     - ``EXECUTAVEL``: o lado do book que a perna de fato agride (bid para
       vender, ask para comprar). Único que entra no ranking padrão.
-    - ``INDICATIVO``: book vazio, mas houve negócio no pregão — ``last``.
-      Exibível fora do ranking, sempre rotulado.
-    - ``TEORICO``: book vazio e sem negócio — Black-Scholes com a vol
+    - ``INDICATIVO``: book vazio, com negócio no pregão (``trades > 0``) e
+      ``last`` presente — o ``last``. Exibível fora do ranking, sempre
+      rotulado.
+    - ``TEORICO``: book vazio e nenhum negócio no pregão (``trades == 0``;
+      ``OptionQuote.is_theoretical_eligible``) — Black-Scholes com a vol
       implícita interpolada do smile do mesmo vencimento. Calculado fora
       deste módulo; aparece só como referência, nunca no ranking.
+
+    Fora dos três rótulos a perna fica sem preço, e nenhum número sai: é o
+    caso do lado ausente de um book de um lado só e do book vazio com
+    ``trades > 0`` e ``last`` ausente (dado incoerente da fonte).
     """
 
     EXECUTAVEL = "executavel"
@@ -233,17 +260,20 @@ def executable_premium(quote: OptionQuote, side: Side) -> LegPremium | None:
     ==========================  ==================  ==================
 
     ``None`` é "sem preço observado para este lado" e nunca é trocado por
-    mid ou por ``last`` em silêncio. Os dois ``None`` têm destinos
-    distintos na ADR-0004 — ``quote.is_book_empty`` os separa:
+    mid ou por ``last`` em silêncio. O destino dele é decidido por
+    ``quote.is_theoretical_eligible``:
 
-    - book de um lado só, perna no lado ausente: **sem preço**. Não há
-      contraparte a agredir, e a ADR só admite ``last`` com book vazio;
-    - book vazio e sem negócio: elegível ao TEORICO (BS com a vol implícita
-      interpolada do smile), calculado FORA desta regra pura.
+    - elegível (book vazio e ``trades == 0``): TEORICO possível — BS com a
+      vol implícita interpolada do smile, calculado FORA desta regra pura;
+    - não elegível: **sem preço**. É o caso da perna no lado ausente de um
+      book de um lado só (não há contraparte a agredir, e a ADR só admite
+      ``last`` com book vazio) e o do book vazio com ``trades > 0`` e
+      ``last`` ausente — dado incoerente da fonte: houve negócio, então a
+      série não é "sem negócio" e não vira TEORICO.
 
     "Com negócio no pregão" exige ``trades > 0`` E ``last`` presente: um
     ``last`` com ``trades == 0`` pode ser de pregão anterior e não indica
-    nada sobre hoje.
+    nada sobre hoje — a série segue elegível ao TEORICO.
     """
     lado_agredido = quote.bid if side is Side.SELL else quote.ask
     if lado_agredido is not None:

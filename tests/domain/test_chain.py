@@ -361,24 +361,40 @@ def test_tabela_da_adr_0004(
     assert executable_premium(quote, side) == esperado
 
 
-def test_book_de_um_lado_so_nao_cai_para_o_last() -> None:
-    """Só bid + perna comprada é "sem preço" na ADR-0004, mesmo com negócio no
-    pregão: INDICATIVO é exclusivo do book vazio, não um fallback por perna."""
-    quote = make_quote(bid=BID, ask=None, last=LAST, trades=37)
-    assert executable_premium(quote, Side.BUY) is None
-    assert not quote.is_book_empty
+@pytest.mark.parametrize("trades", [0, 37], ids=["sem-negocio", "com-negocio"])
+@pytest.mark.parametrize(
+    ("bid", "ask", "side"),
+    [(BID, None, Side.BUY), (None, ASK, Side.SELL)],
+    ids=["so-bid-comprada", "so-ask-vendida"],
+)
+def test_book_de_um_lado_so_nao_cai_para_o_last_nem_para_o_teorico(
+    bid: float | None, ask: float | None, side: Side, trades: int
+) -> None:
+    """Perna no lado ausente de um book de um lado só é "sem preço" na
+    ADR-0004, com ou sem negócio no pregão: INDICATIVO e TEORICO são
+    exclusivos do book vazio, não fallbacks por perna."""
+    quote = make_quote(bid=bid, ask=ask, last=LAST, trades=trades)
+    assert executable_premium(quote, side) is None
+    assert not quote.is_theoretical_eligible
 
 
-def test_last_sem_negocio_no_pregao_nao_e_indicativo() -> None:
-    """trades == 0: o last pode ser de pregão anterior — vai para o TEORICO."""
-    quote = make_quote(bid=None, ask=None, last=LAST, trades=0)
+@pytest.mark.parametrize("last", [None, LAST], ids=["sem-last", "last-de-pregao-anterior"])
+def test_book_vazio_sem_negocio_e_none_elegivel_ao_teorico(last: float | None) -> None:
+    """trades == 0: o last, se houver, pode ser de pregão anterior — o None
+    das duas pernas é "TEORICO possível", não "sem preço"."""
+    quote = make_quote(bid=None, ask=None, last=last, trades=0)
     assert executable_premium(quote, Side.SELL) is None
-    assert quote.is_book_empty
+    assert executable_premium(quote, Side.BUY) is None
+    assert quote.is_theoretical_eligible
 
 
-def test_negocio_sem_last_nao_inventa_preco() -> None:
+def test_negocio_sem_last_e_sem_preco() -> None:
+    """Dado incoerente da fonte: houve negócio, mas sem last. Nem INDICATIVO
+    (não há preço observado) nem TEORICO (a série não é "sem negócio")."""
     quote = make_quote(bid=None, ask=None, last=None, trades=37)
     assert executable_premium(quote, Side.SELL) is None
+    assert executable_premium(quote, Side.BUY) is None
+    assert not quote.is_theoretical_eligible
 
 
 @pytest.mark.parametrize(
@@ -387,6 +403,34 @@ def test_negocio_sem_last_nao_inventa_preco() -> None:
 )
 def test_book_vazio_so_sem_nenhum_lado(bid: float | None, ask: float | None, vazio: bool) -> None:
     assert make_quote(bid=bid, ask=ask).is_book_empty is vazio
+
+
+@pytest.mark.parametrize(
+    ("bid", "ask", "last", "trades", "elegivel"),
+    [
+        (None, None, None, 0, True),
+        (None, None, LAST, 0, True),
+        (None, None, LAST, 37, False),
+        (None, None, None, 37, False),
+        (BID, ASK, None, 0, False),
+        (BID, None, None, 0, False),
+        (None, ASK, None, 0, False),
+    ],
+    ids=[
+        "book-vazio-sem-negocio",
+        "book-vazio-sem-negocio-com-last-anterior",
+        "book-vazio-com-negocio",
+        "book-vazio-negocio-sem-last-incoerente",
+        "book-completo-sem-negocio",
+        "so-bid-sem-negocio",
+        "so-ask-sem-negocio",
+    ],
+)
+def test_elegivel_ao_teorico_so_com_book_vazio_e_sem_negocio(
+    bid: float | None, ask: float | None, last: float | None, trades: int, elegivel: bool
+) -> None:
+    quote = make_quote(bid=bid, ask=ask, last=last, trades=trades)
+    assert quote.is_theoretical_eligible is elegivel
 
 
 # --- propriedades sobre cotações arbitrárias ---------------------------------
@@ -431,6 +475,19 @@ def test_preco_nunca_e_inventado_nem_omitido(quote: OptionQuote, side: Side) -> 
         assert resultado == LegPremium(quote.last, PriceQuality.INDICATIVO)
     else:
         assert resultado is None
+
+
+@given(quote=st_quote())
+def test_none_nas_duas_pernas_e_teorico_possivel_ou_dado_incoerente(quote: OptionQuote) -> None:
+    """Série sem preço observado em nenhuma perna tem exatamente um de dois
+    destinos: elegível ao TEORICO, ou sem preço por dado incoerente (book
+    vazio, trades > 0 e last ausente). E elegível nunca tem preço observado."""
+    sem_preco_nas_duas = (
+        executable_premium(quote, Side.SELL) is None and executable_premium(quote, Side.BUY) is None
+    )
+    incoerente = quote.is_book_empty and quote.trades > 0 and quote.last is None
+    assert sem_preco_nas_duas == (quote.is_theoretical_eligible or incoerente)
+    assert not (quote.is_theoretical_eligible and incoerente)
 
 
 @given(quote=st_quote())
