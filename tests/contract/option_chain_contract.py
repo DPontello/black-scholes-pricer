@@ -40,8 +40,10 @@ class OptionChainPortContract(ABC):
     cada um com ao menos uma série na fonte configurada. Com um símbolo só,
     um adapter que ignorasse o argumento (devolvendo sempre a cadeia do
     primeiro subjacente da fonte) passaria a bateria inteira; contra uma
-    cadeia vazia, as verificações por cotação passariam no vazio. Há testes
-    que travam as duas coisas.
+    cadeia vazia, as verificações por cotação passariam no vazio. A fixture
+    também precisa ter ao menos uma cotação com bid ou ask ausente na fonte,
+    para que a tradução "zero da fonte → ``None``" seja exercitada. Há testes
+    que travam as três coisas.
     """
 
     @abstractmethod
@@ -91,6 +93,15 @@ class OptionChainPortContract(ABC):
                 f"{simbolo!r} sem séries: as verificações por cotação desta suíte "
                 f"passariam no vazio"
             )
+
+    def test_fixture_tem_lado_ausente_para_exercitar_a_traducao(self) -> None:
+        """Com books completos em toda a fixture, um adapter que esquecesse a
+        tradução da ADR-0003 (``bid=0.0`` em vez de ``None``) passaria aqui e
+        só cairia no primeiro pregão real com oferta zerada."""
+        assert any(quote.bid is None or quote.ask is None for quote in self._quotes()), (
+            "nenhuma cotação com bid ou ask ausente na fixture: a tradução 'zero da fonte "
+            "→ None' (ADR-0003) passaria sem ser exercitada"
+        )
 
     def test_cotacoes_sao_option_quote(self) -> None:
         """Um duck type escaparia das invariantes que o VO impõe na construção."""
