@@ -25,7 +25,7 @@ Estas decisões estavam registradas como "em aberto" na Entrega 1 e foram fechad
 
 ## Decisões de negócio do Painel de Renda (mesa de operações, 2026-10-26)
 
-Registradas como ADRs em [`docs/adr/`](adr/README.md). Itens marcados como pendentes não bloqueiam o início da Sprint 5, mas precisam ser fechados antes do seu fim.
+Registradas como ADRs em [`docs/adr/`](adr/README.md). Todas fechadas pela mesa em 2026-10-26.
 
 | # | Decisão | Resolução | ADR |
 |---|---|---|---|
@@ -230,7 +230,7 @@ Comparar oportunidades de **renda com opções** — venda coberta, put coberta 
   - ajuste de strike por proventos em dinheiro na B3 (ADR-0002 — se não se confirmar, a ADR é reaberta);
   - layout vigente do COTAHIST e fonte do estilo de exercício por série (ADR-0006);
   - tabela de emolumentos da B3 e de corretagem da Necton para opções; tratamento de IR (ADR-0005).
-- Pendências da mesa (ADR-0004 e ADR-0005) podem ser fechadas durante a sprint; o código nasce parametrizado.
+- Pendências da mesa (ADR-0004 e ADR-0005) fechadas em 2026-10-26; o código nasce parametrizado mesmo assim.
 
 ### Escopo IN
 
