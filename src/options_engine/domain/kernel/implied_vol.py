@@ -9,26 +9,35 @@ na moeda do subjacente, ``tau`` em anos, ``r``/``q`` contínuos; ``sigma``
 devolvida anualizada e decimal, na mesma base de anualização de ``tau``.
 
 Contrato (preço fora dos limites ou não convergência viram STATUS — nunca
-exceção, nunca NaN):
-    Entradas ilegais -> ``InvalidKernelInputError``: ``price`` não finito ou
-        < 0; ``sigma_tol`` não finito ou <= 0; ``max_iterations`` < 1; e
+exceção, nunca NaN). As regras valem NESTA ordem — a primeira que casa
+decide, e a precedência é parte do contrato:
+    1. Entradas ilegais -> ``InvalidKernelInputError``: ``price`` não finito
+        ou < 0; ``sigma_tol`` não finito ou <= 0; ``max_iterations`` < 1; e
         tudo o que ``bs_outputs`` já rejeita (s<=0, k<=0, tau<0, não
-        finitos, fator de desconto fora da faixa de ``exp``).
-    tau == 0 -> ``EXPIRED``: no vencimento o preço é o intrínseco para
-        qualquer sigma — a volatilidade não é identificável.
-    price < limite inferior -> ``BELOW_INTRINSIC``. O limite inferior de
-        não-arbitragem é o intrínseco DESCONTADO, ``max(±(S·e^(-q·tau) -
-        K·e^(-r·tau)), 0)`` — que é exatamente o preço BS com sigma = 0, e
-        por isso é calculado pelo próprio kernel.
-    price >= limite superior -> ``ABOVE_UPPER_BOUND``: ``S·e^(-q·tau)``
-        para call, ``K·e^(-r·tau)`` para put — o limite de sigma -> inf,
-        nunca atingido por sigma finito.
-    price == limite inferior -> ``CONVERGED`` com sigma = 0.0 exato
-        (``METHOD_CLOSED_FORM``): o limite inferior é atingido em sigma = 0
-        (ramo determinístico do kernel), então é solução, não ausência dela.
-    max_iterations esgotado -> ``NO_CONVERGENCE`` com sigma = ``None``
-        (nunca um número inventado; o ``method`` ainda informa os passos
-        tentados).
+        finitos, fator de desconto fora da faixa de ``exp``). A validação
+        precede o atalho do vencimento: preço ilegal com tau == 0 também
+        levanta.
+    2. tau == 0 -> ``EXPIRED`` para QUALQUER preço legal, mesmo fora dos
+        limites: no vencimento o preço é o intrínseco para qualquer sigma —
+        a volatilidade não é identificável.
+    3. price < limite inferior -> ``BELOW_INTRINSIC`` (comparação estrita).
+        O limite inferior de não-arbitragem é o intrínseco DESCONTADO,
+        ``max(±(S·e^(-q·tau) - K·e^(-r·tau)), 0)`` — que é exatamente o
+        preço BS com sigma = 0, e por isso é calculado pelo próprio kernel.
+    4. price >= limite superior -> ``ABOVE_UPPER_BOUND`` (o próprio limite
+        incluso): ``S·e^(-q·tau)`` para call, ``K·e^(-r·tau)`` para put — o
+        limite de sigma -> inf, nunca atingido por sigma finito.
+    5. price == limite inferior -> ``CONVERGED`` com sigma = 0.0 exato
+        (``METHOD_CLOSED_FORM``, 0 iterações): o limite inferior é atingido
+        em sigma = 0 (ramo determinístico do kernel), então é solução, não
+        ausência dela.
+    6. tau abaixo da guarda de representabilidade (Limitações, abaixo) ->
+        ``NO_CONVERGENCE`` sem iterar (``METHOD_NONE``, 0 iterações).
+    7. Senão o solver itera: ``CONVERGED`` com sigma finito em
+        ``[0, sigma_max]`` e o rótulo dos passos usados; ``max_iterations``
+        esgotado -> ``NO_CONVERGENCE`` com sigma = ``None`` (nunca um
+        número inventado; ``iterations == max_iterations`` e o ``method``
+        ainda informa os passos tentados).
 
 Algoritmo — Newton-Raphson salvaguardado por bracketing (rtsafe de Press et
 al., *Numerical Recipes*, §9.4):
@@ -68,8 +77,8 @@ Chute inicial — ``max(sigma_MK, sigma_BS)``, ambos em forma fechada:
     raiz (argumento de Manaster-Koehler). As salvaguardas entram quando a
     convergência é lenta (curva muito plana em OTM/ITM profundo, onde a
     regra da metade troca passos por bisseção) ou dominada por ruído
-    (vega ~0); no miolo do domínio a inversão é Newton puro em 3 a 12
-    iterações (medido).
+    (vega ~0); no domínio identificável a inversão é Newton puro em 2 a 12
+    iterações (medido: 19.997 de 20.000 inversões do oráculo scipy).
 
 Limitações conhecidas:
     * ``tau`` abaixo de ~5.6e-305 anos levaria sigma_max a um valor cujo
@@ -119,8 +128,10 @@ __all__ = [
 # precisão de cotação de vol (1e-4 = 0.01 ponto) e ainda é alcançável — o
 # erro de reprecificação é vega·|Δsigma| <= ~2.2·S·1e-12 no domínio tau <= 30.
 DEFAULT_SIGMA_TOL: Final = 1e-12
-# Newton monotônico converge em poucas iterações; o pior caso salvaguardado
-# (bisseção do bracket inteiro até sigma_tol) cabe com folga em 100.
+# Newton monotônico converge em poucas iterações (<= 12 medido). A bisseção
+# pura do bracket inteiro até DEFAULT_SIGMA_TOL leva log2(sigma_max/sigma_tol)
+# passos: ~51 em tau de 1 dia útil, e cabe em 100 para todo tau >= ~6e-33 ano.
+# Orçamento esgotado vira NO_CONVERGENCE, nunca um sigma inventado.
 DEFAULT_MAX_ITERATIONS: Final = 100
 
 # --- rótulos de ``ImpliedVolResult.method`` ----------------------------------
@@ -145,13 +156,16 @@ _SQRT_2PI: Final = sqrt(2.0 * pi)
 
 @unique
 class ImpliedVolStatus(Enum):
-    """Desfecho da inversão — todo caso fora do "achou sigma" é um status."""
+    """Desfecho da inversão — todo caso fora do "achou sigma" é um status.
 
-    CONVERGED = "converged"
-    BELOW_INTRINSIC = "below_intrinsic"
-    ABOVE_UPPER_BOUND = "above_upper_bound"
-    NO_CONVERGENCE = "no_convergence"
-    EXPIRED = "expired"
+    Precedência entre eles: contrato numerado no docstring do módulo.
+    """
+
+    CONVERGED = "converged"  # sigma achado; 0.0 exato no limite inferior
+    BELOW_INTRINSIC = "below_intrinsic"  # price < intrínseco descontado (estrito)
+    ABOVE_UPPER_BOUND = "above_upper_bound"  # price >= S·e^(-q·tau) (call) ou K·e^(-r·tau) (put)
+    NO_CONVERGENCE = "no_convergence"  # orçamento esgotado ou tau irrepresentável
+    EXPIRED = "expired"  # tau == 0: sigma não identificável
 
 
 class ImpliedVolResult(NamedTuple):
@@ -159,8 +173,11 @@ class ImpliedVolResult(NamedTuple):
 
     ``sigma`` é ``float`` se e somente se ``status`` é ``CONVERGED``; nos
     demais casos é ``None`` — nunca NaN, nunca um número inventado.
-    ``iterations`` conta avaliações do kernel no laço do solver (0 quando a
-    checagem prévia decide). ``method`` é um dos rótulos ``METHOD_*``.
+    ``iterations`` conta avaliações do kernel no laço do solver: 0 quando a
+    checagem prévia decide (``METHOD_NONE`` nos status sem solução e na
+    guarda de tau; ``METHOD_CLOSED_FORM`` em sigma = 0.0 no limite
+    inferior), ``max_iterations`` no ``NO_CONVERGENCE`` por esgotamento.
+    ``method`` é um dos rótulos ``METHOD_*``.
     """
 
     sigma: float | None
@@ -288,10 +305,18 @@ def implied_vol(
     """Volatilidade implícita de uma opção europeia (Black-Scholes-Merton).
 
     Devolve o sigma tal que ``bs_price(s, k, tau, r, sigma, q, is_call=...)``
-    reproduz ``price`` (``|sigma - raiz| <= sigma_tol`` a menos do piso
-    relativo de máquina). Preço fora dos limites de não-arbitragem, opção
-    vencida e não convergência viram ``status`` — ver contrato no docstring
-    do módulo. Levanta ``InvalidKernelInputError`` só para entradas ilegais.
+    reproduz ``price`` — anualizado, decimal, na mesma base de anualização
+    de ``tau``. Preço fora dos limites de não-arbitragem, opção vencida e
+    não convergência viram ``status`` (contrato numerado, com a precedência,
+    no docstring do módulo). Levanta ``InvalidKernelInputError`` só para
+    entradas ilegais.
+
+    Parâmetros do solver (keyword-only, defaults nomeados no módulo):
+        sigma_tol       tolerância ABSOLUTA em sigma (vol decimal), finita e
+                        > 0: ``|sigma - raiz| <= sigma_tol`` a menos do piso
+                        relativo de máquina (4 ulps de sigma).
+        max_iterations  teto de avaliações do kernel no laço, >= 1;
+                        esgotado -> ``NO_CONVERGENCE`` com sigma ``None``.
     """
     _check_solver_inputs(price, sigma_tol, max_iterations)
     # O limite inferior É o preço BS com sigma = 0 — a mesma chamada valida
