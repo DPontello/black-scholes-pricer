@@ -38,10 +38,11 @@ Regras complementares:
   houver preço utilizável de fechamento, o subjacente fica fora do painel
   do dia com motivo explícito.
 
-## Pendência
+## Filtros de liquidez (fechado pela mesa em 2026-10-26)
 
-- Valores padrão dos filtros de liquidez (mínimo de negócios, spread
-  percentual máximo): a mesa define antes do fim da Sprint 5.
+- **Sem filtro padrão.** O ranking exige apenas preço `EXECUTAVEL`; mínimo
+  de negócios e spread percentual máximo são filtros **opcionais** do
+  comando, desligados quando não informados.
 
 ## Consequências
 
