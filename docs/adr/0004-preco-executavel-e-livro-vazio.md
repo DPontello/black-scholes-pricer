@@ -23,11 +23,17 @@ Preço da perna por lado e qualidade do preço:
 | bid e ask presentes | bid | ask | `EXECUTAVEL` | Sim |
 | só bid | bid | sem preço | `EXECUTAVEL` só para venda | Só se a perna for vendida |
 | só ask | sem preço | ask | `EXECUTAVEL` só para compra | Só se a perna for comprada |
-| nenhum lado, com negócio no pregão | `last` | `last` | `INDICATIVO` | Não |
-| nenhum lado, sem negócio | teórico (BS com volatilidade implícita interpolada do smile da mesma série de vencimento) | idem | `TEORICO` | Nunca |
+| nenhum lado, com negócio no pregão (`trades > 0`) e `last` presente | `last` | `last` | `INDICATIVO` | Não |
+| nenhum lado **e** nenhum negócio no pregão (`trades == 0`) | teórico (BS com volatilidade implícita interpolada do smile da mesma série de vencimento) | idem | `TEORICO` | Nunca |
 
 Regras complementares:
 
+- **Book de um lado só nunca cai para o `last`:** a perna do lado ausente
+  fica sem preço, mesmo com negócio no pregão. `INDICATIVO` só existe com
+  o book vazio.
+- **`TEORICO` exige as duas condições:** book vazio **e** nenhum negócio no
+  pregão (`trades == 0`). Book vazio com `trades > 0` e sem `last` é dado
+  incoerente e fica sem preço (ADR-0003, notas de implementação).
 - A qualidade de uma estrutura é a **pior** qualidade entre suas pernas.
 - O **mid** serve só para exibir o smile, nunca para calcular rendimento.
 - Filtros de liquidez — número mínimo de negócios e spread percentual
@@ -37,6 +43,10 @@ Regras complementares:
 - **Ativo-objeto com livro vazio:** o adapter não inventa bid/ask; se não
   houver preço utilizável de fechamento, o subjacente fica fora do painel
   do dia com motivo explícito.
+
+Esclarecido em 2026-10-26 (Sprint 5), sem mudar a decisão: as condições
+das linhas `INDICATIVO` e `TEORICO` da tabela e as duas primeiras regras
+complementares.
 
 ## Filtros de liquidez (fechado pela mesa em 2026-10-26)
 
