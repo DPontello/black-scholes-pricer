@@ -289,6 +289,14 @@ def test_teorico_admite_zero() -> None:
     assert LegPremium(0.0, TEO).premium == 0.0
 
 
+def test_premio_e_imutavel() -> None:
+    """Par indivisível (ADR-0004): re-rotular um INDICATIVO como EXECUTAVEL
+    depois de construído faria sair um número com o rótulo errado."""
+    premio = LegPremium(1.0, IND)
+    with pytest.raises(FrozenInstanceError):
+        premio.quality = EXEC  # type: ignore[misc]  # justificativa: atribuição ilegal é o próprio teste
+
+
 # ---------------------------------------------------------------------------
 # executable_premium — a tabela da ADR-0004, linha a linha
 # ---------------------------------------------------------------------------
