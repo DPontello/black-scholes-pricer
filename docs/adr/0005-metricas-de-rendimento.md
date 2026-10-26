@@ -1,6 +1,6 @@
 # ADR-0005 — Métricas de rendimento, anualização e custos
 
-- **Status:** Aceita (itens marcados como **pendentes** aguardam a mesa)
+- **Status:** Aceita (itens 5–8 fechados pela mesa em 2026-10-26)
 - **Data:** 2026-10-26
 - **Decisores:** mesa de operações
 
@@ -28,18 +28,18 @@ definidos, os números não são comparáveis entre si nem com a renda fixa.
 
    O painel mostra rendimento **bruto** e **líquido**.
 
-### Pendentes (propostos, aguardando a mesa)
+### Itens fechados pela mesa em 2026-10-26
 
-5. **Venda coberta:** rendimento = `prêmio / spot`. Proposto por coerência
-   com o item 1 (capital bruto empatado).
+5. **Venda coberta:** rendimento = `prêmio / spot` (capital bruto empatado,
+   coerente com o item 1).
 6. **Trava de crédito:** retorno sobre risco =
    `crédito / (largura − crédito)`, com a largura entre strikes como proxy
    do risco máximo. A margem real da B3 não é modelada na fase 1.
-7. **Tamanho de referência da posição:** corretagem fixa por ordem não
-   escala com o prêmio; o rendimento líquido exige um tamanho de posição
-   (ex.: lote padrão). Valor padrão a definir.
-8. **Critério de ordenação padrão do ranking:** proposto = rendimento
-   anualizado líquido; configurável.
+7. **Tamanho de referência da posição:** **100 ações por estrutura**
+   (parâmetro do comando). Necessário porque a corretagem fixa por ordem
+   não escala com o prêmio.
+8. **Critério de ordenação padrão do ranking:** **rendimento anualizado
+   líquido**; configurável no comando.
 
 ## Premissas a verificar (gate do spike da Sprint 5)
 
