@@ -61,11 +61,11 @@ def test_command_deriva_o_simbolo_dos_termos() -> None:
     assert command.underlying_symbol == "VALE3"
 
 
-def test_exercicio_americano_falha_antes_de_tocar_o_mercado() -> None:
+def test_put_americana_falha_antes_de_tocar_o_mercado() -> None:
     service, market_data, _ = make_service()
-    termos_americanos = make_terms(exercise_style=ExerciseStyle.AMERICAN)
+    put_americana = make_terms(option_type=OptionType.PUT, exercise_style=ExerciseStyle.AMERICAN)
     with pytest.raises(UnsupportedExerciseStyleError):
-        service.execute(PriceOptionCommand(terms=termos_americanos))
+        service.execute(PriceOptionCommand(terms=put_americana))
     # Falha barata: estilo não suportado não merece uma ida ao feed.
     assert market_data.requested_symbols == []
 
