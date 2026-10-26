@@ -3,12 +3,14 @@
 Cada enum existe para tornar um antipadrão irrepresentável:
 ``OptionType`` elimina ``is_call: bool`` em objetos de negócio;
 ``ExerciseStyle`` impede precificar americano em silêncio (decisão nº 2);
-``Side`` impede direção em quantidade negativa (decisão do CONVENTIONS §4).
+``Side`` impede direção em quantidade negativa (decisão do CONVENTIONS §4);
+``PricingApproximation`` impede que uma aproximação aceita por ADR viaje
+como preço exato (ADR-0002).
 """
 
 from enum import Enum, unique
 
-__all__ = ["ExerciseStyle", "OptionType", "Side"]
+__all__ = ["ExerciseStyle", "OptionType", "PricingApproximation", "Side"]
 
 
 @unique
@@ -40,6 +42,25 @@ class ExerciseStyle(Enum):
 
     EUROPEAN = "european"
     AMERICAN = "american"
+
+
+@unique
+class PricingApproximation(Enum):
+    """Aproximação de modelo aceita por decisão registrada — marca do resultado.
+
+    ``supports()`` verdadeiro não implica preço exato: um modelo pode aceitar
+    termos fora da sua hipótese matemática quando uma ADR justifica o desvio.
+    A marca viaja no ``PricingResult`` para que nenhuma borda (painel, API)
+    apresente uma aproximação como se fosse o preço do modelo exato.
+    Catálogo fechado: cada membro nasce de uma ADR, nunca de conveniência.
+
+    - ``AMERICAN_CALL_AS_EUROPEAN``: call americana de ação precificada por
+      Black-Scholes europeu com ``q = 0`` (ADR-0002). Defensável porque a B3
+      ajusta o strike pelos proventos em dinheiro, o que remove a maior parte
+      do incentivo ao exercício antecipado da call.
+    """
+
+    AMERICAN_CALL_AS_EUROPEAN = "american_call_as_european"
 
 
 @unique
