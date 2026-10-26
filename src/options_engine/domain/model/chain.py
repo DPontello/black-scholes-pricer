@@ -227,7 +227,7 @@ def executable_premium(quote: OptionQuote, side: Side) -> LegPremium | None:
     ==========================  ==================  ==================
     bid e ask presentes         bid, EXECUTAVEL     ask, EXECUTAVEL
     só bid                      bid, EXECUTAVEL     ``None``
-    só ask                     ``None``            ask, EXECUTAVEL
+    só ask                      ``None``            ask, EXECUTAVEL
     nenhum lado, com negócio    last, INDICATIVO    last, INDICATIVO
     nenhum lado, sem negócio    ``None``            ``None``
     ==========================  ==================  ==================
