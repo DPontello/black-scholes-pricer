@@ -6,6 +6,7 @@ import pytest
 
 from options_engine.domain.income import IncomeStructure, cash_secured_put_metrics
 from options_engine.domain.income.metrics import IncomeMetrics
+from options_engine.domain.income.profile import IncomeProfile, PositionLeg, income_profile
 from options_engine.domain.income.ranking import (
     CandidateLeg,
     Exclusion,
@@ -62,6 +63,15 @@ def _perna(
     )
 
 
+def _perfil() -> IncomeProfile:
+    return income_profile(
+        [PositionLeg(OptionType.PUT, Side.SELL, 29.0, 0.30)],
+        current_spot=30.0,
+        schedule=reference_cost_schedule(),
+        shares=100,
+    )
+
+
 def _candidato(
     *pernas: CandidateLeg, premio: float = 0.30, underlying: str = "PETR4", du: int = 18
 ) -> IncomeCandidate:
@@ -72,6 +82,7 @@ def _candidato(
         legs=pernas or (_perna(),),
         metrics=_metricas(premio, du),
         underlying_book_available=True,
+        profile=_perfil(),
     )
 
 
@@ -100,7 +111,13 @@ def test_exclusao_exige_simbolo_e_motivo(symbol: str, reason: str) -> None:
 def test_candidato_sem_perna_e_irrepresentavel() -> None:
     with pytest.raises(InvalidDomainValueError, match="ao menos uma perna"):
         IncomeCandidate(
-            "PETR4", IncomeStructure.CASH_SECURED_PUT, NOVEMBRO, (), _metricas(0.3), True
+            "PETR4",
+            IncomeStructure.CASH_SECURED_PUT,
+            NOVEMBRO,
+            (),
+            _metricas(0.3),
+            True,
+            _perfil(),
         )
 
 

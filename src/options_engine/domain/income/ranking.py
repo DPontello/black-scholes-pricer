@@ -14,6 +14,7 @@ from enum import Enum, unique
 
 from options_engine.domain.income.costs import CostSchedule
 from options_engine.domain.income.metrics import IncomeMetrics, IncomeStructure
+from options_engine.domain.income.profile import IncomeProfile
 from options_engine.domain.model.chain import LegPremium, PriceQuality, worst_quality
 from options_engine.domain.model.conventions import RiskFreeRate
 from options_engine.domain.model.enums import (
@@ -117,7 +118,11 @@ class CandidateLeg:
 
 @dataclass(frozen=True, slots=True)
 class IncomeCandidate:
-    """Uma oportunidade montada: estrutura, pernas (vendida primeiro) e métricas."""
+    """Uma oportunidade montada: estrutura, pernas (vendida primeiro), métricas e perfil.
+
+    ``profile``: resultado bruto e líquido no vencimento por preço, para o
+    gráfico de payoff do painel (``profile.py``).
+    """
 
     underlying: str
     structure: IncomeStructure
@@ -125,6 +130,7 @@ class IncomeCandidate:
     legs: tuple[CandidateLeg, ...]
     metrics: IncomeMetrics
     underlying_book_available: bool
+    profile: IncomeProfile
 
     def __post_init__(self) -> None:
         if not self.legs:

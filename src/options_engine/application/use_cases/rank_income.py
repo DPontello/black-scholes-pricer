@@ -37,6 +37,7 @@ from options_engine.domain.income.metrics import (
     covered_call_metrics,
     credit_spread_metrics,
 )
+from options_engine.domain.income.profile import IncomeProfile, PositionLeg, income_profile
 from options_engine.domain.income.ranking import (
     CandidateLeg,
     Exclusion,
@@ -431,6 +432,32 @@ class RankIncomeOpportunitiesService:
             legs=tuple(self._perna(s, lado, p) for s, lado, p in precificadas),
             metrics=metricas,
             underlying_book_available=resumo.book_available,
+            profile=self._perfil(chain, tabela, command, estrutura, precificadas, metricas),
+        )
+
+    @staticmethod
+    def _perfil(
+        chain: OptionChain,
+        tabela: CostSchedule,
+        command: RankIncomeCommand,
+        estrutura: IncomeStructure,
+        precificadas: list[tuple[_Serie, Side, LegPremium]],
+        metricas: IncomeMetrics,
+    ) -> IncomeProfile:
+        """Pontos do gráfico de payoff, pelo mesmo modelo de custos das métricas."""
+        spot = chain.underlying.spot
+        return income_profile(
+            [
+                PositionLeg(
+                    serie.quote.contract.terms.option_type, lado, serie.strike, premio.premium
+                )
+                for serie, lado, premio in precificadas
+            ],
+            current_spot=spot,
+            schedule=tabela,
+            shares=command.reference_shares,
+            stock_purchase_price=spot if estrutura is IncomeStructure.COVERED_CALL else None,
+            breakevens=(metricas.breakeven, metricas.net_breakeven),
         )
 
     def _metricas(
