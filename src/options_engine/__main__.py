@@ -1,25 +1,41 @@
-"""Smoke executável — documentação viva do hexágono (ROADMAP S3).
+"""CLI: smoke do hexágono e o subcomando ``painel`` (ROADMAP S3 e S5).
 
-``python -m options_engine [seed]`` precifica uma call e um iron condor de
-crédito via mock GBM, imprime payoff e estresse nomeado. Saída 100%
-reprodutível dada a seed: relógio CONGELADO em 2026-07-03 (pregão de sexta)
-e toda aleatoriedade vem da ``SeededRandomSource`` — rodar duas vezes com a
-mesma seed produz bytes idênticos.
+``python -m options_engine [seed]`` (inalterado): precifica uma call e um
+iron condor de crédito via mock GBM, imprime payoff e estresse nomeado.
+Saída 100% reprodutível dada a seed: relógio CONGELADO em 2026-07-03
+(pregão de sexta) e toda aleatoriedade vem da ``SeededRandomSource``.
 
-É um adapter inbound de console minimalista: consome APENAS os Protocols
-inbound via ``Application`` — nenhum tipo concreto de adapter aparece aqui
-além do ``FixedClock`` que congela o cenário.
+``python -m options_engine painel --pregao AAAA-MM-DD --cotahist ARQ [ARQ ...]
+--cadastro CSV --ativos PETR4,VALE3 --saida painel.html [...]``: gera o
+Painel de Renda (ADR-0007) a partir dos arquivos baixados da B3. Erro de
+arquivo (ausente, fora do layout) ou de domínio vira mensagem clara no
+stderr e código de saída != 0, sem traceback.
+
+Adapter inbound de console: consome os Protocols inbound montados pelo
+composition root; mora fora das camadas porque é quem chama o ``config``.
 """
 
+import argparse
 import sys
+from collections.abc import Sequence
 from datetime import date, datetime
+from pathlib import Path
 
+from options_engine.adapters.inbound.html_report import render_income_report
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
 from options_engine.adapters.outbound.clock import FixedClock
-from options_engine.application.ports.inbound import PriceOptionCommand
-from options_engine.config.composition import DEFAULT_UNDERLYING, build_application
+from options_engine.adapters.outbound.cotahist import SourceFileError
+from options_engine.application.ports.inbound import PriceOptionCommand, RankIncomeCommand
+from options_engine.config.composition import (
+    DEFAULT_CDI_ANNUAL,
+    DEFAULT_UNDERLYING,
+    build_application,
+    build_income_panel,
+)
+from options_engine.domain.income.ranking import RankingCriterion
 from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.enums import OptionType, Side
+from options_engine.domain.model.errors import DomainError
 from options_engine.domain.model.factories import iron_condor
 from options_engine.domain.model.scenarios import SpotAxis, StressScenario
 from options_engine.domain.model.strategy import StrategyLeg
@@ -66,8 +82,16 @@ def _condor_legs() -> list[StrategyLeg]:
     ]
 
 
-def main(argv: list[str] | None = None) -> None:
-    args = sys.argv[1:] if argv is None else argv
+def main(argv: Sequence[str] | None = None) -> int:
+    """Despacha ``painel`` ou roda o smoke; devolve o código de saída."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "painel":
+        return painel(args[1:])
+    smoke(args)
+    return 0
+
+
+def smoke(args: Sequence[str]) -> None:
     seed = int(args[0]) if args else DEFAULT_SEED
     app = build_application(seed=seed, clock=FixedClock(VALUATION_INSTANT))
 
@@ -119,5 +143,132 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  {outcome.scenario.label:<32} valor={outcome.value:9.4f}  var={variacao:+9.4f}")
 
 
+# ---------------------------------------------------------------------------
+# Painel de Renda
+# ---------------------------------------------------------------------------
+
+
+def _ativos(texto: str) -> tuple[str, ...]:
+    ativos = tuple(a.strip().upper() for a in texto.split(",") if a.strip())
+    if not ativos:
+        raise argparse.ArgumentTypeError("informe ao menos um ativo, ex.: PETR4,VALE3")
+    return ativos
+
+
+def _parser_painel() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="python -m options_engine painel",
+        description=(
+            "Painel de Renda com opções (HTML estático) a partir do COTAHIST e do Cadastro "
+            "de Instrumentos baixados manualmente da B3."
+        ),
+    )
+    p.add_argument("--pregao", required=True, type=date.fromisoformat, help="AAAA-MM-DD")
+    p.add_argument("--cotahist", required=True, nargs="+", type=Path, metavar="ARQ")
+    p.add_argument("--cadastro", required=True, type=Path, metavar="CSV")
+    p.add_argument("--ativos", required=True, type=_ativos, help="ex.: PETR4,VALE3")
+    p.add_argument("--saida", required=True, type=Path, metavar="HTML")
+    p.add_argument(
+        "--cdi",
+        type=float,
+        default=DEFAULT_CDI_ANNUAL,
+        help=f"CDI efetivo anual em decimal (default {DEFAULT_CDI_ANNUAL})",
+    )
+    p.add_argument("--delta-min", type=float, help="módulo do delta da perna vendida (0.15)")
+    p.add_argument("--delta-max", type=float, help="módulo do delta da perna vendida (0.35)")
+    p.add_argument("--vencimentos", type=int, help="próximos vencimentos com du >= 0 (2)")
+    p.add_argument("--min-negocios", type=int, help="mínimo de negócios por perna (sem filtro)")
+    p.add_argument(
+        "--spread-max",
+        type=float,
+        metavar="PCT",
+        help="spread máximo por perna, em %% do mid: 10 = 10%% (sem filtro)",
+    )
+    p.add_argument(
+        "--ordenar",
+        choices=[c.value for c in RankingCriterion],
+        help=f"critério do ranking ({RankingCriterion.NET_ANNUAL_YIELD.value})",
+    )
+    p.add_argument("--acoes", type=int, help="tamanho de referência por estrutura (100)")
+    p.add_argument("--cache", type=Path, metavar="ARQ", help="cache sqlite por pregão")
+    p.add_argument(
+        "--gerado-em",
+        type=date.fromisoformat,
+        help="data de geração exibida no painel (omitida por padrão: saída reprodutível)",
+    )
+    return p
+
+
+def _command(args: argparse.Namespace) -> RankIncomeCommand:
+    """Só os parâmetros dados entram: os defaults são os do command (decisão da mesa)."""
+    opcionais = {
+        "delta_min": args.delta_min,
+        "delta_max": args.delta_max,
+        "expiries": args.vencimentos,
+        "min_trades": args.min_negocios,
+        "max_spread_pct": None if args.spread_max is None else args.spread_max / 100.0,
+        "sort_by": None if args.ordenar is None else RankingCriterion(args.ordenar),
+        "reference_shares": args.acoes,
+    }
+    dados = {nome: valor for nome, valor in opcionais.items() if valor is not None}
+    return RankIncomeCommand(underlyings=args.ativos, **dados)
+
+
+def _decimal_br(valor: float) -> str:
+    return f"{valor:g}".replace(".", ",")
+
+
+def _parametros(args: argparse.Namespace, command: RankIncomeCommand) -> dict[str, str]:
+    """Os parâmetros como o painel os mostra — nomes de arquivo, não caminhos."""
+    sem_filtro = "sem filtro"
+    spread = command.max_spread_pct
+    return {
+        "Pregão": args.pregao.strftime("%d/%m/%Y"),
+        "Arquivos COTAHIST": ", ".join(p.name for p in args.cotahist),
+        "Cadastro de instrumentos": args.cadastro.name,
+        "Ativos": ", ".join(command.underlyings),
+        "CDI efetivo anual": f"{_decimal_br(args.cdi * 100)}%",
+        "Faixa de delta (módulo)": (
+            f"{_decimal_br(command.delta_min)} a {_decimal_br(command.delta_max)}"
+        ),
+        "Vencimentos": str(command.expiries),
+        "Mínimo de negócios": sem_filtro if command.min_trades is None else str(command.min_trades),
+        "Spread máximo": sem_filtro if spread is None else f"{_decimal_br(spread * 100)}%",
+        "Ações por estrutura": str(command.reference_shares),
+    }
+
+
+def painel(argv: Sequence[str]) -> int:
+    """Gera o painel; 0 em sucesso, 1 em erro de domínio, 2 em erro de arquivo."""
+    args = _parser_painel().parse_args(list(argv))
+    try:
+        command = _command(args)
+        use_case = build_income_panel(
+            session_date=args.pregao,
+            cotahist_paths=args.cotahist,
+            instruments_path=args.cadastro,
+            cdi_annual=args.cdi,
+            cache_path=args.cache,
+        )
+        ranking = use_case.execute(command)
+    except (SourceFileError, OSError) as erro:
+        print(f"erro de arquivo: {erro}", file=sys.stderr)
+        return 2
+    except DomainError as erro:
+        print(f"erro: {erro}", file=sys.stderr)
+        return 1
+    html = render_income_report(ranking, _parametros(args, command), generated_on=args.gerado_em)
+    try:
+        args.saida.write_text(html, encoding="utf-8", newline="\n")
+    except OSError as erro:
+        print(f"erro de arquivo: não foi possível gravar {args.saida}: {erro}", file=sys.stderr)
+        return 2
+    print(
+        f"painel gravado em {args.saida}: {len(ranking.ranked)} no ranking, "
+        f"{len(ranking.references)} referências, {len(ranking.exclusions)} exclusões"
+    )
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
