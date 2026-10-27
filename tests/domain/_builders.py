@@ -157,6 +157,37 @@ def make_butterfly_legs(
     ]
 
 
+def make_vertical_legs(
+    option_type: OptionType = OptionType.PUT,
+    direction: Side = Side.SELL,
+    strikes: tuple[float, float] = (28.0, 30.0),
+    premiums: tuple[float, float] | None = (0.50, 0.90),
+    quantity: int = 10,
+) -> list[StrategyLeg]:
+    """Trava vertical (strike baixo, strike alto), ambas do tipo ``option_type``.
+
+    ``direction`` é a direção da ESTRUTURA (SELL = crédito): a perna mais
+    valiosa — call de strike menor, put de strike maior — fica nesse lado.
+    ``premiums`` segue a ordem dos strikes. Default: trava de alta com put
+    de crédito 0.40 (compra put 28 a 0.50, vende put 30 a 0.90); para calls,
+    informe prêmios decrescentes no strike.
+    """
+    if option_type is OptionType.CALL:
+        lados = (direction, direction.opposite)
+    else:
+        lados = (direction.opposite, direction)
+    return [
+        make_leg(
+            symbol=_symbol_por(option_type, k),
+            terms=make_terms(strike=k, option_type=option_type),
+            side=lado,
+            quantity=quantity,
+            premium=None if premiums is None else premiums[i],
+        )
+        for i, (k, lado) in enumerate(zip(strikes, lados, strict=True))
+    ]
+
+
 def make_snapshot(
     underlying_symbol: str = "PETR4",
     spot: float = 30.0,

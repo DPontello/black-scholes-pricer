@@ -1,6 +1,6 @@
 # Roadmap — Options Analytics Engine
 
-> **Status:** Sprint 3 **concluída em 2026-10-25** (tag `v0.3.0`) — hexágono formal: ports inbound/outbound como Protocols, 3 use cases (`PriceOptionService`, `AnalyzeStrategyPayoffService`, `StressTestService`), contrato `PricingModel` batch-first materializado, adapters outbound (mock GBM seedado, calendário B3 estático com guarda de cobertura, taxa fixa CDI, clock, random), suíte de contrato herdável do `MarketDataPort`, composition root manual e smoke `python -m options_engine` reprodutível por seed. Gates verificados localmente: 2063 testes, cobertura 100% em `application/` e `adapters/` (≥ 90% exigido), import-linter com contrato de camadas. Emendas datadas no ARCH §4.2 (command sem campo redundante; payoff via `SpotAxis`). Próxima: **Sprint 5 (Painel de Renda)**, antecipada para antes da Sprint 4 pela [ADR-0001](adr/0001-renda-antes-da-api.md) em 2026-10-26.
+> **Status:** Sprint 5 (Painel de Renda) **implementada em 2026-10-27** na `development` (versão `0.4.0`; merge na `master` e tag `v0.4.0` pendentes): volatilidade implícita, `OptionChainPort` + `CotahistOptionChainAdapter` com cadastro de instrumentos e cache sqlite, métricas de renda brutas e líquidas com extremos, smile e preço TEÓRICO, tabela de custos versionada, `RankIncomeOpportunitiesService` e painel HTML via `python -m options_engine painel`. Gates locais: 3485 testes, cobertura 99%, kernel em 100%. Premissas a conferir no primeiro arquivo real da B3: layout do trailer (TOTREG), domínio do `OptnStyle`, conteúdo do ESPECI das opções e strike já ajustado no `PREEXE`. Sprint 3 concluída em 2026-10-25 (tag `v0.3.0`). Próxima: **Sprint 4 (API e Portfólio)**.
 >
 > **Premissas:** Python 3.12+, stdlib-only no core até a Sprint 4, arquitetura hexagonal desde o commit inicial (o layout `domain/ → application/ → adapters/` nasce na Sprint 1, ainda que parcialmente vazio — refatorar layout de pacote depois é custo puro). Esforço relativo: **S** (≤ 3 dias-pessoa), **M** (4–7), **L** (8–12), assumindo 1 dev sênior em dedicação parcial de portfólio.
 >
@@ -25,16 +25,16 @@ Estas decisões estavam registradas como "em aberto" na Entrega 1 e foram fechad
 
 ## Decisões de negócio do Painel de Renda (mesa de operações, 2026-10-26)
 
-Registradas como ADRs em [`docs/adr/`](adr/README.md). Itens marcados como pendentes não bloqueiam o início da Sprint 5, mas precisam ser fechados antes do seu fim.
+Registradas como ADRs em [`docs/adr/`](adr/README.md). Todas fechadas pela mesa em 2026-10-26, inclusive o modelo de custos da ADR-0005 e a obtenção manual dos dados da ADR-0006.
 
 | # | Decisão | Resolução | ADR |
 |---|---|---|---|
 | 9 | Prioridade | **Sprint 5 (renda) antes da Sprint 4 (API).** | [0001](adr/0001-renda-antes-da-api.md) |
 | 10 | Calls americanas de ação | **Precificadas como europeias** (`q = 0`, marca de aproximação); puts americanas rejeitadas. Emenda a decisão nº 2. | [0002](adr/0002-calls-americanas-como-europeias.md) |
 | 11 | Cadeia de opções | **`OptionChainPort` novo**; lado de book ausente é `None`, nunca `0`; vol do subjacente = vol realizada, vol por série = implícita. | [0003](adr/0003-option-chain-port.md) |
-| 12 | Livro vazio | **Perna vendida usa bid, comprada usa ask**; `last` do pregão = `INDICATIVO`; sem negócio = `TEORICO`; só `EXECUTAVEL` entra no ranking padrão. Pendente: valores padrão dos filtros de liquidez. | [0004](adr/0004-preco-executavel-e-livro-vazio.md) |
-| 13 | Rendimento | **Put coberta = prêmio / strike; anualização composta 252 du; excesso sobre o CDI; custos (emolumentos B3, corretagem Necton, IR 15%) parametrizáveis.** Pendentes: base da venda coberta, retorno da trava, tamanho de referência, ordenação padrão. | [0005](adr/0005-metricas-de-rendimento.md) |
-| 14 | Fontes de dados | **COTAHIST na fase 1**; brapi descartada; intraday via Necton (MT5 → ProfitDLL → RTD) fora da Sprint 5. | [0006](adr/0006-fontes-de-dados-de-opcoes.md) |
+| 12 | Livro vazio | **Perna vendida usa bid, comprada usa ask**; `last` do pregão = `INDICATIVO`; sem negócio = `TEORICO`; só `EXECUTAVEL` entra no ranking padrão. Filtros de liquidez: **sem padrão**, opcionais no comando. | [0004](adr/0004-preco-executavel-e-livro-vazio.md) |
+| 13 | Rendimento | **Put coberta = prêmio / strike; anualização composta 252 du; excesso sobre o CDI; custos (emolumentos B3, corretagem Necton, IR 15%) parametrizáveis; venda coberta = prêmio / spot; trava de crédito = crédito / (largura − crédito); 100 ações por estrutura; ordenação padrão = rendimento anualizado líquido.** | [0005](adr/0005-metricas-de-rendimento.md) |
+| 14 | Fontes de dados | **COTAHIST na fase 1**, baixado **manualmente** pelo usuário com o **Cadastro de Instrumentos** (estilo de exercício obrigatório); brapi descartada; intraday via Necton (MT5 → ProfitDLL → RTD) fora da Sprint 5. | [0006](adr/0006-fontes-de-dados-de-opcoes.md) |
 | 15 | Painel | **Relatório HTML estático**, stdlib, acionado pela CLI. | [0007](adr/0007-painel-html-estatico.md) |
 | 16 | Universo e filtros | **Lista de ativos informada pelo usuário**; filtros padrão: delta entre 0,15 e 0,35 (em módulo) e os 2 próximos vencimentos — todos parametrizáveis. | — |
 
@@ -230,16 +230,18 @@ Comparar oportunidades de **renda com opções** — venda coberta, put coberta 
   - ajuste de strike por proventos em dinheiro na B3 (ADR-0002 — se não se confirmar, a ADR é reaberta);
   - layout vigente do COTAHIST e fonte do estilo de exercício por série (ADR-0006);
   - tabela de emolumentos da B3 e de corretagem da Necton para opções; tratamento de IR (ADR-0005).
-- Pendências da mesa (ADR-0004 e ADR-0005) podem ser fechadas durante a sprint; o código nasce parametrizado.
+  - **Spike concluído em 2026-10-26** — premissas das [ADR-0002](adr/0002-calls-americanas-como-europeias.md), [0005](adr/0005-metricas-de-rendimento.md) e [0006](adr/0006-fontes-de-dados-de-opcoes.md) verificadas, **exceto**: strike já ajustado no `PREEXE` do COTAHIST (provável; conferir no primeiro arquivo real, antes do adapter) e MT5 na Necton (fora da Sprint 5). Ver as ADRs.
+- Pendências da mesa (ADR-0004 e ADR-0005) fechadas em 2026-10-26, inclusive o modelo de custos levantado na implementação (venda coberta paga compra da ação e exercício; extremos brutos e líquidos — [ADR-0005](adr/0005-metricas-de-rendimento.md)); o código nasce parametrizado mesmo assim.
+- **Obtenção dos dados (ADR-0006):** download **manual** pelo usuário do COTAHIST (pregão + anual ou mensal, para a vol realizada) e do Cadastro de Instrumentos do mesmo pregão; o estilo de exercício vem do cadastro (`OptnStyle`) e é **obrigatório**.
 
 ### Escopo IN
 
 - **Kernel — volatilidade implícita:** `implied_vol(price, s, k, tau, r, q, *, is_call)` com Newton salvaguardado e bisseção como fallback, checagem prévia dos limites de não-arbitragem e retorno rico `ImpliedVolResult(sigma, status, iterations, method)` — preço fora dos limites ou não convergência viram **status**, nunca exceção nem `NaN`.
 - **Domínio — cadeia e preço executável:** VOs `OptionQuote` e `OptionChain` (ADR-0003); enum de qualidade `EXECUTAVEL` / `INDICATIVO` / `TEORICO` e `executable_premium(quote, side)` (ADR-0004); interpolação do smile por vencimento para o preço `TEORICO`.
 - **Domínio — precificação:** `supports()` aceita CALL + AMERICAN com marca de aproximação; PUT + AMERICAN segue rejeitada (ADR-0002).
-- **Domínio — renda (`domain/income/`):** métricas em forma fechada por estrutura — prêmio executável, rendimento no período, anualizado (252 du), excesso sobre o CDI, bruto e líquido de custos, proteção, breakeven, ganho máximo, perda máxima, delta e N(d2) rotulado como probabilidade risco-neutra, liquidez. Travas de crédito reutilizam `Strategy`, payoff, breakevens e `stress_grid` existentes (factory nova de trava vertical, nas duas direções).
+- **Domínio — renda (`domain/income/`):** métricas em forma fechada por estrutura — prêmio executável, rendimento no período, anualizado (252 du), excesso sobre o CDI, bruto e líquido de custos, proteção, breakeven, ganho máximo, perda máxima, delta e N(d2) rotulado como probabilidade risco-neutra, liquidez. Travas de crédito reutilizam `Strategy`, payoff, breakevens e `stress_grid` existentes (factory nova de trava vertical, nas duas direções); o motor de simulação segue europeu-only, então trava com calls americanas fica fora dele ([ADR-0002](adr/0002-calls-americanas-como-europeias.md), nota de implementação 2).
 - **Port outbound:** `OptionChainPort.get_chain(underlying_symbol) -> OptionChain` + suíte de contrato herdável `OptionChainPortContract`.
-- **Adapter outbound:** `CotahistOptionChainAdapter` (parser de largura fixa, fator de cotação, zero → `None`, cache por pregão em `sqlite3`, vol realizada do subjacente).
+- **Adapter outbound:** `CotahistOptionChainAdapter` (parser de largura fixa, fator de cotação, zero → `None`, cache por pregão em `sqlite3`, vol realizada do subjacente) + leitura do **Cadastro de Instrumentos** (CSV, coluna `OptnStyle`): série sem estilo fica fora do painel com motivo (ADR-0006). Só arquivos locais, baixados manualmente.
 - **Configuração de custos:** tabelas de emolumentos e corretagem e alíquota de IR versionadas com data de vigência (ADR-0005).
 - **Use case:** `RankIncomeOpportunitiesService` com command (`underlyings`, estruturas, filtros: faixa de delta, número de vencimentos, mínimo de negócios, spread máximo, critério de ordenação) devolvendo candidatos ordenados com qualidade e motivo de exclusão quando aplicável.
 - **Adapter de apresentação:** relatório HTML estático via `python -m options_engine` (ADR-0007), com conversões de exibição só ali (decisão nº 8) e escape de todo texto externo.
@@ -259,7 +261,7 @@ Comparar oportunidades de **renda com opções** — venda coberta, put coberta 
 2. VOs de cadeia, regra de preço executável e módulo `domain/income/`.
 3. `OptionChainPort` + suíte de contrato + `CotahistOptionChainAdapter` com cache.
 4. `RankIncomeOpportunitiesService` + configuração de custos.
-5. Relatório HTML gerado pela CLI, reprodutível para um pregão fixo (fixture COTAHIST versionada em `tests/data/`).
+5. Relatório HTML gerado pela CLI, reprodutível para um pregão fixo (fixtures **sintéticas** do COTAHIST e do Cadastro de Instrumentos versionadas em `tests/data/` — dados reais da B3 não são redistribuídos).
 6. ADRs 0002–0007 com premissas verificadas (ou reabertas) e pendências fechadas.
 
 ### Critérios de Aceite (verificáveis)
@@ -278,7 +280,7 @@ Comparar oportunidades de **renda com opções** — venda coberta, put coberta 
 ### Casos de Teste (mínimo)
 
 - **Positivos:** cadeia completa com bid e ask → ranking só com `EXECUTAVEL`, ordenado pelo critério configurado; put coberta com prêmio / strike; anualização composta com `du` do calendário B3 atravessando feriado.
-- **Negativos:** ativo desconhecido → `UnknownSymbolError`; book cruzado (`bid > ask`) rejeitado pelo contrato; PUT americana rejeitada; arquivo COTAHIST truncado ou com linha de tamanho errado → erro explícito com número da linha.
+- **Negativos:** ativo desconhecido → `UnknownSymbolError`; book cruzado (`bid > ask`) rejeitado pelo contrato; PUT americana rejeitada; arquivo COTAHIST truncado ou com linha de tamanho errado → erro explícito com número da linha; série ausente do cadastro ou sem `OptnStyle` → fora do painel com motivo.
 - **Borda:** vencimento hoje (0 du → sem anualização, valor intrínseco); série só com bid usada como perna comprada (fora do ranking); trava com crédito ≥ largura (arbitragem/dado inconsistente → excluída com motivo); volatilidade implícita sem convergência (série exibida como `TEORICO` ou excluída, nunca com número inventado); subjacente sem preço utilizável → fora do painel do dia com motivo.
 
 ### Riscos

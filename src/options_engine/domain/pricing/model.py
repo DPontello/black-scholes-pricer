@@ -79,6 +79,11 @@ class PricingModel(Protocol):
         Permite ao use case falhar explicitamente
         (``UnsupportedExerciseStyleError``) em vez de deixar o modelo
         devolver um preço silenciosamente errado (decisão nº 2).
+
+        True não significa "exato": um modelo pode aceitar termos por uma
+        aproximação registrada em ADR, e então DEVE declará-la em
+        ``PricingResult.approximation`` (ADR-0002) — aceitar sem marcar
+        seria o mesmo preço silenciosamente errado por outro caminho.
         """
         ...
 

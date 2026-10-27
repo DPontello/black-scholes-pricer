@@ -21,3 +21,6 @@ CLAUDE.md
 .coverage
 coverage.xml
 htmlcov/
+
+# Painel gerado pela CLI (README: --saida painel.html)
+/painel*.html

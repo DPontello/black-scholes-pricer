@@ -23,6 +23,7 @@ _CATALOGO: list[type[DomainError]] = [
     errors.MissingPremiumError,
     errors.MixedAnnualizationBaseError,
     errors.UnknownSymbolError,
+    errors.UnderlyingUnavailableError,
 ]
 
 

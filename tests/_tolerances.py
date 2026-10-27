@@ -65,6 +65,27 @@ ABS_PAYOFF = 1e-12
 REL_BREAKEVEN = 1e-12
 ABS_BREAKEVEN = 1e-9
 
+# --- métricas de renda (domain/income/) — forma fechada -----------------------
+# Custos e rendimentos são produtos, razões e fsum de poucos termos, mais UMA
+# potência na anualização (via log1p/expm1: erro relativo ~x·ulp no expoente
+# x <= ~700 antes do overflow, i.e. <= ~2e-13). Os golden cases são literais
+# calculados à mão (decimais exatos ou 16 algarismos significativos): 1e-12
+# dá margem >= 5x sobre o pior caso e ainda mata qualquer erro de fórmula. O
+# piso absoluto cobre valores ~0 (IR nulo, rendimento de prêmio zero), onde o
+# relativo não tem significado.
+REL_INCOME = 1e-12
+ABS_INCOME = 1e-12
+
+# --- oráculo numérico do perfil líquido de renda (tests/income/) --------------
+# O P&L líquido no vencimento avaliado perna a perna, cenário a cenário, com
+# somas ingênuas, contra a forma fechada com fsum. Sem transcendentais: cada
+# lado erra poucos ulps do MAIOR termo somado (strike x ações, ~1e4 em
+# moeda), e perto do breakeven ou de resultado ~0 o cancelamento passa esse
+# erro absoluto inteiro ao resultado. 1e-12 x escala dá margem ~1e3x sobre
+# ~4 ulps (4 x 2.2e-16) e ainda mata qualquer erro de fórmula (centavos).
+REL_INCOME_ORACLE = 1e-12
+ABS_INCOME_ORACLE_PER_SCALE = 1e-12  # multiplicar pela escala strike x ações
+
 # --- teste estatístico do GBM (seed fixa — determinístico, não flaky) --------
 # Margem em erros-padrão sobre média e desvio dos log-retornos amostrados.
 # Com seed fixa o teste é determinístico; o z só precisa acomodar o sorteio
@@ -124,6 +145,21 @@ IV_ROUNDOFF_ULPS = 16.0
 # 1e-12, a cota teórica é ~2.2e-12·escala (medido: 9.1e-16·escala); 1e-11 cobre
 # a cota teórica com folga ~4x.
 ABS_IV_ROUNDTRIP_PRICE_FLOOR = 1e-11  # escalar por max(s, k) no ponto de uso
+
+
+def iv_roundtrip_price_abs_tol(cancellation_scale: float, vega: float) -> float:
+    """Tolerância absoluta do preço reavaliado na ida e volta da IV, por cota física.
+
+    Substitui o piso ``ABS_IV_ROUNDTRIP_PRICE_FLOOR·max(S, K)`` onde há uma
+    escala melhor (achado da revisão da Sprint 5: com K >> S esse piso chegava
+    a 4x o próprio preço e não detectava nem erro de 100%). Dois termos:
+
+    - ruído de avaliação, em ulps do MAIOR termo que a fórmula subtrai
+      (``cancellation_scale``: ``S·e^(-qT)·N(±d1)`` ou ``K·e^(-rT)·N(±d2)``) —
+      é ele, não ``max(S, K)``, que limita o erro de arredondamento;
+    - cota do solver propagada pelo vega: ``vega·ABS_IV_SIGMA``.
+    """
+    return IV_ROUNDOFF_ULPS * EPS_MACHINE * cancellation_scale + vega * ABS_IV_SIGMA
 
 
 def iv_sigma_abs_tol(price_error_bound: float, vega: float) -> float:

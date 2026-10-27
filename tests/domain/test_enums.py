@@ -1,6 +1,11 @@
 """Enums fundamentais — sinal de direção e fronteira enum -> bool."""
 
-from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side
+from options_engine.domain.model.enums import (
+    ExerciseStyle,
+    OptionType,
+    PricingApproximation,
+    Side,
+)
 
 
 def test_sign_buy_e_mais_um_sell_e_menos_um() -> None:
@@ -21,7 +26,14 @@ def test_is_call_e_a_fronteira_enum_para_bool() -> None:
     assert OptionType.PUT.is_call is False
 
 
-def test_exercise_style_declara_american_sem_suporta_lo() -> None:
-    """Decisão nº 2: AMERICAN existe no domínio (é legal na B3) — a rejeição
-    acontece nos caminhos de precificação, nunca por omissão no enum."""
+def test_exercise_style_declara_american_no_dominio() -> None:
+    """Decisão nº 2 (emendada pela ADR-0002): AMERICAN existe no domínio (é
+    legal na B3) — aceitar como aproximação (call) ou rejeitar (put) acontece
+    nos caminhos de precificação, nunca por omissão no enum."""
     assert {e.name for e in ExerciseStyle} == {"EUROPEAN", "AMERICAN"}
+
+
+def test_catalogo_de_aproximacoes_e_fechado() -> None:
+    """Cada aproximação nasce de uma ADR: um membro novo sem decisão
+    registrada deve quebrar este teste, não passar despercebido."""
+    assert {e.name for e in PricingApproximation} == {"AMERICAN_CALL_AS_EUROPEAN"}

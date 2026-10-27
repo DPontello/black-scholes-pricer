@@ -222,6 +222,17 @@ Pacote `src/options_engine/adapters/outbound/cotahist/` (só stdlib: `zipfile`,
   CDI, retorno sobre risco (travas), proteção (venda coberta), breakeven
   bruto/líquido, ganho e perda máximos bruto/líquido, delta, N(d2), IV, vol
   realizada, negócios, volume, spread %, marcas.
+- **Gráfico de payoff por oportunidade** (pedido do autor, 2026-10-27): SVG
+  inline gerado em Python (stdlib, sem JavaScript, sem lib de gráfico), um por
+  linha do ranking, num bloco recolhível (`<details>`). Curvas: payoff BRUTO no
+  vencimento e resultado LÍQUIDO (montagem, exercício e IR do cenário, mesmo
+  modelo de `domain/income/`). Marcas: spot atual, strikes, breakeven bruto e
+  líquido, ganho e perda máximos. Eixo x de 0,5 a 1,5 x spot (ou da grade
+  usada no ranking). Os pontos vêm do domínio (`payoff_profile`/`pnl_curve`
+  e uma função pura nova de resultado líquido por preço, testada contra o
+  oráculo de `tests/income/test_net_profile.py`); o adapter só desenha.
+  Cores e rótulos acessíveis (`<title>` no SVG), coordenadas arredondadas
+  para manter a saída determinística.
 - Saída determinística: mesma entrada => bytes idênticos (sem "gerado em" com
   relógio; se quiser data de geração, só se passada explicitamente).
 - CLI (`__main__.py`, `argparse`): `python -m options_engine [seed]` continua
@@ -234,5 +245,6 @@ Pacote `src/options_engine/adapters/outbound/cotahist/` (só stdlib: `zipfile`,
   código de saída != 0, sem traceback.
 - Composition root: função `build_income_panel(...)` em `config/composition.py`
   (wiring manual, mesma disciplina).
-- Testes: HTML idêntico em duas execuções para a fixture; escape de texto
+- Testes: HTML idêntico em duas execuções para a fixture (gráficos incluídos);
+  SVG de payoff com breakevens nas posições certas; escape de texto
   malicioso; e2e do subcomando com `tmp_path`; smoke antigo intacto.

@@ -25,8 +25,9 @@ def test_default_de_estilo_e_europeu_decisao_2() -> None:
 
 
 def test_american_e_construivel_no_dominio() -> None:
-    """Legal no domínio (ações B3 são americanas); a rejeição pertence aos
-    caminhos de precificação, não à construção."""
+    """Legal no domínio (há séries americanas na B3); aceitar a call como
+    aproximação (ADR-0002) ou rejeitar a put pertence aos caminhos de
+    precificação, não à construção."""
     termos = make_terms(exercise_style=ExerciseStyle.AMERICAN)
     assert termos.exercise_style is ExerciseStyle.AMERICAN
 

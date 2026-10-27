@@ -54,7 +54,7 @@ Critério único e objetivo:
 | VO | Racional |
 |---|---|
 | `OptionType` (enum CALL/PUT) | Elimina o antipadrão `is_call: bool` e strings mágicas no domínio. (No *kernel*, `is_call: bool` keyword-only é aceitável — lá circulam primitivos por design; a fronteira converte.) |
-| `ExerciseStyle` (enum EUROPEAN/AMERICAN) | Primeira classe porque na B3 o estilo varia por instrumento e determina se Black-Scholes é matematicamente válido. Decisão ratificada: MVP é europeu-only; AMERICAN existe no enum e é **rejeitado explicitamente** (`UnsupportedExerciseStyleError`) — nunca precificado errado em silêncio. |
+| `ExerciseStyle` (enum EUROPEAN/AMERICAN) | Primeira classe porque na B3 o estilo varia por instrumento e determina se Black-Scholes é matematicamente válido. Decisão ratificada: MVP é europeu-only; AMERICAN existe no enum e é **rejeitado explicitamente** (`UnsupportedExerciseStyleError`) — nunca precificado errado em silêncio. *Emenda [ADR-0002](adr/0002-calls-americanas-como-europeias.md) (Sprint 5):* o `PricingModel` aceita a CALL americana como aproximação europeia marcada (`PricingApproximation`), só com taxa contínua >= 0; a PUT americana segue rejeitada, e o motor de simulação rejeita qualquer leg americana. |
 | `Side` (enum BUY/SELL) | Direção de uma leg. Valor puro. |
 | `OptionTerms` | Termos econômicos (strike, expiry, tipo, estilo) **sem o ticker**. Dois contratos de termos idênticos são economicamente intercambiáveis — igualdade estrutural é a semântica correta. A identidade (ticker) pertence à Entity `OptionContract`. |
 | `DayCountConvention` | **Nunca um `252` hardcoded.** Constantes `BUSINESS_252` (B3 — **default ratificado pela mesa**) e `CALENDAR_365` (Hull/literatura, usado nos golden tests). Armadilha que o VO torna auditável: vol anualizada e τ devem estar na mesma base — misturar produz preço errado sem nenhum erro de runtime. |
@@ -63,7 +63,8 @@ Critério único e objetivo:
 | `Volatility` | `value: float` + base de anualização (`BUSINESS_252` / `CALENDAR_365`). Mesma disciplina da taxa: vol como `float` nu no snapshot repetiria exatamente o erro que o `RiskFreeRate` existe para impedir. Restrição consciente do MVP: **vol flat por subjacente** (sem smile/por-strike) — sinalizada, não escondida. |
 | `MarketSnapshot` | Foto **atômica e imutável** do mercado: spot, `bid`/`ask`/`mid`, `RiskFreeRate`, `Volatility`, timestamp tz-aware. Atomicidade garante que preço + gregas + grid inteiro usam dados coerentes entre si — o spot não muda no meio do cálculo. |
 | `Greeks` | `delta, gamma, theta_per_year, vega_per_vol_unit, rho` — **unidade no nome do campo** (defesa estrutural contra "falsos bugs" de convenção). Rho entra desde o dia 1: o `StressScenario` tem `rate_shift`, logo a grega correspondente existe. Agregável por soma ponderada. |
-| `PricingResult` | Preço + `Greeks` + `model_id` + os inputs usados (`MarketSnapshot`, `TimeToExpiry`). Carregar inputs junto ao output dá rastreabilidade e reprodutibilidade de graça: todo número do sistema é reconstruível a posteriori. |
+| `PricingApproximation` *(Sprint 5)* | Marca de aproximação do modelo (`AMERICAN_CALL_AS_EUROPEAN`, ADR-0002), carregada em `PricingResult.approximation`; `None` = preço exato do modelo. Existe para a aproximação nunca viajar como valor exato — o painel a exibe. |
+| `PricingResult` | Preço + `Greeks` + `model_id` + os inputs usados (`MarketSnapshot`, `TimeToExpiry`) + `approximation` (marca, `None` = exato). Carregar inputs junto ao output dá rastreabilidade e reprodutibilidade de graça: todo número do sistema é reconstruível a posteriori. |
 | `StrategyLeg` | Termos + símbolo + `side` + `quantity` + `premium: float \| None`. **Invariante: `quantity > 0` — a direção vive em `side`, nunca em quantidade negativa** (`SELL/-10` é ambiguidade que inverte P&L silenciosamente; o tipo a torna irrepresentável). Prêmio **opcional, informado pelo chamador** (decisão ratificada): sem prêmio, o sistema calcula apenas payoff bruto. |
 | `StressScenario` | Choque nomeado e imutável: `spot_shift` multiplicativo, `vol_shift` aditivo em pontos de vol, `rate_shift`. `label` permite relatório auditável. |
 | `ScenarioGrid` | Especificação declarativa do grid (`spot_min`, `spot_max`, `steps`, eixo de vol). Separar **especificação** (VO barato) de **materialização** (floats no kernel) é parte do functional core (§5). |
@@ -104,8 +105,10 @@ class PricingModel(Protocol):
     def model_id(self) -> str: ...          # "black-scholes-v1" → auditoria no PricingResult
 
     def supports(self, terms: OptionTerms) -> bool: ...
-    # BS NÃO precifica exercício americano (ações B3). supports() permite ao use case
-    # falhar explicitamente (UnsupportedExerciseStyleError) em vez de retornar preço errado.
+    # BS europeu: aceita a CALL americana como aproximação marcada (ADR-0002, taxa >= 0) e
+    # rejeita a PUT americana. supports() permite ao use case falhar explicitamente
+    # (UnsupportedExerciseStyleError) em vez de retornar preço errado; a condição de taxa
+    # depende do mercado e é aplicada por price_many.
 
     def price_many(
         self,
@@ -158,7 +161,25 @@ class RandomSource(Protocol):
 
     def gaussians(self, n: int) -> tuple[float, ...]: ...
     def uniform(self, low: float, high: float) -> float: ...
+
+
+@runtime_checkable
+class OptionChainPort(Protocol):
+    """Cadeia de opções de um subjacente (Sprint 5, ADR-0003). Fase 1: COTAHIST de fim de
+    dia (CotahistOptionChainAdapter); intraday depois — mesmo contrato e mesma suíte.
+    Lado ausente do book é None, nunca 0; séries que a fonte trouxe e o adapter não pôde
+    representar sem inventar dado saem em OptionChain.rejected_series, com motivo.
+    Desconhecido -> UnknownSymbolError; conhecido sem preço utilizável no pregão
+    (sem fechamento, histórico insuficiente para a vol realizada) ->
+    UnderlyingUnavailableError. Ativo-objeto com fechamento mas sem ofertas:
+    spot = bid = ask = mid = fechamento e underlying_book_available = False."""
+
+    def get_chain(self, underlying_symbol: str) -> OptionChain: ...
 ```
+
+A suíte herdável `tests/contract/option_chain_contract.py` é o gate de conformidade de
+todo adapter de cadeia, inclusive os intraday futuros; o COTAHIST a herda em
+`tests/contract/test_cotahist_option_chain.py` sobre a fixture sintética.
 
 ### 4.2 Inbound (use cases) — `application/ports/inbound.py`
 
@@ -190,7 +211,19 @@ class StressTestUseCase(Protocol):
     def execute(
         self, strategy: Strategy, scenarios: Sequence[StressScenario]
     ) -> StressTestReport: ...
+
+
+@runtime_checkable
+class RankIncomeOpportunitiesUseCase(Protocol):   # Sprint 5
+    def execute(self, command: RankIncomeCommand) -> IncomeRanking: ...
 ```
+
+`RankIncomeCommand` carrega os ativos do usuário e os filtros com os defaults da mesa
+(faixa de delta 0,15–0,35 em módulo, dois vencimentos, sem filtro de liquidez,
+anualizado líquido, 100 ações). O resultado `IncomeRanking` (VOs de
+`domain/income/ranking.py`) já sai decidido: ranking só EXECUTAVEL, referências
+INDICATIVO/TEORICO rotuladas e exclusões com motivo. A data de valoração do painel é a do
+**pregão da cadeia** (timestamp do snapshot no fuso de valoração), não o relógio.
 
 Os adapters inbound (CLI hoje, FastAPI na Sprint 4) dependem **apenas** destes Protocols. O endpoint FastAPI será ~10 linhas de tradução HTTP→command — prova concreta de que o framework é adapter, não fundação.
 
@@ -226,6 +259,21 @@ def bs_outputs(s: float, k: float, tau: float, r: float, sigma: float,
                q: float = 0.0, *, is_call: bool) -> BSOutputs: ...
 # Computa (d1, d2, N(d1), N(d2), n(d1), descontos) UMA vez; preço e 5 gregas derivam
 # dos mesmos intermediários (~6× menos erf/log/sqrt). Intermediário não vaza pelo port.
+
+# domain/kernel/implied_vol.py (Sprint 5)
+class ImpliedVolResult(NamedTuple):
+    sigma: float | None         # float se e somente se status == CONVERGED; nunca NaN
+    status: ImpliedVolStatus    # CONVERGED, BELOW_INTRINSIC, ABOVE_UPPER_BOUND,
+                                #   NO_CONVERGENCE, EXPIRED
+    iterations: int
+    method: str                 # METHOD_* (newton, bisection, closed_form, ...)
+
+def implied_vol(price: float, s: float, k: float, tau: float, r: float,
+                q: float = 0.0, *, is_call: bool, sigma_tol: float = 1e-12,
+                max_iterations: int = 100) -> ImpliedVolResult: ...
+# Newton salvaguardado por bracketing (rtsafe). Preço, vega e limite inferior vêm de
+# bs_outputs — a fórmula não é reimplementada. Preço fora dos limites, tau = 0 ou não
+# convergência viram status, nunca exceção; só entrada ilegal levanta.
 ```
 
 `q` (carry/dividend yield contínuo) está na assinatura **desde o dia 1 com default 0.0** — o modelo do MVP não usa dividendos, mas adicioná-lo depois seria quebra de contrato do kernel; agora custa zero.
@@ -249,9 +297,13 @@ Norma única referenciada por arquitetura, V&V e roadmap — resolve "quem valid
 | `tau = 0` exato | **Limite legal** | Kernel, ramo fechado | Preço = intrínseco `max(±(s−k), 0)`; Δ = degrau (0/1 para call, 0/−1 para put; ATM exato: convenção documentada); Γ, vega, Θ, rho = 0 **por convenção documentada** (Γ ATM no vencimento é matematicamente um delta de Dirac — reportar 0 é decisão, não acidente). Ratificado (#5): posição vencida dentro de um grid = **intrínseco descontado**. |
 | `sigma = 0` exato | **Limite legal** | Kernel, ramo fechado | Ativo determinístico: `preço = e^(−r·tau) · max(±(F−k), 0)` com `F = s·e^((r−q)·tau)` |
 | `tau → 0⁺`, `sigma → 0⁺` | Legal | Kernel, fórmula normal | Contínuo com os ramos exatos; `math.isfinite` garantido em todas as saídas |
-| Exercício AMERICAN | Legal no domínio, fora do modelo | `supports()` no use case | `UnsupportedExerciseStyleError` — nunca preço silenciosamente errado (fase 6: binomial) |
+| Overflow de produto intermediário (`s` ou `k` perto do máximo do float64) | Legal, irrepresentável | Kernel não inventa número; VOs de resultado rejeitam | A saída afetada sai `inf`/NaN (o piso em zero só age sobre ruído finito); `PricingResult` e `Greeks` levantam `InvalidDomainValueError` |
+| `s` e `k` em extremos opostos do float64 (razão ou `s·σ·√τ` em underflow) | Legal | Kernel e `implied_vol` | Calculado sem formar a razão ou o produto — nunca `ValueError` nem `ZeroDivisionError` cru (propriedades de magnitude extrema) |
+| Inversão (`implied_vol`) | Legal | Kernel | Preço fora dos limites, `tau = 0` ou não convergência → `ImpliedVolStatus` (nunca exceção, nunca NaN); entrada ilegal → `InvalidKernelInputError` |
+| CALL AMERICAN | Legal, aproximação ([ADR-0002](adr/0002-calls-americanas-como-europeias.md)) | `supports()` + `price_many` | Preço europeu marcado `AMERICAN_CALL_AS_EUROPEAN`; taxa contínua < 0 → `UnsupportedExerciseStyleError`; o motor de simulação rejeita |
+| PUT AMERICAN | Legal no domínio, fora do modelo | `supports()` no use case | `UnsupportedExerciseStyleError` — nunca preço silenciosamente errado (fase 6: binomial) |
 
-Hierarquia de exceções (`domain/model/errors.py`): raiz `DomainError`; filhas `InvalidKernelInputError`, `InvalidDomainValueError` (invariante de VO violada na construção), `EmptyStrategyError`, `MixedUnderlyingError`, `MixedExpiryError` (decisão nº 6), `InvalidStrategyError`, `UnsupportedExerciseStyleError`, `MissingPremiumError` (decisão nº 4: `pnl` sem prêmio), `MixedAnnualizationBaseError` (vol e τ em bases distintas — a armadilha do CONVENTIONS §2 tornada detectável), `UnknownSymbolError`, `ExpiredOptionError` (Sprint 3: vencimento anterior à data de valoração num caminho de precificação; no próprio dia é legal — τ = 0). Catálogo canônico único — pré-requisito do mapeamento HTTP da Sprint 4.
+Hierarquia de exceções (`domain/model/errors.py`): raiz `DomainError`; filhas `InvalidKernelInputError`, `InvalidDomainValueError` (invariante de VO violada na construção), `EmptyStrategyError`, `MixedUnderlyingError`, `MixedExpiryError` (decisão nº 6), `InvalidStrategyError`, `UnsupportedExerciseStyleError`, `MissingPremiumError` (decisão nº 4: `pnl` sem prêmio), `MixedAnnualizationBaseError` (vol e τ em bases distintas — a armadilha do CONVENTIONS §2 tornada detectável), `UnknownSymbolError`, `UnderlyingUnavailableError` (Sprint 5: subjacente conhecido sem preço utilizável no pregão, com o motivo), `ExpiredOptionError` (Sprint 3: vencimento anterior à data de valoração num caminho de precificação; no próprio dia é legal — τ = 0). Catálogo canônico único — pré-requisito do mapeamento HTTP da Sprint 4.
 
 ---
 
@@ -264,16 +316,19 @@ black-scholes-pricer/
 ├── src/options_engine/
 │   ├── domain/                  # stdlib only — verificado por import-linter no CI
 │   │   ├── model/               # enums, conventions, market, contracts, strategy,
-│   │   │                        #   scenarios, results, errors
+│   │   │                        #   scenarios, results, errors, chain (S5)
 │   │   ├── pricing/             # PricingModel (Protocol) + black_scholes.py (Sprint 2)
-│   │   └── kernel/              # functional core: distributions.py, black_scholes.py, payoff.py
+│   │   ├── income/              # custos e métricas de renda em forma fechada (S5)
+│   │   └── kernel/              # functional core: distributions.py, black_scholes.py, payoff.py,
+│   │                            #   implied_vol.py (S5)
 │   ├── application/
 │   │   ├── ports/               # inbound.py, outbound.py
 │   │   └── use_cases/
 │   ├── adapters/
-│   │   ├── inbound/             # cli/ (S3), rest/ (FastAPI, S4)
+│   │   ├── inbound/             # html_report.py (painel, S5), rest/ (FastAPI, S4)
 │   │   └── outbound/            # mock_orderbook/, system_clock.py, seeded_random.py,
-│   │                            #   b3_calendar.py (arquivo estático versionado)
+│   │                            #   b3_calendar.py e cost_schedules.py (arquivos estáticos
+│   │                            #   versionados em data/), cotahist/ (S5)
 │   └── config/
 │       └── composition.py       # composition root — wiring explícito, sem DI framework
 └── tests/
@@ -321,4 +376,4 @@ black-scholes-pricer/
 
 Cada decisão acima deve virar ADR curto em `docs/adr/` quando a sprint correspondente a materializar.
 
-**Painel de Renda (Sprint 5, mesa 2026-10-26):** as decisões nº 9 a 16 — prioridade, calls americanas, `OptionChainPort`, regra de livro vazio, métricas de rendimento, fontes de dados, painel e universo — estão na tabela do [ROADMAP](ROADMAP.md) e nas [ADRs 0001–0007](adr/README.md). Esta seção e o §4.1 recebem o detalhe de arquitetura quando a sprint as materializar; até lá, as ADRs são a fonte de verdade. A restrição "vol flat por subjacente" acima é a que a Sprint 5 remove (volatilidade implícita por série).
+**Painel de Renda (Sprint 5, mesa 2026-10-26):** as decisões nº 9 a 16 — prioridade, calls americanas, `OptionChainPort`, regra de livro vazio, métricas de rendimento, fontes de dados, painel e universo — estão na tabela do [ROADMAP](ROADMAP.md) e nas [ADRs 0001–0007](adr/README.md). O §4.1 (`OptionChainPort`), o §4.2 (`RankIncomeOpportunitiesUseCase`) e o §6 registram o que a Sprint 5 materializou; as ADRs seguem a fonte de verdade das decisões de negócio. A restrição "vol flat por subjacente" acima é a que a Sprint 5 remove (volatilidade implícita por série).

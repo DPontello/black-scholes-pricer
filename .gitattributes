@@ -1,0 +1,4 @@
+# Fixture sintética do COTAHIST e do Cadastro de Instrumentos: os testes comparam
+# os bytes com o que o gerador produz, então o git não converte fim de linha.
+tests/data/cotahist/*.TXT -text
+tests/data/cotahist/*.csv -text

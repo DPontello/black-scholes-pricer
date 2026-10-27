@@ -21,6 +21,7 @@ __all__ = [
     "MixedAnnualizationBaseError",
     "MixedExpiryError",
     "MixedUnderlyingError",
+    "UnderlyingUnavailableError",
     "UnknownSymbolError",
     "UnsupportedExerciseStyleError",
 ]
@@ -79,9 +80,13 @@ class InvalidStrategyError(DomainError):
 class UnsupportedExerciseStyleError(DomainError):
     """Estilo de exercício legal no domínio, mas fora do modelo (decisão nº 2).
 
-    AMERICAN existe no enum ``ExerciseStyle`` e é rejeitado explicitamente —
-    Black-Scholes europeu nunca precifica errado em silêncio. Suporte
-    americano (binomial) é Fase 6, atrás do seam ``supports()``.
+    Desde a emenda da ADR-0002, o Black-Scholes europeu aceita a CALL
+    americana como aproximação marcada (``PricingApproximation``), desde que
+    a taxa contínua seja >= 0, e rejeita explicitamente a PUT americana, cujo
+    exercício antecipado pode ser ótimo mesmo sem dividendos (como o da call
+    com taxa negativa); o motor de simulação segue rejeitando qualquer leg
+    americana. Precificar errado em silêncio nunca é opção. Suporte
+    americano exato (binomial) é Fase 6, atrás do seam ``supports()``.
     """
 
 
@@ -109,6 +114,16 @@ class ExpiredOptionError(DomainError):
     o intrínseco descontado (decisão nº 5). ``expiry < hoje`` não tem preço
     a termo: é a guarda dos use cases (Sprint 3), disparada ANTES da
     contagem de dias — o ``TradingCalendar`` só recebe ``start <= end``.
+    """
+
+
+class UnderlyingUnavailableError(DomainError):
+    """Subjacente conhecido na fonte, mas sem preço utilizável no pregão.
+
+    ADR-0004: o ativo "fica fora do painel do dia com motivo explícito" —
+    sem fechamento no pregão, ou sem histórico suficiente para a vol
+    realizada. A mensagem carrega o motivo, que o painel exibe. Distinta de
+    ``UnknownSymbolError``: o símbolo existe, só não há número honesto hoje.
     """
 
 

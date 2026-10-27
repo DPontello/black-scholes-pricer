@@ -44,6 +44,11 @@
 | Payoff no vencimento (só somas/máximos) | 1e-12 | 1e-12 | analítico manual | aritmética trivial, sem transcendentais |
 | Breakevens do Iron Condor | 1e-12 | 1e-9 | forma fechada (`K2 − crédito líq.` / `K3 + crédito líq.`) | fórmula exata, sem transcendentais |
 | Invariantes de desigualdade (bounds, monotonia) | — | folga **1e-9 · escala** | matemática | desigualdade estrita vira `>= −folga` para não flakar no limite |
+| Volatilidade implícita — sigma recuperado (S5) | — | `iv_sigma_abs_tol` = 1e-11 + erro de preço / vega | ida e volta pelo kernel; scipy | cota do solver (`sigma_tol` = 1e-12) mais o erro do preço que originou a inversão, propagado pelo condicionamento |
+| Volatilidade implícita — preço reavaliado, ida e volta pelo kernel (S5) | — | 1e-11 · max(S,K) | o próprio kernel | vega·\|Δsigma\| <= ~2.2e-12·escala; folga ~4× |
+| Volatilidade implícita — preço reavaliado contra scipy (S5) | 1e-9 | `iv_roundtrip_price_abs_tol` = 16·eps·escala de cancelamento + vega·1e-11 | scipy | ruído em ulps do maior termo subtraído, não de max(S,K) (este piso chegava a 4× o preço com K ≫ S); medido: margem 28×, cota <= 1.1e-6 do preço |
+| Métricas de renda — forma fechada (S5) | 1e-12 | 1e-12 | golden à mão | produtos, razões e fsum de poucos termos + uma potência por log1p/expm1 |
+| Perfil líquido de renda — oráculo numérico (S5) | 1e-12 | 1e-12 · strike · ações | P&L avaliado perna a perna | somas ingênuas contra fsum; cancelamento perto do breakeven leva o erro absoluto do maior termo |
 
 **Convenções de unidade fixadas antes de qualquer tolerância fazer sentido** (decisão ratificada nº 8): o kernel expõe gregas em unidades canônicas — vega por 1.00 de vol, Θ como ∂V/∂t **por ano calendário**, ρ por 1.00 de taxa, `q` decimal. Conversões de mercado (vega por ponto, Θ por dia útil ÷252) pertencem exclusivamente ao adapter de apresentação (Sprint 4) e têm testes próprios. Testar grega em unidade errada é a fonte nº 1 de "tolerância que não fecha".
 
@@ -88,6 +93,7 @@ Metadados obrigatórios por caso: `source` (livro/edição/exemplo), `rounding`,
 O core é stdlib-pura; o oráculo **não pode contaminar** o `pyproject.toml` do pacote.
 
 - **Sprint 1 (todo PR):** job de CI `oracle` com ambiente próprio (`tests/oracle/requirements.txt`: scipy). Gera ~10.000 conjuntos de parâmetros pseudo-aleatórios **com seed fixa registrada** em domínio realista (`S ∈ [0.01, 1e6]`, `σ ∈ [1e-4, 5.0]`, `T ∈ [1/252, 30]`, `r ∈ [−0.05, 0.5]` — taxa negativa incluída de propósito: CDI não é negativo, mas o core não pode quebrar). Compara preço e gregas contra reimplementação com `scipy.stats.norm` (`tests/oracle/scipy_oracle.py`, seed fixa 20260702), com `REL_ORACLE` (1e-9) e piso `ABS_ORACLE_FLOOR·max(S,K)`. O arquivo não segue o padrão `test_*.py` de propósito — a coleta local o ignora e o job de CI o invoca por caminho explícito; o build local do dev sem scipy não é afetado.
+- **Sprint 5 — volatilidade implícita:** no mesmo job, 10.000 preços gerados pelo oráculo em sigma são invertidos pelo kernel (`implied_vol`) e reavaliados pelo oráculo em sigma' (domínio identificável: \|ln(F/K)\| <= 3 desvios-padrão, vol total <= 3). Exige `CONVERGED` em todos, o preço reavaliado dentro de `iv_roundtrip_price_abs_tol` e sigma dentro de `iv_sigma_abs_tol`.
 - **Hardening (pós-v1.0, agendado — não prometido sem slot):** QuantLib como segundo oráculo. scipy pega bug na nossa `N(x)`; QuantLib, estruturalmente independente, pega bug **na fórmula inteira** (erro copiado, não só digitado). São modos de falha diferentes.
 
 ---
@@ -174,7 +180,10 @@ Comportamento **definido em contrato, não emergente** (referência única para 
 | `S = K` exato | Legal | Kernel | caminho sem surpresa de sinal em `log(1) = −0.0` | golden ATM §2.1 |
 | `r = 0` e `r < 0` | Legal | Kernel | fórmula válida; paridade fecha | property tests |
 | **Posição vencida dentro de um grid** | Legal (decisão ratificada nº 5) | Kernel/simulação | **Intrínseco descontado** — nunca erro, nunca célula nula | teste dedicado do grid |
-| Exercício AMERICAN | Legal no domínio, fora do modelo (decisão nº 2) | `supports()` no use case | `UnsupportedExerciseStyleError` — nunca preço silenciosamente errado | teste dedicado |
+| Overflow de produto intermediário (S ou K perto do máximo do float64) | Legal, irrepresentável | Kernel + VOs de resultado | Saída `inf`/NaN, nunca número finito inventado; `PricingResult`/`Greeks` rejeitam | teste dedicado |
+| S e K em extremos opostos do float64 | Legal | Kernel, `implied_vol` | Saída ou exceção tipada — nunca `ValueError`/`ZeroDivisionError` cru | property test de magnitude extrema |
+| CALL AMERICAN | Legal, aproximação (ADR-0002) | `supports()` + `price_many` | Preço europeu marcado; r contínua < 0 → `UnsupportedExerciseStyleError`; motor de simulação rejeita | testes dedicados + property `C >= S − K` |
+| PUT AMERICAN | Legal no domínio, fora do modelo (decisão nº 2) | `supports()` no use case | `UnsupportedExerciseStyleError` — nunca preço silenciosamente errado | teste dedicado |
 
 ---
 

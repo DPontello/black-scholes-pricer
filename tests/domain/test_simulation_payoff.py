@@ -4,14 +4,15 @@ Goldens: geometria conhecida de cor de cada estrutura nomeada (vértices,
 platôs, pico, V), com prêmios canônicos dos builders. Propriedades: payoff
 da estrutura = soma dos payoffs das legs; short == -long ponto a ponto (o
 anti-inversão-de-P&L, propriedade mais importante da Sprint 2); pnl exige
-prêmio (decisão nº 4); AMERICAN é rejeitado (decisão nº 2).
+prêmio (decisão nº 4); AMERICAN é rejeitado no motor (decisão nº 2),
+inclusive a call que o ``PricingModel`` aceita pela ADR-0002.
 """
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from options_engine.domain.model.enums import ExerciseStyle, Side
+from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side
 from options_engine.domain.model.errors import (
     MissingPremiumError,
     UnsupportedExerciseStyleError,
@@ -240,25 +241,37 @@ def test_short_e_menos_long_ponto_a_ponto(estrutura: Strategy, spot: float) -> N
 
 
 # ---------------------------------------------------------------------------
-# Rejeição de AMERICAN (decisão nº 2)
+# Rejeição de AMERICAN no motor (decisão nº 2; ADR-0002 não se estende aqui)
 # ---------------------------------------------------------------------------
 
 
-def _estrutura_americana() -> Strategy:
-    leg = make_leg(terms=make_terms(exercise_style=ExerciseStyle.AMERICAN), premium=1.0)
-    return Strategy.create("americana", [leg])
+def _estrutura_americana(option_type: OptionType) -> Strategy:
+    """A CALL americana é a que o ``PricingModel`` aceita pela ADR-0002 — o
+    caso mais fácil de vazar para o motor por engano, cujos resultados não
+    carregam a marca de aproximação exigida pela ADR. A PUT americana fica
+    fora em toda parte."""
+    terms = make_terms(option_type=option_type, exercise_style=ExerciseStyle.AMERICAN)
+    return Strategy.create("americana", [make_leg(terms=terms, premium=1.0)])
 
 
-def test_payoff_rejeita_american() -> None:
+_TIPOS = pytest.mark.parametrize(
+    "option_type", [OptionType.CALL, OptionType.PUT], ids=["call", "put"]
+)
+
+
+@_TIPOS
+def test_payoff_rejeita_american(option_type: OptionType) -> None:
+    with pytest.raises(UnsupportedExerciseStyleError, match="ADR-0002"):
+        payoff_at_expiry(_estrutura_americana(option_type), 30.0)
+
+
+@_TIPOS
+def test_pnl_rejeita_american(option_type: OptionType) -> None:
     with pytest.raises(UnsupportedExerciseStyleError):
-        payoff_at_expiry(_estrutura_americana(), 30.0)
+        pnl(_estrutura_americana(option_type), 30.0)
 
 
-def test_pnl_rejeita_american() -> None:
+@_TIPOS
+def test_perfil_rejeita_american(option_type: OptionType) -> None:
     with pytest.raises(UnsupportedExerciseStyleError):
-        pnl(_estrutura_americana(), 30.0)
-
-
-def test_perfil_rejeita_american() -> None:
-    with pytest.raises(UnsupportedExerciseStyleError):
-        payoff_profile(_estrutura_americana(), (20.0, 30.0, 40.0))
+        payoff_profile(_estrutura_americana(option_type), (20.0, 30.0, 40.0))

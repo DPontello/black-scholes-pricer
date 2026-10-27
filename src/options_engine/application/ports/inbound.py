@@ -16,10 +16,15 @@ Emenda de 2026-07-04 ao ARCH §4.2 (painel de design da Sprint 3):
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from math import isfinite
 from typing import Protocol, runtime_checkable
 
+from options_engine.domain.income.costs import REFERENCE_POSITION_SHARES
+from options_engine.domain.income.metrics import IncomeStructure
+from options_engine.domain.income.ranking import IncomeRanking, RankingCriterion
 from options_engine.domain.model.contracts import OptionTerms
+from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.results import PayoffProfile, PricingResult
 from options_engine.domain.model.scenarios import SpotAxis, StressScenario, StressTestReport
 from options_engine.domain.model.strategy import Strategy
@@ -28,6 +33,8 @@ __all__ = [
     "AnalyzeStrategyPayoffUseCase",
     "PriceOptionCommand",
     "PriceOptionUseCase",
+    "RankIncomeCommand",
+    "RankIncomeOpportunitiesUseCase",
     "StressTestUseCase",
 ]
 
@@ -52,7 +59,11 @@ class PriceOptionCommand:
 
 @runtime_checkable
 class PriceOptionUseCase(Protocol):
-    """Precifica uma opção europeia com dados de mercado atuais."""
+    """Precifica uma opção com dados de mercado atuais.
+
+    Europeia exata; call americana como aproximação europeia marcada no
+    resultado (ADR-0002, com taxa >= 0); put americana rejeitada.
+    """
 
     def execute(self, command: PriceOptionCommand) -> PricingResult: ...
 
@@ -75,3 +86,71 @@ class StressTestUseCase(Protocol):
     def execute(
         self, strategy: Strategy, scenarios: Sequence[StressScenario]
     ) -> StressTestReport: ...
+
+
+@dataclass(frozen=True, slots=True)
+class RankIncomeCommand:
+    """Pedido do painel de renda (plano da fase 2 §3.3) — defaults decididos pela mesa.
+
+    - ``underlyings``: a lista do usuário, na ordem dele; repetido é erro.
+    - ``structures``: as três por default (put coberta, venda coberta e
+      trava de crédito, com put e com call).
+    - ``delta_min``/``delta_max``: faixa do MÓDULO do delta da perna vendida,
+      0,15 a 0,35.
+    - ``expiries``: os N próximos vencimentos com du >= 0 (default 2).
+    - ``min_trades`` e ``max_spread_pct``: filtros de liquidez SEM default;
+      ``max_spread_pct`` em decimal ((ask - bid) / mid; 0.10 == 10%).
+    - ``sort_by``: default rendimento anualizado LÍQUIDO.
+    - ``reference_shares``: 100 ações por estrutura.
+    - ``spread_width_steps``: a perna comprada da trava é o k-ésimo strike
+      seguinte mais fora do dinheiro, mesmo tipo e vencimento (técnico).
+    """
+
+    underlyings: tuple[str, ...]
+    structures: frozenset[IncomeStructure] = field(
+        default_factory=lambda: frozenset(IncomeStructure)
+    )
+    delta_min: float = 0.15
+    delta_max: float = 0.35
+    expiries: int = 2
+    min_trades: int | None = None
+    max_spread_pct: float | None = None
+    sort_by: RankingCriterion = RankingCriterion.NET_ANNUAL_YIELD
+    reference_shares: int = REFERENCE_POSITION_SHARES
+    spread_width_steps: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.underlyings or any(not s.strip() for s in self.underlyings):
+            raise InvalidDomainValueError("o painel exige ao menos um ativo, sem nomes vazios")
+        if len(set(self.underlyings)) != len(self.underlyings):
+            raise InvalidDomainValueError(f"ativo repetido em {self.underlyings!r}")
+        if not self.structures:
+            raise InvalidDomainValueError("o painel exige ao menos uma estrutura")
+        if not (0.0 <= self.delta_min <= self.delta_max <= 1.0):
+            raise InvalidDomainValueError(
+                f"faixa de delta exige 0 <= mínimo <= máximo <= 1; recebido "
+                f"{self.delta_min!r} a {self.delta_max!r}"
+            )
+        inteiros = {
+            "expiries": (self.expiries, 1),
+            "reference_shares": (self.reference_shares, 1),
+            "spread_width_steps": (self.spread_width_steps, 1),
+        }
+        for nome, (valor, minimo) in inteiros.items():
+            if valor < minimo:
+                raise InvalidDomainValueError(f"{nome} deve ser >= {minimo}; recebido {valor!r}")
+        if self.min_trades is not None and self.min_trades < 0:
+            raise InvalidDomainValueError(f"min_trades deve ser >= 0; recebido {self.min_trades!r}")
+        if self.max_spread_pct is not None and not (
+            isfinite(self.max_spread_pct) and self.max_spread_pct > 0.0
+        ):
+            raise InvalidDomainValueError(
+                f"max_spread_pct deve ser finito e > 0; recebido {self.max_spread_pct!r}"
+            )
+
+
+@runtime_checkable
+class RankIncomeOpportunitiesUseCase(Protocol):
+    """Ranking das oportunidades de renda do pregão: venda coberta, put coberta e travas."""
+
+    def execute(self, command: RankIncomeCommand) -> IncomeRanking: ...

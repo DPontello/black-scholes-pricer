@@ -38,6 +38,18 @@ Contrato de fronteira (tabela normativa em docs/ARCHITECTURE.md):
     sigma·sqrt(tau) em underflow (sigma > 0 e tau > 0, mas o produto vale
         0.0 em float64) -> mesmo ramo determinístico: sem difusão
         representável, o limite correto é o intrínseco descontado.
+    s/k ou s·sigma·sqrt(tau) em underflow/overflow (s e k em extremos
+        opostos do float64) -> calculados sem formar a razão ou o produto
+        (``_log_moneyness``; gamma por divisões sucessivas): nunca
+        ``ValueError`` nem ``ZeroDivisionError`` cru.
+    preço >= 0.0 sempre que finito (VV-PLAN §6, linha Deep OTM): piso em
+        zero contra o ruído de cancelamento em float — ver ``bs_outputs`` e
+        ``_deterministic``.
+    overflow de um produto intermediário (s ou k perto do máximo do
+        float64) -> a saída afetada sai inf ou NaN, nunca um número finito
+        inventado: o piso em zero não toca valor não finito, e os VOs de
+        resultado (``PricingResult``, ``Greeks``) rejeitam o não finito com
+        ``InvalidDomainValueError``.
 
 O par (preço, 5 gregas) é derivado de UM único conjunto de intermediários
 (d1, d2, N(d1), N(d2), n(d1), fatores de desconto) — risco B3: recomputar
@@ -52,6 +64,7 @@ Referências: Hull, *Options, Futures and Other Derivatives*, 10ª ed.,
 caps. 15/19; Haug, *The Complete Guide to Option Pricing Formulas*, 2ª ed.
 """
 
+import sys
 from math import exp, isfinite, log, sqrt
 from typing import NamedTuple
 
@@ -112,6 +125,17 @@ def _expired(s: float, k: float, *, is_call: bool) -> BSOutputs:
     return BSOutputs(price, delta, 0.0, 0.0, 0.0, 0.0)
 
 
+def _floor_finite_noise(price: float) -> float:
+    """Piso em zero só para o ruído FINITO de cancelamento (ver ``bs_outputs``).
+
+    ``-inf`` (overflow de um produto intermediário) e NaN (``inf·0``,
+    ``inf - inf``) passam intactos: ``max(-inf, 0.0)`` devolvia 0.0, um preço
+    válido inventado onde o valor verdadeiro era representável (achado da
+    revisão da Sprint 5).
+    """
+    return 0.0 if (isfinite(price) and price < 0.0) else price
+
+
 def _deterministic(
     s: float, k: float, tau: float, r: float, q: float, *, is_call: bool
 ) -> BSOutputs:
@@ -120,6 +144,12 @@ def _deterministic(
     Preço = intrínseco descontado sobre o forward; gregas são os limites
     analíticos da fórmula BS quando sigma -> 0+ (continuidade verificada em
     teste contra sigma = 1e-8).
+
+    O preço tem piso em zero porque o ramo é decidido por ``forward > k`` (ou
+    ``<``) mas precificado por ``s*df_q - k*df_r``: caminhos aritméticos
+    distintos. Com o forward a poucos ulps do strike, a diferença arredonda
+    para um negativo de alguns ulps (~1e-15 com s ~ 30), violando
+    ``e^(-r*tau)*max(F - k, 0) >= 0`` do contrato.
     """
     df_r = exp(-r * tau)
     df_q = exp(-q * tau)
@@ -127,7 +157,7 @@ def _deterministic(
     if is_call:
         if forward > k:
             return BSOutputs(
-                price=s * df_q - k * df_r,
+                price=_floor_finite_noise(s * df_q - k * df_r),
                 delta=df_q,
                 gamma=0.0,
                 theta_per_year=q * s * df_q - r * k * df_r,
@@ -138,7 +168,7 @@ def _deterministic(
         return BSOutputs(0.0, delta, 0.0, 0.0, 0.0, 0.0)
     if forward < k:
         return BSOutputs(
-            price=k * df_r - s * df_q,
+            price=_floor_finite_noise(k * df_r - s * df_q),
             delta=-df_q,
             gamma=0.0,
             theta_per_year=r * k * df_r - q * s * df_q,
@@ -149,6 +179,21 @@ def _deterministic(
     return BSOutputs(0.0, delta, 0.0, 0.0, 0.0, 0.0)
 
 
+def _log_moneyness(s: float, k: float) -> float:
+    """ln(s/k) sem a razão transbordar ou zerar.
+
+    ``log(s / k)`` é o caminho normal: perto do ATM ele preserva os dígitos
+    que ``log(s) - log(k)`` perderia no cancelamento. Com s e k em extremos
+    opostos a razão zera, fica subnormal ou transborda (``log(0.0)`` vazava
+    ``ValueError`` cru — achado da revisão da Sprint 5), e só então a
+    diferença dos logs, sempre finita para s, k > 0, assume.
+    """
+    ratio = s / k
+    if sys.float_info.min <= ratio <= sys.float_info.max:
+        return log(ratio)
+    return log(s) - log(k)
+
+
 def _d1_d2(
     s: float, k: float, tau: float, r: float, sigma: float, q: float, sig_sqrt_tau: float
 ) -> tuple[float, float]:
@@ -157,7 +202,7 @@ def _d1_d2(
     Achado da revisão adversarial: com a fórmula duplicada, um erro de sinal
     em q apenas na API pública sobreviveria à suíte inteira.
     """
-    d1 = (log(s / k) + (r - q + 0.5 * sigma * sigma) * tau) / sig_sqrt_tau
+    d1 = (_log_moneyness(s, k) + (r - q + 0.5 * sigma * sigma) * tau) / sig_sqrt_tau
     return d1, d1 - sig_sqrt_tau
 
 
@@ -228,9 +273,24 @@ def bs_outputs(
         )
         rho = -k * tau * df_r * nmd2
 
+    # Piso em zero (VV-PLAN §6, Deep OTM: "preço >= 0, sem underflow para
+    # negativo"). Em OTM profundo, s*df_q*N(d1) e k*df_r*N(d2) (na put, o
+    # espelho k*df_r*N(-d2) e s*df_q*N(-d1)) são dois números minúsculos e
+    # quase iguais; cada produto carrega ~1 ulp de arredondamento e a
+    # subtração cancela os dígitos significativos, podendo devolver um
+    # subnormal NEGATIVO (ex.: -1e-323) onde o valor exato é um positivo
+    # menor que esse ruído. O piso move o preço menos que o próprio ruído da
+    # subtração (ordens abaixo da tolerância da paridade) e as gregas não
+    # dependem dele. Não finito passa intacto (``_floor_finite_noise``).
+    price = _floor_finite_noise(price)
+
     # Gamma e vega são idênticos para call e put de mesmos parâmetros —
-    # mesma expressão, mesmos intermediários (propriedade testada).
-    gamma = df_q * n_d1 / (s * sig_sqrt_tau)
+    # mesma expressão, mesmos intermediários (propriedade testada). Gamma por
+    # divisões sucessivas: o produto s*sig_sqrt_tau zerava em underflow e
+    # vazava ZeroDivisionError cru (achado da revisão da Sprint 5); s e
+    # sig_sqrt_tau são > 0 aqui, e um gamma irrepresentável sai inf, que o VO
+    # rejeita.
+    gamma = df_q * n_d1 / s / sig_sqrt_tau
     vega = s * df_q * n_d1 * sqrt_tau
     return BSOutputs(price, delta, gamma, theta, vega, rho)
 

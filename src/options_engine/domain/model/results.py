@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from options_engine.domain.model.conventions import TimeToExpiry
+from options_engine.domain.model.enums import PricingApproximation
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.market import MarketSnapshot
 
@@ -52,6 +53,13 @@ class PricingResult:
     Carregar os inputs junto ao output dá rastreabilidade e reprodutibilidade
     de graça: todo número do sistema é reconstruível a posteriori (ARCH §2.1).
     ``model_id`` (ex.: "black-scholes-v1") identifica o modelo para auditoria.
+
+    ``approximation`` é a marca explícita exigida pela ADR-0002: ``None``
+    quando o modelo é exato para os termos precificados; um membro de
+    ``PricingApproximation`` quando o modelo aceitou os termos por uma
+    aproximação registrada. É o último campo, com default ``None``, para que
+    todo construtor existente continue válido sem mudança — a emenda não
+    quebra o contrato ``PricingModel``.
     """
 
     price: float
@@ -59,6 +67,7 @@ class PricingResult:
     model_id: str
     snapshot: MarketSnapshot
     time_to_expiry: TimeToExpiry
+    approximation: PricingApproximation | None = None
 
     def __post_init__(self) -> None:
         if not isfinite(self.price):

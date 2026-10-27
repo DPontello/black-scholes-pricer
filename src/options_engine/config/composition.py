@@ -9,26 +9,33 @@ A instalação default é a do MVP: mock GBM de PETR4, CDI flat, calendário B3
 empacotado, valoração no fuso da B3 em base BUSINESS_252.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET, StaticHolidayCalendar
 from options_engine.adapters.outbound.clock import SystemClock
+from options_engine.adapters.outbound.cost_schedules import StaticCostScheduleTable
+from options_engine.adapters.outbound.cotahist import CotahistOptionChainAdapter
 from options_engine.adapters.outbound.fixed_rate import FixedRateAdapter
 from options_engine.adapters.outbound.mock_orderbook import MockOrderBookAdapter
 from options_engine.adapters.outbound.seeded_random import SeededRandomSource
 from options_engine.application.ports.inbound import (
     AnalyzeStrategyPayoffUseCase,
     PriceOptionUseCase,
+    RankIncomeOpportunitiesUseCase,
     StressTestUseCase,
 )
 from options_engine.application.ports.outbound import Clock
 from options_engine.application.use_cases.analyze_payoff import AnalyzeStrategyPayoffService
 from options_engine.application.use_cases.price_option import PriceOptionService
+from options_engine.application.use_cases.rank_income import RankIncomeOpportunitiesService
 from options_engine.application.use_cases.stress_test import StressTestService
 from options_engine.domain.model.conventions import DayCountConvention, Volatility
 from options_engine.domain.pricing.black_scholes import BlackScholesPricingModel
 
-__all__ = ["Application", "build_application"]
+__all__ = ["Application", "build_application", "build_income_panel"]
 
 # Instalação default do MVP — nomeada aqui para o smoke e os testes citarem
 # a mesma fonte, nunca números mágicos espalhados.
@@ -92,4 +99,39 @@ def build_application(*, seed: int, clock: Clock | None = None) -> Application:
             valuation_timezone=B3_UTC_OFFSET,
             day_count=DEFAULT_DAY_COUNT,
         ),
+    )
+
+
+def build_income_panel(
+    *,
+    session_date: date,
+    cotahist_paths: Sequence[Path],
+    instruments_path: Path,
+    cdi_annual: float = DEFAULT_CDI_ANNUAL,
+    cache_path: Path | None = None,
+    realized_vol_window: int = 21,
+) -> RankIncomeOpportunitiesUseCase:
+    """Monta o Painel de Renda sobre arquivos COTAHIST locais (ADR-0006).
+
+    Mesma disciplina do ``build_application``: wiring manual, linha a linha.
+    Os arquivos são lidos AQUI (construtor do adapter): ausente ->
+    ``OSError``; fora do layout -> ``SourceFileError``. ``cdi_annual`` é o
+    CDI efetivo anual em decimal (0.15 == 15% a.a.).
+    """
+    chains = CotahistOptionChainAdapter(
+        session_date=session_date,
+        cotahist_paths=cotahist_paths,
+        instruments_path=instruments_path,
+        risk_free_rate=FixedRateAdapter.from_cdi_annual(cdi_annual).current_rate(),
+        realized_vol_window=realized_vol_window,
+        cache_path=cache_path,
+        valuation_timezone=B3_UTC_OFFSET,
+    )
+    return RankIncomeOpportunitiesService(
+        chains=chains,
+        calendar=StaticHolidayCalendar.from_packaged_data(),
+        model=BlackScholesPricingModel(),
+        cost_schedules=StaticCostScheduleTable.from_packaged_data().schedules,
+        valuation_timezone=B3_UTC_OFFSET,
+        day_count=DEFAULT_DAY_COUNT,
     )

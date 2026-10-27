@@ -85,6 +85,42 @@ out.theta_per_year     # -4.559092  — unidades canônicas no nome do campo
 out.vega_per_vol_unit  # 8.813415   — por 1.00 de vol; conversões são da camada de exibição
 ```
 
+## Painel de Renda (Sprint 5)
+
+Compara venda coberta, put coberta e travas de crédito entre vários ativos, com dados de fim
+de dia da B3, vol implícita por série, preço executável pelo lado certo do book e rendimento
+bruto e líquido comparável ao CDI, num HTML estático ([ADR-0007](docs/adr/0007-painel-html-estatico.md)).
+
+Os dados são baixados **manualmente** da B3 ([ADR-0006](docs/adr/0006-fontes-de-dados-de-opcoes.md)):
+o COTAHIST do pregão (mais o mensal ou anual, para a vol realizada) e o Cadastro de
+Instrumentos do mesmo pregão, de onde vem o estilo de exercício de cada série.
+
+```bash
+python -m options_engine painel --pregao 2026-10-23 \
+    --cotahist COTAHIST_A2026.ZIP COTAHIST_D23102026.ZIP \
+    --cadastro InstrumentsConsolidatedFile_20261023.csv \
+    --ativos PETR4,VALE3 --saida painel.html
+# opcionais: --cdi 0.15 --delta-min 0.15 --delta-max 0.35 --vencimentos 2
+#            --min-negocios N --spread-max PCT --ordenar anual-liquido --acoes 100
+#            --cache pregoes.sqlite --gerado-em AAAA-MM-DD
+```
+
+Para experimentar sem baixar nada, a fixture **sintética** do repositório
+(`tests/data/cotahist/`, dados inventados) gera um painel completo:
+
+```bash
+python -m options_engine painel --pregao 2026-10-23 \
+    --cotahist tests/data/cotahist/COTAHIST_SINTETICO_2026.TXT \
+    --cadastro tests/data/cotahist/InstrumentsConsolidatedFile_20261023_SINTETICO.csv \
+    --ativos PETR4,VALE3,ITUB4 --saida painel.html
+```
+
+A saída é reprodutível: a mesma entrada produz os mesmos bytes (há teste que verifica). O
+ranking só tem estruturas com preço EXECUTÁVEL; referências INDICATIVO e TEÓRICO aparecem
+rotuladas à parte, e tudo o que ficou de fora aparece com motivo. Cada linha do ranking tem
+um gráfico de payoff recolhível (SVG inline, sem JavaScript) com o resultado bruto e o
+líquido de custos e IR no vencimento, spot, strikes, breakevens e extremos.
+
 ## Arquitetura
 
 Hexagonal (ports & adapters), com a regra de dependência apontando sempre para dentro —
@@ -153,12 +189,12 @@ Documentação completa em [`docs/`](docs/):
 | 1 — Fundação Matemática | Kernel BSM + gregas, V&V de 4 camadas, CI, oráculo | ✅ `v0.1.0` |
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
-| 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | próxima ([ADR-0001](docs/adr/0001-renda-antes-da-api.md)) |
+| 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` (merge na `master` e tag pendentes) |
 | 4 — API e Portfólio | FastAPI como adapter fino, benchmark, ADRs | após a Sprint 5 |
 
 Fora do MVP (mapeado no roadmap): dividendos discretos, exercício americano exato
 (B3: opções de ações; calls já aceitas como aproximação europeia na Sprint 5), Monte Carlo,
-persistência. Implied vol entra na Sprint 5.
+persistência.
 
 ## Decisões de projeto (resumo)
 

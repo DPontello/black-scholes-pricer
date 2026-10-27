@@ -6,6 +6,7 @@ intrínseco descontado, decisão nº 5).
 """
 
 import math
+from collections.abc import Callable
 
 import pytest
 from hypothesis import given
@@ -16,7 +17,7 @@ from options_engine.domain.model.conventions import (
     DayCountConvention,
     TimeToExpiry,
 )
-from options_engine.domain.model.enums import ExerciseStyle
+from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import (
     InvalidDomainValueError,
     MissingPremiumError,
@@ -24,7 +25,7 @@ from options_engine.domain.model.errors import (
     UnsupportedExerciseStyleError,
 )
 from options_engine.domain.model.factories import iron_condor
-from options_engine.domain.model.scenarios import StressScenario
+from options_engine.domain.model.scenarios import ScenarioGrid, StressScenario
 from options_engine.domain.model.strategy import Strategy
 from options_engine.domain.simulation import (
     apply_scenario,
@@ -32,6 +33,8 @@ from options_engine.domain.simulation import (
     payoff_at_expiry,
     pnl,
     pnl_curve,
+    portfolio_greeks,
+    stress_grid,
 )
 from tests._tolerances import ABS_SELF_FLOOR, REL_SELF, assert_close
 from tests.domain._builders import (
@@ -138,11 +141,35 @@ def test_base_misturada_e_rejeitada() -> None:
         pnl_curve(_condor(), _EIXO, time_to_expiry=_TTX, snapshot=snap_365)
 
 
-def test_american_e_rejeitado_a_mercado() -> None:
-    leg = make_leg(terms=make_terms(exercise_style=ExerciseStyle.AMERICAN), premium=1.0)
-    americana = Strategy.create("americana", [leg])
-    with pytest.raises(UnsupportedExerciseStyleError):
-        mark_to_model_value(americana, 30.0, time_to_expiry=_TTX, snapshot=make_snapshot())
+_GRID = ScenarioGrid(
+    spot_min=24.0, spot_max=36.0, spot_steps=5, vol_min=0.15, vol_max=0.45, vol_steps=3
+)
+_ENTRADAS_A_MERCADO: dict[str, Callable[[Strategy], object]] = {
+    "mark_to_model_value": lambda e: mark_to_model_value(
+        e, 30.0, time_to_expiry=_TTX, snapshot=make_snapshot()
+    ),
+    "pnl_curve": lambda e: pnl_curve(e, _EIXO, time_to_expiry=_TTX, snapshot=make_snapshot()),
+    "stress_grid": lambda e: stress_grid(e, _GRID, time_to_expiry=_TTX, snapshot=make_snapshot()),
+    "portfolio_greeks": lambda e: portfolio_greeks(
+        e, time_to_expiry=_TTX, snapshot=make_snapshot()
+    ),
+}
+
+
+@pytest.mark.parametrize("option_type", [OptionType.CALL, OptionType.PUT], ids=["call", "put"])
+@pytest.mark.parametrize("entrada", list(_ENTRADAS_A_MERCADO))
+def test_american_e_rejeitado_a_mercado(entrada: str, option_type: OptionType) -> None:
+    """Toda entrada a mercado do motor rejeita leg americana, inclusive a CALL.
+
+    A aproximação da ADR-0002 vale só no ``PricingModel``, que marca o
+    resultado; valor, curva, grid e gregas do motor não têm marca (achado da
+    revisão da Sprint 5: pnl_curve, stress_grid e portfolio_greeks não tinham
+    teste de rejeição, nem a PUT americana).
+    """
+    terms = make_terms(option_type=option_type, exercise_style=ExerciseStyle.AMERICAN)
+    americana = Strategy.create("americana", [make_leg(terms=terms, premium=1.0)])
+    with pytest.raises(UnsupportedExerciseStyleError, match="europeu-only"):
+        _ENTRADAS_A_MERCADO[entrada](americana)
 
 
 # ---------------------------------------------------------------------------

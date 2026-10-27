@@ -6,98 +6,84 @@ está (ou vai para) as ADRs, o ROADMAP e o código.
 
 ## 1. Onde está cada coisa
 
-Nada da Sprint 5 está na `development` ainda. Todas as branches partem de
-`development` (0f00a9f) e estão publicadas no GitHub:
+Atualizado em 2026-10-27, na segunda máquina. Todas as branches partem de
+`development` (0f00a9f) e estão publicadas no GitHub. Merges feitos na
+`development` (`--no-ff`, sem apagar branches), nesta ordem:
 
 | Branch | O que tem | Estado |
 |---|---|---|
-| `docs/adr-pendencias-renda` | ADRs 0002–0006 com o resultado do spike e **todas** as decisões da mesa; ROADMAP da Sprint 5 atualizado | Pronta para merge |
-| `fix/kernel-preco-nao-negativo` | Kernel nunca devolve preço negativo (subnormal por cancelamento) | Pronta; revisão parcial (ver §3) |
-| `feat/american-call-approx` | ADR-0002: CALL+AMERICAN precificada como europeia com `PricingResult.approximation`; PUT+AMERICAN rejeitada | Pronta; revisão parcial (ver §3) |
-| `feat/implied-vol` | `implied_vol` no kernel + oráculo scipy de ida e volta (verde em venv isolado) | Pronta; revisão não rodou (ver §3) |
-| `feat/option-chain` | `OptionQuote`, `OptionChain`, `PriceQuality`, `LegPremium`, `executable_premium`, `OptionChainPort` + suíte de contrato | Pronta; revisão parcial (ver §3) |
-| `feat/income-metrics` | `domain/income/` (custos, anualização, métricas das 3 estruturas) + `vertical_spread` | **Desatualizada**: falta aplicar as decisões da §2 |
+| `fix/ruff-format-markdown` | Gate de formatação do ruff ignora `.md` (o ruff 0.17 passou a formatar os blocos de código das docs e derrubou o CI desde 2026-10-26) | Mergeada |
+| `docs/adr-pendencias-renda` | ADRs 0002–0006 com o resultado do spike e **todas** as decisões da mesa; ROADMAP da Sprint 5 atualizado | Mergeada |
+| `fix/kernel-preco-nao-negativo` | Kernel nunca devolve preço negativo (subnormal por cancelamento) | Mergeada; achados da §3 pendentes |
+| `feat/american-call-approx` | ADR-0002: CALL+AMERICAN precificada como europeia com `PricingResult.approximation`; PUT+AMERICAN rejeitada | Mergeada; achados da §3 pendentes |
+| `feat/implied-vol` | `implied_vol` no kernel + oráculo scipy de ida e volta | Mergeada; revisão da §3 pendente |
+| `feat/option-chain` | `OptionQuote`, `OptionChain`, `PriceQuality`, `LegPremium`, `executable_premium`, `OptionChainPort` + suíte de contrato | Mergeada; achados da §3 pendentes |
+| `docs/sprint-5-handoff` | Este documento e o plano da fase 2 | Mergeada |
+| `feat/income-metrics` | `domain/income/` (custos de montagem e exercício, IR, anualização, métricas e extremos líquidos das 3 estruturas) + `vertical_spread` | Mergeada depois da §2 |
+| `fix/revisao-kernel` | Correções da §3 no kernel e na IV + cota física no oráculo da IV | Mergeada |
+| `fix/revisao-call-americana` | Call americana com r < 0 rejeitada, testes de rejeição no motor, ADR-0002 | Mergeada |
+| `docs/revisao-sprint-5` | ARCH e VV-PLAN atualizados (call americana, IV, fronteiras, tolerâncias de renda) | Mergeada |
 
-Gates relatados em cada branch (pytest + cobertura, mypy strict, ruff
-check/format, lint-imports): todos verdes no último commit.
+Gates depois de cada merge (pytest + cobertura, mypy strict, ruff
+check/format, lint-imports): todos verdes; 3233 testes, cobertura 99%. O
+oráculo scipy (`tests/oracle/scipy_oracle.py`) passou na `development` depois
+das branches de kernel (`feat/income-metrics` não toca o kernel).
 
-**Ordem de merge sugerida na `development`** (`--no-ff`, sem apagar
-branches): docs → kernel-fix → american-call → implied-vol → option-chain →
-income-metrics (depois da §2). Conflitos esperados e triviais em
-`tests/_tolerances.py` (adições de várias branches) e
-`tests/domain/_builders.py`. Rode os gates depois de cada merge.
+Os PRs #1 (`docs/sprint-5-handoff`) e #2 (`feat/implied-vol`) foram
+mergeados direto na `master` pelo GitHub, fora da convenção (feature entra na
+`development`; a `master` só recebe a `development` no fechamento de versão),
+e com o CI vermelho pelo motivo acima. O histórico não foi reescrito: a
+`master` foi mergeada de volta na `development` sem mudança de conteúdo, então
+continua ancestral dela e o merge da v0.4.0 sai limpo. A `master` fica com o
+CI vermelho até esse merge. PRs novos apontam para a `development`.
 
-## 2. Próxima tarefa obrigatória: ajustar `feat/income-metrics`
+## 2. Ajuste de `feat/income-metrics` — feito em 2026-10-27
 
-A mesa recusou duas propostas da implementação (ADR-0005, itens 3–5). Ajustar
-em commits pequenos:
+Itens 3–5 da ADR-0005 aplicados em commits pequenos e mergeados na
+`development`:
 
-1. `CostSchedule` ganha, com unidade no nome e validação: taxa de
-   emolumentos do mercado à vista/exercício (fração decimal; vale para a
-   compra da ação e para o exercício) e corretagem de exercício por ordem. A
-   corretagem de ordem existente vale também para a ordem de compra da ação.
-2. Separar custos de **montagem** (o que o rendimento líquido usa) dos custos
-   de **exercício** por cenário; uma função pura para cada; `OperationCosts`
-   continua carregando a `CostSchedule` usada.
-3. Venda coberta: montagem = ordem da opção (emolumento sobre prêmio × ações
-   + corretagem) + compra da ação (emolumento do à vista sobre spot × ações +
-   corretagem). Rendimento líquido na mesma base do bruto.
-4. `IncomeMetrics` expõe também `net_breakeven`, `net_max_gain_per_position`
-   e `net_max_loss_per_position`, em forma fechada para as três estruturas:
-   o líquido desconta montagem + exercício das pernas exercidas no cenário e,
-   no ganho máximo, o IR estimado só sobre o prêmio; perda não paga IR. Mesmo
-   princípio na put coberta (exercício nos cenários de breakeven e perda
-   máxima) e na trava (pernas que terminam dentro do dinheiro).
-5. Golden cases recalculados à mão (put coberta, venda coberta, trava de alta
-   com put, trava de baixa com call), brutos e líquidos, com os valores de
-   referência: opções 0,1340% por perna; à vista/exercício 0,0300%;
-   corretagem R$ 0,00; corretagem de exercício R$ 0,00; IR 15%. Conferir
-   breakeven e extremos líquidos contra uma avaliação numérica independente
-   do P&L líquido no vencimento. Propriedades: líquido <= bruto no ganho
-   máximo; perda líquida <= perda bruta; custo zero => líquido == bruto.
+- `CostSchedule` com `option_exchange_fee_rate` (renomeada),
+  `spot_exchange_fee_rate`, `brokerage_per_order`,
+  `exercise_brokerage_per_order` e `income_tax_rate`.
+- `estimate_setup_costs`, `estimate_exercise_costs` e `estimate_income_tax`
+  (funções puras); `OrderCosts` (emolumentos + corretagem) e
+  `OperationCosts` (montagem + IR do cenário de rendimento, com a tabela).
+- Venda coberta paga a compra das ações na montagem.
+- `IncomeMetrics.net_breakeven` (`None` quando o líquido nunca zera),
+  `net_max_gain_per_position` e `net_max_loss_per_position`.
+- Golden cases à mão com a tabela de referência e com a ilustrativa;
+  oráculo numérico independente do P&L líquido (extremos por cenário e
+  grade, breakeven por bisseção) em casos fixos e aleatórios; propriedades
+  pedidas. Mutantes nas fórmulas líquidas são mortos.
 
-## 3. Achados de revisão ainda NÃO verificados
+Decisões de implementação que a mesa deve conhecer estão na nota de estado
+da ADR-0005 (base do IR limitada ao prêmio; ganho máximo da venda coberta no
+cenário exercido, com S = K valendo até o custo de exercício a mais).
+As tolerâncias de renda entraram na tabela do VV-PLAN com a revisão da §3.
 
-Os verificadores caíram no limite de uso. Cada item abaixo precisa ser
-confirmado (reproduzir) antes de corrigir; não são defeitos comprovados.
+## 3. Achados de revisão — verificados em 2026-10-27
 
-**feat/american-call-approx**
-- (médio) Com taxa negativa, a call americana sai com preço europeu abaixo do
-  intrínseco: a premissa da ADR-0002 (sem exercício antecipado) exige r >= 0.
-  Sugestão: rejeitar CALL+AMERICAN com r contínua < 0 em `_price_single` e
-  registrar a condição na ADR-0002; o teste de propriedade `_pares_de_calls`
-  fixa hoje a igualdade com r em [-0.02, 0.30].
-- (médio) O motor de simulação continua rejeitando a CALL americana, mas a
-  ADR-0002 diz que os testes de rejeição passam a cobrir só PUT e o ROADMAP
-  quer travas com call no `stress_grid`. Decidir: levar a marca aos
-  resultados do motor ou registrar a restrição na ADR.
-- (médio/baixo) Faltam testes de rejeição em `pnl_curve`, `stress_grid` e
-  `portfolio_greeks`; PUT americana sem teste no motor; docstring de
-  `PriceOptionUseCase` ainda diz "opção europeia".
-- Docs ainda desatualizadas: ARCH §2.1/§3/§6 e VV-PLAN §6 (linha "Exercício
-  AMERICAN"), catálogo de VOs sem `PricingApproximation`.
+Cada achado foi reproduzido antes de qualquer correção; os corrigidos têm
+teste que falha no código anterior. Um fuzz de magnitudes extremas (200 mil
+casos) achou mais um furo na IV e confirmou os do kernel; depois das
+correções, zero exceções cruas. Oráculo scipy verde depois das mudanças.
 
-**fix/kernel-preco-nao-negativo**
-- (baixo) `max(price, 0.0)` transforma -inf (overflow) em 0.0 válido; piso só
-  para ruído finito (`if isfinite(price) and price < 0.0`).
-- (baixo) Docstring promete "preço >= 0.0 sempre", falso se sair NaN de inf*0.
-- (baixo, pré-existente) `log(s / k)` com underflow vaza `ValueError` cru; usar
-  `log(s) - log(k)`. `s * sig_sqrt_tau` com underflow vaza `ZeroDivisionError`
-  no gamma.
-
-**feat/option-chain**
-- (médio) `trades` validado com `self.trades < 0` (não negado, sem checar
-  tipo): NaN/float/bool passam. Um revisor anterior refutou com o argumento
-  de que o mypy barra floats e o resto do código valida ints assim.
-- (baixo) `OptionChain.__post_init__` não normaliza `quotes` para tuple
-  (gerador esgota antes da checagem de duplicatas). Refutado antes pelo
-  mesmo argumento (mypy + suíte de contrato exige tuple).
-- (baixo) `worst_quality` vaza `ValueError` cru se receber `None`.
-
-**feat/implied-vol**: nenhuma revisão rodou. Pontos do próprio engenheiro:
-preço exatamente no intrínseco descontado vira `CONVERGED` com sigma = 0.0
-(decidir se o smile/painel aceita IV 0); piso do oráculo com K >> S fica
-frouxo; ARCH §5–§7 e VV-PLAN §3/§7 não citam `implied_vol`.
+| Achado | Veredito | Onde ficou |
+|---|---|---|
+| Kernel: `max(price, 0.0)` vira `-inf` em 0.0 | **Confirmado** (put com S=K=1,78e308 saía 0.0; o valor real é ~1e307) e corrigido: piso só para ruído finito; o não finito chega aos VOs, que o rejeitam | `fix/revisao-kernel` |
+| Kernel: docstring "preço >= 0 sempre" com NaN | **Confirmado** e corrigido: "sempre que finito", com o caso de overflow documentado | `fix/revisao-kernel` |
+| Kernel: `log(s / k)` com underflow vaza `ValueError` | **Confirmado** e corrigido: `log(s/k)` no caminho normal, `log(s) - log(k)` fora da faixa | `fix/revisao-kernel` |
+| Kernel: `s * sig_sqrt_tau` com underflow vaza `ZeroDivisionError` no gamma | **Confirmado** e corrigido: gamma por divisões sucessivas | `fix/revisao-kernel` |
+| IV: chute inicial divide por `min(S̃, K̃)·sqrt(tau)` (achado novo do fuzz) | **Confirmado** (~9% dos casos extremos) e corrigido do mesmo jeito | `fix/revisao-kernel` |
+| IV: piso do oráculo frouxo com K ≫ S | **Confirmado** por medição (piso até 4,4× o preço) e corrigido: cota física pela escala de cancelamento (margem 28×, cota <= 1,1e-6 do preço) | `fix/revisao-kernel` |
+| Call americana com r < 0 abaixo do intrínseco | **Confirmado** (S=100, K=50, r=-2%, T=5: 44,74 contra 50) e corrigido: `price_many` rejeita; propriedade `C >= S - K` com r >= 0 | `fix/revisao-call-americana` |
+| Motor rejeita a call americana, contra a ADR-0002 e o ROADMAP | **Confirmado** como inconsistência de docs. Decisão: o motor segue europeu-only (os resultados não carregam a marca); ADR-0002 (nota 2) e ROADMAP registram | `fix/revisao-call-americana` |
+| Faltam testes de rejeição em `pnl_curve`, `stress_grid`, `portfolio_greeks` e da PUT no motor; docstring "opção europeia" | **Confirmado** e corrigido: 14 testes (7 entradas × CALL/PUT); docstring do `PriceOptionUseCase` | `fix/revisao-call-americana` |
+| Docs de ARCH/VV-PLAN desatualizadas (americana e IV) | **Confirmado** e corrigido | `docs/revisao-sprint-5` |
+| Option chain: `trades` NaN/float/bool passa | **Reproduzível só com tipo errado** (o mypy strict barra NaN e float; `True` vale 1 negócio, como o `int` 1). O domínio não checa tipo em runtime em lugar nenhum. **Não corrigido**; ver fase 2 abaixo | — |
+| Option chain: `quotes` gerador não vira tuple | **Reproduzível só com tipo errado** (gerador esvazia a checagem e a cadeia). Mesma convenção; a suíte de contrato exige tuple. **Não corrigido** | — |
+| `worst_quality(None)` vaza `ValueError` | **Reproduzível só com tipo errado** (`None` numa lista de `PriceQuality`). **Não corrigido** | — |
+| IV: preço no intrínseco descontado vira `CONVERGED` com sigma = 0.0 | Comportamento do contrato (regra 5), não defeito. **Decidido na fase 2**: pontos com sigma = 0 ficam fora do smile (não carregam informação sobre a vol); docstring de `domain/pricing/smile.py` | `feat/rank-income` |
 
 **Pontos em aberto gerais**
 - Vol realizada zero ou histórico insuficiente: a suíte de contrato exige
@@ -108,16 +94,42 @@ frouxo; ARCH §5–§7 e VV-PLAN §3/§7 não citam `implied_vol`.
   conferidos no primeiro arquivo real do cadastro/COTAHIST.
 - `valid_from` da tabela de custos: a B3 não publica vigência; o plano usa
   2025-08-01 (OC 025/2025-VPC), com a origem anotada.
+- Adapters de cadeia: converter `trades` com `int()` estrito na fronteira.
+  O COTAHIST já o faz (campo numérico de largura fixa); um adapter futuro
+  sobre JSON (brapi) recebe `Any`, que escapa do mypy (achado de option
+  chain da §3).
 
-## 4. Depois disso: fase 2
+## 4. Fase 2 — implementada em 2026-10-27
 
-Especificação completa em [`plano-fase-2.md`](plano-fase-2.md): extensões de
-domínio (`UnderlyingUnavailableError`, `RejectedSeries`,
-`underlying_book_available`), adapter COTAHIST + cadastro + cache sqlite +
-fixtures sintéticas, smile e preço TEÓRICO, tabela de custos versionada,
-`RankIncomeOpportunitiesService`, relatório HTML e subcomando
-`python -m options_engine painel`. Depois: documentação (ARCH §4.1,
-CONVENTIONS, README), versão 0.4.0, merge na `master` e tag `v0.4.0`.
+Especificação em [`plano-fase-2.md`](plano-fase-2.md). Mergeadas na
+`development`, nesta ordem, com gates verdes depois de cada merge (3485
+testes, cobertura 99%, kernel em 100%):
+
+| Branch | O que tem |
+|---|---|
+| `feat/chain-exclusions` | `UnderlyingUnavailableError`, `RejectedSeries`, `OptionChain.rejected_series` e `underlying_book_available`; port e suíte de contrato |
+| `feat/cotahist-adapter` | parser, cadastro de instrumentos, cache sqlite por pregão, `CotahistOptionChainAdapter`, fixture sintética com gerador determinístico; o adapter plugado na suíte de contrato |
+| `feat/rank-income` | tabela de custos versionada + `schedule_on`, smile e preço TEÓRICO, VOs do ranking e `RankIncomeOpportunitiesService` |
+| `feat/painel-html` | `html_report.py`, `build_income_panel` e `python -m options_engine painel` |
+| `docs/fase-2` | ARCH §4.1/§4.2/§6/§7, CONVENTIONS §9 (rendimento e vol), README, ROADMAP e versão 0.4.0 |
+| `feat/grafico-payoff` | Gráfico de payoff por linha do ranking (item acrescentado ao plano pelo autor em 2026-10-27): `domain/income/profile.py` (bruto e líquido por preço, conferido contra o oráculo de `test_net_profile.py`) e `adapters/inbound/payoff_svg.py` |
+
+**Falta para fechar a Sprint 5:**
+
+1. Merge da `development` na `master` e tag `v0.4.0`. O CI do GitHub só roda
+   em push na `master` e em PR: os gates desta fase rodaram localmente (Python
+   3.14); um PR `development` -> `master` roda a matriz 3.12/3.13 e o oráculo
+   antes do merge.
+2. Conferir no primeiro arquivo REAL da B3 as premissas registradas nas
+   docstrings do adapter: TOTREG do trailer conta header e trailer; domínio
+   do `OptnStyle`; conteúdo do ESPECI das opções (desempate PETR3/PETR4);
+   strike já ajustado no `PREEXE` (ROADMAP, spike).
+
+Observação para a mesa: com o critério default (anualizado líquido), as
+travas de crédito tendem a liderar o ranking, porque o retorno sobre risco
+anualizado de forma composta em poucos du fica muito alto (ex.: 26% em 18
+du vira ~2.600% a.a.). É consequência direta das decisões 6 e 8 da ADR-0005;
+o critério é configurável (`--ordenar`).
 
 ## 5. Ambiente
 

@@ -32,10 +32,10 @@ import pytest
 from options_engine.domain.kernel.black_scholes import bs_outputs
 from options_engine.domain.kernel.implied_vol import ImpliedVolStatus, implied_vol
 from tests._tolerances import (
-    ABS_IV_ROUNDTRIP_PRICE_FLOOR,
     ABS_ORACLE_FLOOR,
     REL_ORACLE,
     assert_close,
+    iv_roundtrip_price_abs_tol,
     iv_sigma_abs_tol,
 )
 
@@ -61,6 +61,7 @@ def _oracle_outputs(
     if is_call:
         cdf_d1, cdf_d2 = float(_norm.cdf(d1)), float(_norm.cdf(d2))
         price = s * df_q * cdf_d1 - k * df_r * cdf_d2
+        cancellation_scale = max(s * df_q * cdf_d1, k * df_r * cdf_d2)
         delta = df_q * cdf_d1
         theta = -(s * sigma * df_q * pdf_d1) / (2.0 * sqrt_tau) + q * s * df_q * cdf_d1
         theta -= r * k * df_r * cdf_d2
@@ -68,6 +69,7 @@ def _oracle_outputs(
     else:
         cdf_m1, cdf_m2 = float(_norm.cdf(-d1)), float(_norm.cdf(-d2))
         price = k * df_r * cdf_m2 - s * df_q * cdf_m1
+        cancellation_scale = max(k * df_r * cdf_m2, s * df_q * cdf_m1)
         delta = -df_q * cdf_m1
         theta = -(s * sigma * df_q * pdf_d1) / (2.0 * sqrt_tau) - q * s * df_q * cdf_m1
         theta += r * k * df_r * cdf_m2
@@ -79,6 +81,9 @@ def _oracle_outputs(
         "theta_per_year": theta,
         "vega_per_vol_unit": s * df_q * pdf_d1 * sqrt_tau,
         "rho": rho,
+        # Maior termo subtraído na fórmula do preço: a escala do ruído de
+        # arredondamento (``iv_roundtrip_price_abs_tol``).
+        "cancellation_scale": cancellation_scale,
     }
 
 
@@ -101,10 +106,10 @@ def test_kernel_matches_scipy_oracle_on_10k_random_cases() -> None:
         for is_call in (True, False):
             ours = bs_outputs(s, k, tau, r, sigma, q, is_call=is_call)
             theirs = _oracle_outputs(s, k, tau, r, sigma, q, is_call=is_call)
-            for field, expected in theirs.items():
+            for field in ours._fields:
                 assert_close(
                     getattr(ours, field),
-                    expected,
+                    theirs[field],
                     rel=REL_ORACLE,
                     abs_=floor,
                     label=(
@@ -168,7 +173,9 @@ def test_implied_vol_round_trip_against_scipy_oracle_on_10k_cases() -> None:
                 repriced,
                 theirs["price"],
                 rel=REL_ORACLE,
-                abs_=ABS_IV_ROUNDTRIP_PRICE_FLOOR * scale,
+                abs_=iv_roundtrip_price_abs_tol(
+                    theirs["cancellation_scale"], theirs["vega_per_vol_unit"]
+                ),
                 label=f"preço reavaliado {label}",
             )
             price_divergence = REL_ORACLE * theirs["price"] + ABS_ORACLE_FLOOR * scale

@@ -48,10 +48,14 @@ class PriceOptionService:
         terms = command.terms
         # Falha ANTES de tocar I/O: um estilo não suportado não merece uma
         # ida ao feed de mercado (ARCH §3 — supports() existe para isto).
+        # Uma aproximação aceita (ADR-0002) passa e volta marcada no
+        # resultado pelo próprio modelo — o service não a reinterpreta.
         if not self._model.supports(terms):
             raise UnsupportedExerciseStyleError(
                 f"modelo {self._model.model_id!r} não precifica estes termos "
-                f"(exercício {terms.exercise_style.value!r} — decisão nº 2: europeu-only no MVP)"
+                f"({terms.option_type.value} com exercício {terms.exercise_style.value!r} — "
+                f"decisão nº 2 emendada pela ADR-0002: call americana só como aproximação "
+                f"europeia; put americana segue rejeitada)"
             )
         snapshot = self._market_data.get_snapshot(terms.underlying)
         as_of = valuation_date(self._clock, self._valuation_timezone)

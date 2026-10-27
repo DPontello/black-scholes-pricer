@@ -1,5 +1,6 @@
 """``PriceOptionService`` — orquestração com fakes dos ports."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -8,7 +9,7 @@ from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.application.ports.inbound import PriceOptionCommand, PriceOptionUseCase
 from options_engine.application.use_cases.price_option import PriceOptionService
 from options_engine.domain.model.conventions import DayCountConvention
-from options_engine.domain.model.enums import ExerciseStyle, OptionType
+from options_engine.domain.model.enums import ExerciseStyle, OptionType, PricingApproximation
 from options_engine.domain.model.errors import ExpiredOptionError, UnsupportedExerciseStyleError
 from options_engine.domain.pricing.black_scholes import BlackScholesPricingModel
 from tests.application._fakes import FakeMarketData, FakeTradingCalendar
@@ -50,6 +51,8 @@ def test_happy_path_orquestra_snapshot_tau_e_modelo() -> None:
     assert result.time_to_expiry.year_fraction == 118 / 252
     assert result.time_to_expiry.convention is DayCountConvention.BUSINESS_252
     assert result.price > 0.0
+    # Europeia é preço exato do modelo: sem marca de aproximação (ADR-0002).
+    assert result.approximation is None
     # O símbolo consultado deriva dos termos (fonte única de verdade).
     assert market_data.requested_symbols == ["PETR4"]
     # A contagem parte da data de valoração no fuso B3 até o vencimento.
@@ -61,13 +64,28 @@ def test_command_deriva_o_simbolo_dos_termos() -> None:
     assert command.underlying_symbol == "VALE3"
 
 
-def test_exercicio_americano_falha_antes_de_tocar_o_mercado() -> None:
+def test_put_americana_falha_antes_de_tocar_o_mercado() -> None:
     service, market_data, _ = make_service()
-    termos_americanos = make_terms(exercise_style=ExerciseStyle.AMERICAN)
-    with pytest.raises(UnsupportedExerciseStyleError):
-        service.execute(PriceOptionCommand(terms=termos_americanos))
+    put_americana = make_terms(option_type=OptionType.PUT, exercise_style=ExerciseStyle.AMERICAN)
+    with pytest.raises(UnsupportedExerciseStyleError, match="ADR-0002"):
+        service.execute(PriceOptionCommand(terms=put_americana))
     # Falha barata: estilo não suportado não merece uma ida ao feed.
     assert market_data.requested_symbols == []
+
+
+def test_call_americana_precifica_como_europeia_e_sai_marcada() -> None:
+    """ADR-0002 de ponta a ponta: o service deixa passar a call americana e o
+    resultado é o da call europeia equivalente, mais a marca de aproximação."""
+    service, market_data, _ = make_service()
+    americana = service.execute(
+        PriceOptionCommand(terms=make_terms(exercise_style=ExerciseStyle.AMERICAN))
+    )
+    europeia = service.execute(PriceOptionCommand(terms=make_terms()))
+    assert americana.approximation is PricingApproximation.AMERICAN_CALL_AS_EUROPEAN
+    # Igualdade exata permitida: mesmo snapshot, mesmo tau e mesmo caminho
+    # aritmético no kernel — o estilo só decide a marca.
+    assert replace(americana, approximation=None) == europeia
+    assert market_data.requested_symbols == ["PETR4", "PETR4"]
 
 
 def test_opcao_vencida_dispara_expired_option_error() -> None:

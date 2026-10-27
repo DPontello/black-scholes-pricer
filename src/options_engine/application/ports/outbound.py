@@ -19,9 +19,10 @@ ROADMAP S3: port desenhado a partir do mock). Por isso:
 from datetime import date, datetime
 from typing import Protocol, runtime_checkable
 
+from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.market import MarketSnapshot
 
-__all__ = ["Clock", "MarketDataPort", "RandomSource", "TradingCalendar"]
+__all__ = ["Clock", "MarketDataPort", "OptionChainPort", "RandomSource", "TradingCalendar"]
 
 
 @runtime_checkable
@@ -41,6 +42,50 @@ class MarketDataPort(Protocol):
     """
 
     def get_snapshot(self, underlying_symbol: str) -> MarketSnapshot: ...
+
+
+@runtime_checkable
+class OptionChainPort(Protocol):
+    """Fonte da cadeia de opções de um subjacente (ADR-0003).
+
+    Port separado do ``MarketDataPort`` (que não muda): a cadeia traz o book
+    de cada série, não só o do ativo-objeto. Fim de dia (COTAHIST) e
+    intraday sob o MESMO contrato — o pregão de referência vive dentro da
+    cadeia (timestamps tz-aware) e o adapter é configurado com a fonte/data,
+    por isso a assinatura recebe só o símbolo.
+
+    Contrato semântico (verificado pela suíte herdável de tests/contract/):
+
+    1. ``bid``, ``ask`` e ``last`` são ``None`` ou finitos e ``> 0`` — lado
+       ausente é ``None``, NUNCA ``0``; a tradução "zero da fonte → None" é
+       exclusiva do adapter;
+    2. com os dois lados presentes, ``bid <= ask``;
+    3. a cadeia e todas as suas cotações são do subjacente pedido; o
+       subjacente é um ``MarketSnapshot`` com ``spot > 0``, vol como
+       ``Volatility`` com ``value > 0`` e taxa como ``RiskFreeRate`` (as
+       mesmas checagens do contrato do ``MarketDataPort``);
+    4. timestamps tz-aware (snapshot do subjacente e cotações);
+    5. símbolo desconhecido → ``UnknownSymbolError`` (exceção de domínio),
+       nunca ``KeyError``, ``None`` ou exceção de lib de I/O vazando;
+       símbolo conhecido sem preço utilizável no pregão (sem fechamento,
+       histórico insuficiente para a vol realizada) →
+       ``UnderlyingUnavailableError`` com o motivo (ADR-0004);
+    6. consulta, não comando: cadeias devolvidas são imutáveis e consultar
+       não tem efeito colateral observável — nem uma consulta que falha
+       deixa o port inutilizável;
+    7. ``rejected_series`` traz, com motivo, as séries da fonte que não
+       viraram cotação, disjuntas das ``quotes``.
+
+    Semântica que a suíte não consegue verificar, mas o adapter deve
+    honrar: a vol do ``MarketSnapshot`` do subjacente é a vol REALIZADA de
+    referência, calculada pelo adapter a partir do histórico; a implícita de
+    cada série é resolvida fora do port. Ativo-objeto com fechamento mas
+    sem ofertas (decisão da mesa, ADR-0004): o snapshot usa o fechamento em
+    spot, bid, ask e mid e a cadeia sai com ``underlying_book_available =
+    False`` — bid/ask não observados nunca se passam por book real.
+    """
+
+    def get_chain(self, underlying_symbol: str) -> OptionChain: ...
 
 
 @runtime_checkable
