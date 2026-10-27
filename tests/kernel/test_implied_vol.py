@@ -547,6 +547,54 @@ class TestTinyTau:
         assert result.iterations >= 1
 
 
+_MAGNITUDE = st.floats(min_value=-690.0, max_value=690.0).map(math.exp)
+
+
+class TestMagnitudesExtremas:
+    """Achado da revisão da Sprint 5 (fuzz de magnitudes extremas, ~9% dos casos).
+
+    O chute inicial dividia o valor-tempo por ``min(S̃, K̃)·sqrt(tau)``, que
+    zerava em underflow e vazava ``ZeroDivisionError`` cru — fora do
+    contrato, que só admite status ou ``InvalidKernelInputError``.
+    """
+
+    def test_chute_com_denominador_em_underflow(self) -> None:
+        # min(S̃, K̃)·sqrt(tau) ~ 6e-209 x 6e-123 = 4e-331 vira 0.0 em float64.
+        price, s, k, tau = 5.226831556209679e-209, 6.35210464304885e-209, 2.4978e-186, 3.57e-244
+        result = implied_vol(price, s, k, tau, -0.3988658992400739, -0.4743, is_call=True)
+        assert (result.sigma is None) != (result.status is ImpliedVolStatus.CONVERGED)
+        if result.sigma is not None:
+            assert math.isfinite(result.sigma)
+            assert result.sigma >= 0.0
+
+    @given(
+        s=_MAGNITUDE,
+        k=_MAGNITUDE,
+        tau=st.floats(min_value=-690.0, max_value=math.log(30.0)).map(math.exp),
+        r=st.floats(min_value=-0.5, max_value=0.5),
+        q=st.floats(min_value=-0.5, max_value=0.5),
+        fraction=st.floats(min_value=0.0, max_value=1.0),
+        is_call=st.booleans(),
+    )
+    def test_nunca_vaza_excecao_crua(
+        self, s: float, k: float, tau: float, r: float, q: float, fraction: float, is_call: bool
+    ) -> None:
+        """Preço entre os limites, em qualquer escala: status ou erro tipado, sigma nunca NaN."""
+        try:
+            lower = bs_price(s, k, tau, r, 0.0, q, is_call=is_call)
+        except InvalidKernelInputError:
+            return
+        upper = s * math.exp(-q * tau) if is_call else k * math.exp(-r * tau)
+        price = lower + fraction * (upper - lower)
+        if not math.isfinite(price):
+            return
+        result = implied_vol(price, s, k, tau, r, q, is_call=is_call)
+        assert (result.sigma is None) != (result.status is ImpliedVolStatus.CONVERGED)
+        if result.sigma is not None:
+            assert math.isfinite(result.sigma)
+            assert result.sigma >= 0.0
+
+
 # ---------------------------------------------------------------------------
 # 7. GOLDEN — camada *published*: preço de livro -> sigma do livro
 # ---------------------------------------------------------------------------

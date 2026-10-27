@@ -147,6 +147,21 @@ IV_ROUNDOFF_ULPS = 16.0
 ABS_IV_ROUNDTRIP_PRICE_FLOOR = 1e-11  # escalar por max(s, k) no ponto de uso
 
 
+def iv_roundtrip_price_abs_tol(cancellation_scale: float, vega: float) -> float:
+    """Tolerância absoluta do preço reavaliado na ida e volta da IV, por cota física.
+
+    Substitui o piso ``ABS_IV_ROUNDTRIP_PRICE_FLOOR·max(S, K)`` onde há uma
+    escala melhor (achado da revisão da Sprint 5: com K >> S esse piso chegava
+    a 4x o próprio preço e não detectava nem erro de 100%). Dois termos:
+
+    - ruído de avaliação, em ulps do MAIOR termo que a fórmula subtrai
+      (``cancellation_scale``: ``S·e^(-qT)·N(±d1)`` ou ``K·e^(-rT)·N(±d2)``) —
+      é ele, não ``max(S, K)``, que limita o erro de arredondamento;
+    - cota do solver propagada pelo vega: ``vega·ABS_IV_SIGMA``.
+    """
+    return IV_ROUNDOFF_ULPS * EPS_MACHINE * cancellation_scale + vega * ABS_IV_SIGMA
+
+
 def iv_sigma_abs_tol(price_error_bound: float, vega: float) -> float:
     """Tolerância absoluta em sigma: cota do solver + erro de preço / vega.
 

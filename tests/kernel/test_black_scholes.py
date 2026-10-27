@@ -546,6 +546,91 @@ class TestPriceNeverNegative:
         assert not negatives, f"{len(negatives)} preços negativos: {negatives[:5]}"
 
 
+class TestOverflowNaoViraPrecoFinito:
+    """Overflow de produto intermediário: inf ou NaN, nunca um preço finito inventado.
+
+    Achado da revisão da Sprint 5: com ``s*df_q`` em overflow, a put saía
+    ``-inf`` e o piso ``max(price, 0.0)`` a devolvia como 0.0 válido — o valor
+    verdadeiro (~1e307) é representável. O não finito segue até os VOs de
+    resultado, que o rejeitam com erro tipado.
+    """
+
+    def test_put_com_overflow_nao_sai_zero(self) -> None:
+        out = bs_outputs(1.78e308, 1.78e308, 1.0, 0.0, 0.2, -0.01, is_call=False)
+        assert out.price == -math.inf
+
+    def test_nan_de_inf_vezes_zero_nao_e_mascarado(self) -> None:
+        # s*df_q = inf e N(-d1) = 0: inf·0 = NaN; nenhum piso o transforma em número.
+        out = bs_outputs(1.78e308, 1.0, 1.0, 0.0, 0.2, -0.01, is_call=False)
+        assert math.isnan(out.price)
+
+    def test_ramo_deterministico_tambem_preserva_o_nao_finito(self) -> None:
+        # sigma = 0, call no dinheiro a termo: s*df_q e k*df_r em overflow dão
+        # inf - inf = NaN, que o piso não transforma em 0.0.
+        out = bs_outputs(1.78e308, 1.78e308, 1.0, -0.01, 0.0, -0.02, is_call=True)
+        assert math.isnan(out.price)
+
+
+_MAGNITUDE = st.floats(min_value=-690.0, max_value=690.0).map(math.exp)
+
+
+class TestMagnitudesExtremas:
+    """s e k em extremos opostos do float64: nunca ValueError nem ZeroDivisionError cru.
+
+    Achados da revisão da Sprint 5 (HANDOFF §3), reproduzidos: ``log(s / k)``
+    com a razão em underflow vazava ``ValueError`` e o produto
+    ``s*sigma*sqrt(tau)`` em underflow vazava ``ZeroDivisionError`` no gamma.
+    """
+
+    def test_moneyness_em_underflow(self) -> None:
+        call = bs_outputs(1e-200, 1e200, 1.0, 0.05, 0.2, is_call=True)
+        put = bs_outputs(1e-200, 1e200, 1.0, 0.05, 0.2, is_call=False)
+        assert all(math.isfinite(x) for x in (*call, *put))
+        assert call.price >= 0.0
+        # Put ITM extrema: k·e^(-r·tau)·N(-d2) - s·N(-d1) com N(-d2) = 1.
+        assert_close(
+            put.price,
+            1e200 * math.exp(-0.05),
+            rel=REL_SELF,
+            abs_=ABS_SELF_FLOOR,
+            label="put ITM extrema",
+        )
+        d1, d2 = d1_d2(1e-200, 1e200, 1.0, 0.05, 0.2)
+        assert math.isfinite(d1) and math.isfinite(d2)
+
+    def test_gamma_com_denominador_em_underflow(self) -> None:
+        # s*sigma*sqrt(tau) = 1e-330 vira 0.0; n(d1) = 0 aqui, então gamma = 0.
+        out = bs_outputs(1e-300, 1.0, 1.0, 0.0, 1e-30, is_call=True)
+        assert all(math.isfinite(x) for x in out)
+        assert out.gamma == 0.0
+
+    def test_gamma_irrepresentavel_sai_inf_e_nao_zerodivision(self) -> None:
+        # ATM com n(d1) ~ 0.4: o gamma verdadeiro (~4e329) não cabe em float64.
+        out = bs_outputs(1e-300, 1e-300, 1.0, 0.0, 1e-30, is_call=True)
+        assert math.isinf(out.gamma)
+        assert math.isfinite(out.price)
+
+    @given(
+        s=_MAGNITUDE,
+        k=_MAGNITUDE,
+        tau=st.floats(min_value=-690.0, max_value=math.log(30.0)).map(math.exp),
+        r=st.floats(min_value=-0.5, max_value=0.5),
+        sigma=st.floats(min_value=-69.0, max_value=math.log(50.0)).map(math.exp),
+        q=st.floats(min_value=-0.5, max_value=0.5),
+        is_call=st.booleans(),
+    )
+    def test_nunca_vaza_excecao_crua(
+        self, s: float, k: float, tau: float, r: float, sigma: float, q: float, is_call: bool
+    ) -> None:
+        """Toda entrada termina em saída ou em ``InvalidKernelInputError``; preço finito >= 0."""
+        try:
+            out = bs_outputs(s, k, tau, r, sigma, q, is_call=is_call)
+        except InvalidKernelInputError:
+            return
+        if math.isfinite(out.price):
+            assert out.price >= 0.0
+
+
 class TestIllegalInputs:
     """Entradas ilegais -> InvalidKernelInputError (filha de DomainError), nunca ValueError cru."""
 
