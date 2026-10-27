@@ -38,6 +38,10 @@ Contrato de fronteira (tabela normativa em docs/ARCHITECTURE.md):
     sigma·sqrt(tau) em underflow (sigma > 0 e tau > 0, mas o produto vale
         0.0 em float64) -> mesmo ramo determinístico: sem difusão
         representável, o limite correto é o intrínseco descontado.
+    s/k ou s·sigma·sqrt(tau) em underflow/overflow (s e k em extremos
+        opostos do float64) -> calculados sem formar a razão ou o produto
+        (``_log_moneyness``; gamma por divisões sucessivas): nunca
+        ``ValueError`` nem ``ZeroDivisionError`` cru.
     preço >= 0.0 sempre que finito (VV-PLAN §6, linha Deep OTM): piso em
         zero contra o ruído de cancelamento em float — ver ``bs_outputs`` e
         ``_deterministic``.
@@ -60,6 +64,7 @@ Referências: Hull, *Options, Futures and Other Derivatives*, 10ª ed.,
 caps. 15/19; Haug, *The Complete Guide to Option Pricing Formulas*, 2ª ed.
 """
 
+import sys
 from math import exp, isfinite, log, sqrt
 from typing import NamedTuple
 
@@ -174,6 +179,21 @@ def _deterministic(
     return BSOutputs(0.0, delta, 0.0, 0.0, 0.0, 0.0)
 
 
+def _log_moneyness(s: float, k: float) -> float:
+    """ln(s/k) sem a razão transbordar ou zerar.
+
+    ``log(s / k)`` é o caminho normal: perto do ATM ele preserva os dígitos
+    que ``log(s) - log(k)`` perderia no cancelamento. Com s e k em extremos
+    opostos a razão zera, fica subnormal ou transborda (``log(0.0)`` vazava
+    ``ValueError`` cru — achado da revisão da Sprint 5), e só então a
+    diferença dos logs, sempre finita para s, k > 0, assume.
+    """
+    ratio = s / k
+    if sys.float_info.min <= ratio <= sys.float_info.max:
+        return log(ratio)
+    return log(s) - log(k)
+
+
 def _d1_d2(
     s: float, k: float, tau: float, r: float, sigma: float, q: float, sig_sqrt_tau: float
 ) -> tuple[float, float]:
@@ -182,7 +202,7 @@ def _d1_d2(
     Achado da revisão adversarial: com a fórmula duplicada, um erro de sinal
     em q apenas na API pública sobreviveria à suíte inteira.
     """
-    d1 = (log(s / k) + (r - q + 0.5 * sigma * sigma) * tau) / sig_sqrt_tau
+    d1 = (_log_moneyness(s, k) + (r - q + 0.5 * sigma * sigma) * tau) / sig_sqrt_tau
     return d1, d1 - sig_sqrt_tau
 
 
@@ -265,8 +285,12 @@ def bs_outputs(
     price = _floor_finite_noise(price)
 
     # Gamma e vega são idênticos para call e put de mesmos parâmetros —
-    # mesma expressão, mesmos intermediários (propriedade testada).
-    gamma = df_q * n_d1 / (s * sig_sqrt_tau)
+    # mesma expressão, mesmos intermediários (propriedade testada). Gamma por
+    # divisões sucessivas: o produto s*sig_sqrt_tau zerava em underflow e
+    # vazava ZeroDivisionError cru (achado da revisão da Sprint 5); s e
+    # sig_sqrt_tau são > 0 aqui, e um gamma irrepresentável sai inf, que o VO
+    # rejeita.
+    gamma = df_q * n_d1 / s / sig_sqrt_tau
     vega = s * df_q * n_d1 * sqrt_tau
     return BSOutputs(price, delta, gamma, theta, vega, rho)
 
