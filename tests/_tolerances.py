@@ -76,6 +76,16 @@ ABS_BREAKEVEN = 1e-9
 REL_INCOME = 1e-12
 ABS_INCOME = 1e-12
 
+# --- oráculo numérico do perfil líquido de renda (tests/income/) --------------
+# O P&L líquido no vencimento avaliado perna a perna, cenário a cenário, com
+# somas ingênuas, contra a forma fechada com fsum. Sem transcendentais: cada
+# lado erra poucos ulps do MAIOR termo somado (strike x ações, ~1e4 em
+# moeda), e perto do breakeven ou de resultado ~0 o cancelamento passa esse
+# erro absoluto inteiro ao resultado. 1e-12 x escala dá margem ~1e3x sobre
+# ~4 ulps (4 x 2.2e-16) e ainda mata qualquer erro de fórmula (centavos).
+REL_INCOME_ORACLE = 1e-12
+ABS_INCOME_ORACLE_PER_SCALE = 1e-12  # multiplicar pela escala strike x ações
+
 # --- teste estatístico do GBM (seed fixa — determinístico, não flaky) --------
 # Margem em erros-padrão sobre média e desvio dos log-retornos amostrados.
 # Com seed fixa o teste é determinístico; o z só precisa acomodar o sorteio

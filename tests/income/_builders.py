@@ -33,6 +33,22 @@ def make_cost_schedule(
     )
 
 
+def reference_cost_schedule() -> CostSchedule:
+    """Valores de referência do spike (ADR-0005, 2026-10-26) — a linha inicial da tabela.
+
+    Emolumentos de opções 0,1340% por perna; do à vista/exercício 0,0300%;
+    corretagem R$ 0,00 por ordem e por exercício; IR 15%. Literais de teste:
+    a tabela vigente chega pela configuração versionada (plano da fase 2, §3.2).
+    """
+    return make_cost_schedule(
+        option_exchange_fee_rate=0.00134,
+        spot_exchange_fee_rate=0.0003,
+        brokerage_per_order=0.0,
+        exercise_brokerage_per_order=0.0,
+        income_tax_rate=0.15,
+    )
+
+
 def zero_cost_schedule() -> CostSchedule:
     """Tabela sem custo algum: o líquido coincide com o bruto."""
     return make_cost_schedule(
