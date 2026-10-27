@@ -56,6 +56,26 @@ mercado real cada série tem a sua volatilidade implícita.
    `dataclasses.replace(snapshot, volatility=...)` — o mesmo padrão de
    `apply_scenario`, sem alterar o VO.
 
+## Notas de implementação (Sprint 5)
+
+Detalham a decisão sem mudá-la:
+
+- **`volume`** é o **volume financeiro na moeda do subjacente** — no
+  COTAHIST, o campo `VOLTOT` (ADR-0006) —, não a quantidade de contratos.
+- **`trades > 0` com `last` ausente é dado incoerente:** a série fica **sem
+  preço** — nem `INDICATIVO` (falta o `last`), nem `TEORICO` (houve
+  negócio no pregão).
+- **Elegível ao `TEORICO`** = book vazio (`bid` e `ask` `None`) **e**
+  `trades == 0`. Book vazio sozinho não basta: é esse predicado que separa
+  "sem preço" de "elegível ao teórico". Um `last` com `trades == 0` não é
+  negócio do pregão e não vira `INDICATIVO` (ADR-0004).
+- **A suíte de contrato também verifica o snapshot do subjacente:** a taxa
+  chega como `RiskFreeRate` e a vol (realizada, decisão 5) como
+  `Volatility` com valor `> 0` — mais estrito que o VO, que aceita zero.
+- **Tickers únicos na cadeia:** duas cotações com o mesmo ticker são
+  irrepresentáveis no `OptionChain`. A identidade do `OptionContract` é o
+  ticker (ARCH §2.2), e um instrumento tem um único book por pregão.
+
 ## Consequências
 
 - `MarketDataPort` não muda; nenhum adapter existente é afetado.
