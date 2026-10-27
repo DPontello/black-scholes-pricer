@@ -46,6 +46,7 @@ __all__ = [
     "estimate_exercise_costs",
     "estimate_income_tax",
     "estimate_setup_costs",
+    "schedule_on",
 ]
 
 REFERENCE_POSITION_SHARES: Final[int] = 100
@@ -172,6 +173,28 @@ class OperationCosts:
     def total(self) -> float:
         """Montagem (emolumentos + corretagem) + IR estimado, em moeda."""
         return fsum((self.setup.exchange_fees, self.setup.brokerage, self.income_tax))
+
+
+def schedule_on(schedules: Sequence[CostSchedule], on: date) -> CostSchedule:
+    """A tabela vigente em ``on``: a de maior ``valid_from <= on``.
+
+    Nenhuma vigente -> ``InvalidDomainValueError``: um custo sem tabela seria
+    número inventado. Duas tabelas com a mesma vigência também: qual delas
+    vale seria uma escolha silenciosa.
+    """
+    vigencias = [s.valid_from for s in schedules]
+    repetidas = sorted({d for d in vigencias if vigencias.count(d) > 1})
+    if repetidas:
+        raise InvalidDomainValueError(
+            f"tabelas de custo com a mesma vigência: {[d.isoformat() for d in repetidas]!r}"
+        )
+    vigentes = [s for s in schedules if s.valid_from <= on]
+    if not vigentes:
+        primeira = min(vigencias).isoformat() if vigencias else "nenhuma tabela"
+        raise InvalidDomainValueError(
+            f"nenhuma tabela de custos vigente em {on.isoformat()} (primeira vigência: {primeira})"
+        )
+    return max(vigentes, key=lambda s: s.valid_from)
 
 
 def estimate_setup_costs(
