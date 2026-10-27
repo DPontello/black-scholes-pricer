@@ -25,9 +25,9 @@ from math import isfinite
 import pytest
 
 from options_engine.application.ports.outbound import OptionChainPort
-from options_engine.domain.model.chain import OptionChain, OptionQuote
+from options_engine.domain.model.chain import OptionChain, OptionQuote, RejectedSeries
 from options_engine.domain.model.conventions import RiskFreeRate, Volatility
-from options_engine.domain.model.errors import UnknownSymbolError
+from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
 from options_engine.domain.model.market import MarketSnapshot
 
 __all__ = ["OptionChainPortContract"]
@@ -54,6 +54,14 @@ class OptionChainPortContract(ABC):
     def known_symbols(self) -> tuple[str, ...]:
         """Ao menos dois subjacentes distintos que o adapter reconhece, cada
         um com ao menos uma série."""
+
+    def unavailable_symbol(self) -> str | None:
+        """Opcional: subjacente conhecido na fonte, mas sem preço utilizável no pregão.
+
+        Quem tiver um na fixture o declara, e a suíte exige
+        ``UnderlyingUnavailableError``; ``None`` (default) pula o teste.
+        """
+        return None
 
     UNKNOWN_SYMBOL = "XXXX99"
 
@@ -156,10 +164,28 @@ class OptionChainPortContract(ABC):
 
     # --- erros (contrato 5) -----------------------------------------------------
 
+    def test_simbolo_sem_preco_utilizavel_e_underlying_unavailable(self) -> None:
+        """Conhecido mas sem número honesto no pregão: fora do painel com motivo (ADR-0004)."""
+        simbolo = self.unavailable_symbol()
+        if simbolo is None:
+            pytest.skip("fixture sem subjacente indisponível declarado")
+        with pytest.raises(UnderlyingUnavailableError):
+            self.make_port().get_chain(simbolo)
+
     def test_simbolo_desconhecido_e_excecao_de_dominio(self) -> None:
         """``UnknownSymbolError``, nunca ``KeyError``/``None``/erro de I/O vazando."""
         with pytest.raises(UnknownSymbolError):
             self.make_port().get_chain(self.UNKNOWN_SYMBOL)
+
+    # --- séries rejeitadas (contrato 7) ---------------------------------------------
+
+    def test_rejeitadas_sao_disjuntas_das_cotacoes_e_tem_motivo(self) -> None:
+        for simbolo, chain in self._chains():
+            cotadas = {quote.contract.symbol for quote in chain.quotes}
+            for serie in chain.rejected_series:
+                assert isinstance(serie, RejectedSeries), (simbolo, type(serie).__name__)
+                assert serie.symbol not in cotadas, (simbolo, serie.symbol)
+                assert serie.reason.strip(), (simbolo, serie.symbol)
 
     # --- consulta, não comando (contrato 6) ---------------------------------------
 

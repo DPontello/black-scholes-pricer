@@ -21,6 +21,7 @@ __all__ = [
     "MixedAnnualizationBaseError",
     "MixedExpiryError",
     "MixedUnderlyingError",
+    "UnderlyingUnavailableError",
     "UnknownSymbolError",
     "UnsupportedExerciseStyleError",
 ]
@@ -113,6 +114,16 @@ class ExpiredOptionError(DomainError):
     o intrínseco descontado (decisão nº 5). ``expiry < hoje`` não tem preço
     a termo: é a guarda dos use cases (Sprint 3), disparada ANTES da
     contagem de dias — o ``TradingCalendar`` só recebe ``start <= end``.
+    """
+
+
+class UnderlyingUnavailableError(DomainError):
+    """Subjacente conhecido na fonte, mas sem preço utilizável no pregão.
+
+    ADR-0004: o ativo "fica fora do painel do dia com motivo explícito" —
+    sem fechamento no pregão, ou sem histórico suficiente para a vol
+    realizada. A mensagem carrega o motivo, que o painel exibe. Distinta de
+    ``UnknownSymbolError``: o símbolo existe, só não há número honesto hoje.
     """
 
 

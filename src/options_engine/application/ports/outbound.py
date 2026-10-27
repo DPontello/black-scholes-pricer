@@ -67,15 +67,22 @@ class OptionChainPort(Protocol):
     4. timestamps tz-aware (snapshot do subjacente e cotações);
     5. símbolo desconhecido → ``UnknownSymbolError`` (exceção de domínio),
        nunca ``KeyError``, ``None`` ou exceção de lib de I/O vazando;
+       símbolo conhecido sem preço utilizável no pregão (sem fechamento,
+       histórico insuficiente para a vol realizada) →
+       ``UnderlyingUnavailableError`` com o motivo (ADR-0004);
     6. consulta, não comando: cadeias devolvidas são imutáveis e consultar
        não tem efeito colateral observável — nem uma consulta que falha
-       deixa o port inutilizável.
+       deixa o port inutilizável;
+    7. ``rejected_series`` traz, com motivo, as séries da fonte que não
+       viraram cotação, disjuntas das ``quotes``.
 
     Semântica que a suíte não consegue verificar, mas o adapter deve
     honrar: a vol do ``MarketSnapshot`` do subjacente é a vol REALIZADA de
     referência, calculada pelo adapter a partir do histórico; a implícita de
-    cada série é resolvida fora do port. Ativo-objeto com livro vazio: o
-    adapter não inventa bid/ask (ADR-0004).
+    cada série é resolvida fora do port. Ativo-objeto com fechamento mas
+    sem ofertas (decisão da mesa, ADR-0004): o snapshot usa o fechamento em
+    spot, bid, ask e mid e a cadeia sai com ``underlying_book_available =
+    False`` — bid/ask não observados nunca se passam por book real.
     """
 
     def get_chain(self, underlying_symbol: str) -> OptionChain: ...

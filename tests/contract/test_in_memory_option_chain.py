@@ -13,9 +13,9 @@ ignorasse o símbolo pedido seria reprovado.
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from options_engine.domain.model.chain import OptionChain, OptionQuote
+from options_engine.domain.model.chain import OptionChain, OptionQuote, RejectedSeries
 from options_engine.domain.model.enums import OptionType
-from options_engine.domain.model.errors import UnknownSymbolError
+from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
 from tests.contract.option_chain_contract import OptionChainPortContract
 from tests.domain._builders import make_contract, make_snapshot, make_terms
 
@@ -27,12 +27,17 @@ class InMemoryOptionChainSource:
     """Cadeias pré-montadas; subjacente fora delas → ``UnknownSymbolError``.
 
     A busca é pelo símbolo DENTRO de cada cadeia (não por chave de dict
-    paralela): chave e conteúdo não têm como divergir.
+    paralela): chave e conteúdo não têm como divergir. ``unavailable`` lista
+    subjacentes conhecidos sem preço utilizável, com o motivo.
     """
 
     chains: tuple[OptionChain, ...]
+    unavailable: tuple[tuple[str, str], ...] = ()
 
     def get_chain(self, underlying_symbol: str) -> OptionChain:
+        for simbolo, motivo in self.unavailable:
+            if simbolo == underlying_symbol:
+                raise UnderlyingUnavailableError(f"{simbolo}: {motivo}")
         for chain in self.chains:
             if chain.underlying.underlying_symbol == underlying_symbol:
                 return chain
@@ -72,6 +77,7 @@ def _cadeia_petr4() -> OptionChain:
             _quote("PETRW280", "PETR4", 28.0, put, None, None, 0.62, 3),  # vazio, com negócio
             _quote("PETRW260", "PETR4", 26.0, put, None, None, None, 0),  # vazio, sem negócio
         ),
+        rejected_series=(RejectedSeries("PETRK360", "sem estilo de exercício no cadastro"),),
     )
 
 
@@ -86,7 +92,13 @@ def _cadeia_vale3() -> OptionChain:
 
 class TestInMemoryOptionChainContract(OptionChainPortContract):
     def make_port(self) -> InMemoryOptionChainSource:
-        return InMemoryOptionChainSource(chains=(_cadeia_petr4(), _cadeia_vale3()))
+        return InMemoryOptionChainSource(
+            chains=(_cadeia_petr4(), _cadeia_vale3()),
+            unavailable=(("ITUB4", "sem fechamento no pregão"),),
+        )
 
     def known_symbols(self) -> tuple[str, ...]:
         return ("PETR4", "VALE3")
+
+    def unavailable_symbol(self) -> str | None:
+        return "ITUB4"

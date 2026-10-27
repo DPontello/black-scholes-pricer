@@ -12,6 +12,7 @@ from options_engine.domain.model.chain import (
     OptionChain,
     OptionQuote,
     PriceQuality,
+    RejectedSeries,
     executable_premium,
     worst_quality,
 )
@@ -207,6 +208,57 @@ def test_cadeia_e_imutavel() -> None:
     chain = OptionChain(underlying=make_snapshot(), quotes=(make_quote(),))
     with pytest.raises(FrozenInstanceError):
         chain.quotes = ()  # type: ignore[misc]  # justificativa: atribuição ilegal é o próprio teste
+
+
+# ---------------------------------------------------------------------------
+# Séries rejeitadas e ativo-objeto sem ofertas (fase 2, ADR-0004 e ADR-0006)
+# ---------------------------------------------------------------------------
+
+
+def test_cadeia_nasce_sem_rejeitadas_e_com_book_do_ativo_observado() -> None:
+    chain = OptionChain(underlying=make_snapshot(), quotes=(make_quote(),))
+    assert chain.rejected_series == ()
+    assert chain.underlying_book_available is True
+
+
+def test_serie_rejeitada_carrega_simbolo_e_motivo() -> None:
+    rejeitada = RejectedSeries("PETRK340", "sem estilo de exercício no cadastro")
+    chain = OptionChain(
+        underlying=make_snapshot(),
+        quotes=(make_quote(contract=make_series("PETRK300")),),
+        rejected_series=(rejeitada,),
+        underlying_book_available=False,
+    )
+    assert chain.rejected_series == (rejeitada,)
+    assert chain.underlying_book_available is False
+
+
+@pytest.mark.parametrize(("symbol", "reason"), [("", "motivo"), ("  ", "motivo"), ("X", " ")])
+def test_serie_rejeitada_exige_simbolo_e_motivo(symbol: str, reason: str) -> None:
+    with pytest.raises(InvalidDomainValueError):
+        RejectedSeries(symbol, reason)
+
+
+def test_serie_rejeitada_duas_vezes_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError, match="PETRK340"):
+        OptionChain(
+            underlying=make_snapshot(),
+            quotes=(),
+            rejected_series=(
+                RejectedSeries("PETRK340", "sem estilo"),
+                RejectedSeries("PETRK340", "book cruzado"),
+            ),
+        )
+
+
+def test_serie_cotada_e_rejeitada_ao_mesmo_tempo_e_irrepresentavel() -> None:
+    """A mesma série não pode estar dentro e fora do painel."""
+    with pytest.raises(InvalidDomainValueError, match="PETRK300"):
+        OptionChain(
+            underlying=make_snapshot(),
+            quotes=(make_quote(contract=make_series("PETRK300")),),
+            rejected_series=(RejectedSeries("PETRK300", "book cruzado na fonte"),),
+        )
 
 
 # ---------------------------------------------------------------------------
