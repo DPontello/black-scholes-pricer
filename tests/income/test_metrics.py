@@ -114,6 +114,31 @@ def test_put_coberta_golden_liquido() -> None:
     assert m.costs.schedule == make_cost_schedule()
 
 
+def test_put_coberta_golden_extremos_liquidos() -> None:
+    """Mesma operação: breakeven e extremos líquidos (ADR-0005 item 4).
+
+    exercício (put exercida) = 0,0002 x 3.000,00 + 2,00        = 2,60
+    ganho máximo líquido = 60,00 - 5,03 - 8,2455 (IR)           = 46,7245
+    perda máxima líquida = -2.940,00 - 5,03 - 2,60 (sem IR)     = -2.947,63
+    breakeven líquido    = 30,00 - 0,60 + (5,03 + 2,60) / 100   = 29,4763
+    """
+    m = _csp()
+    _close(m.net_max_gain_per_position, 46.7245, "ganho máximo líquido")
+    _close(m.net_max_loss_per_position, -2947.63, "perda máxima líquida")
+    _close(m.net_breakeven, 29.4763, "breakeven líquido")
+
+
+def test_put_coberta_breakeven_liquido_no_salto_do_exercicio() -> None:
+    """Prêmio 0,06: (5,003 + 2,60) / 100 = 0,07603 >= 0,06 — o trecho exercido nunca zera.
+
+    O resultado só fica >= 0 em K = 30, onde o exercício some: breakeven = 30.
+    ganho máximo líquido = (6,00 - 5,003) x 0,85 = 0,84745
+    """
+    m = _csp(premium_per_share=0.06)
+    _close(m.net_breakeven, 30.0, "breakeven no strike")
+    _close(m.net_max_gain_per_position, 0.84745, "ganho máximo líquido")
+
+
 def test_put_coberta_carrega_as_entradas() -> None:
     """Rastreabilidade: o resultado guarda du, tamanho, CDI e a tabela usada."""
     m = _csp(reference_shares=300)
@@ -127,6 +152,9 @@ def test_put_coberta_sem_custos_liquido_igual_ao_bruto() -> None:
     _close(m.net_yield_period, m.yield_period, "líquido == bruto")
     assert m.yield_annual_252 is not None
     _close(m.net_yield_annual_252, m.yield_annual_252, "anualizado líquido == bruto")
+    _close(m.net_breakeven, m.breakeven, "breakeven líquido == bruto")
+    _close(m.net_max_gain_per_position, m.max_gain_per_position, "ganho líquido == bruto")
+    _close(m.net_max_loss_per_position, m.max_loss_per_position, "perda líquida == bruta")
 
 
 def test_put_coberta_vencendo_hoje_nao_anualiza() -> None:
@@ -151,6 +179,10 @@ def test_put_coberta_premio_zero() -> None:
     _close(m.net_yield_period, -5.0 / 3000.0, "rendimento líquido")
     assert m.costs.income_tax == 0.0
     _close(m.max_gain_per_position, 0.0, "ganho máximo")
+    # Custos > prêmio: o resultado líquido nunca chega a zero.
+    assert m.net_breakeven is None
+    _close(m.net_max_gain_per_position, -5.0, "ganho máximo líquido")
+    _close(m.net_max_loss_per_position, -3007.60, "perda máxima líquida")
 
 
 def test_tamanho_maior_dilui_a_corretagem_fixa() -> None:
@@ -258,6 +290,33 @@ def test_venda_coberta_golden_liquido() -> None:
     _close(m.net_excess_over_cdi_annual_252, -0.0043090085371637155, "excesso líquido")
 
 
+def test_venda_coberta_golden_extremos_liquidos() -> None:
+    """Mesma operação: breakeven e extremos líquidos (ADR-0005 itens 3 e 4).
+
+    exercício (call exercida) = 0,0002 x 3.400,00 + 2,00            = 2,68
+    ganho máximo antes do IR  = 280,00 - 10,68 - 2,68               = 266,64
+    IR só sobre o prêmio      = 0,15 x (80,00 - 5,04 da ordem)      = 11,244
+    ganho máximo líquido      = 266,64 - 11,244                     = 255,396
+    perda máxima líquida      = -3.120,00 - 10,68 (sem exercício)   = -3.130,68
+    breakeven líquido         = 32,00 - 0,80 + 10,68 / 100          = 31,3068
+    """
+    m = _cc()
+    _close(m.net_max_gain_per_position, 255.396, "ganho máximo líquido")
+    _close(m.net_max_loss_per_position, -3130.68, "perda máxima líquida")
+    _close(m.net_breakeven, 31.3068, "breakeven líquido")
+
+
+def test_venda_coberta_sem_breakeven_liquido_quando_passa_do_strike() -> None:
+    """Call ATM K = 32 a 0,05: 32,00 - 0,05 + 10,6425 / 100 = 32,056425 > K.
+
+    Até o strike o resultado não zera, e o exercido é ainda menor: nenhum
+    preço zera o líquido. ganho máximo líquido = 5,00 - 10,6425 - 2,64 = -8,2825.
+    """
+    m = _cc(strike=32.0, premium_per_share=0.05)
+    assert m.net_breakeven is None
+    _close(m.net_max_gain_per_position, -8.2825, "ganho máximo líquido")
+
+
 def test_venda_coberta_dentro_do_dinheiro() -> None:
     """Strike 30 abaixo do spot 32: ganho máximo = (30 - 32 + 2,50) x 100 = 50,00."""
     m = _cc(strike=30.0, premium_per_share=2.50)
@@ -290,6 +349,8 @@ def test_venda_coberta_premio_zero() -> None:
     _close(m.yield_period, 0.0, "rendimento")
     _close(m.downside_protection, 0.0, "proteção")
     _close(m.net_yield_period, -0.003325, "rendimento líquido")
+    # Sem prêmio ainda há breakeven: a ação sobe até cobrir a montagem.
+    _close(m.net_breakeven, 32.1064, "breakeven líquido")
     assert m.costs.income_tax == 0.0
 
 
@@ -387,6 +448,21 @@ def test_trava_de_alta_com_put_golden_liquido() -> None:
     _close(m.net_excess_over_cdi_annual_252, 0.6844233058231955126, "excesso líquido")
 
 
+def test_trava_de_alta_com_put_golden_extremos_liquidos() -> None:
+    """Mesma trava: breakeven e extremos líquidos (ADR-0005 item 4).
+
+    exercício da vendida (put 30)  = 0,0002 x 3.000,00 + 2,00            = 2,60
+    exercício das duas (28 e 30)   = 0,0002 x 5.800,00 + 2 x 2,00        = 5,16
+    ganho máximo líquido = 40,00 - 10,07 - 4,4895 (IR)                    = 25,4405
+    perda máxima líquida = -160,00 - 10,07 - 5,16 (sem IR)                = -175,23
+    breakeven líquido    = 30,00 - 0,40 + (10,07 + 2,60) / 100            = 29,7267
+    """
+    m = _spread(_bull_put())
+    _close(m.net_max_gain_per_position, 25.4405, "ganho máximo líquido")
+    _close(m.net_max_loss_per_position, -175.23, "perda máxima líquida")
+    _close(m.net_breakeven, 29.7267, "breakeven líquido")
+
+
 def test_trava_de_baixa_com_call_golden_bruto_e_liquido() -> None:
     """Vende call 32 a 1,10 e compra call 34 a 0,35, 126 du, CDI 12%.
 
@@ -411,6 +487,41 @@ def test_trava_de_baixa_com_call_golden_bruto_e_liquido() -> None:
     _close(m.net_yield_period, 0.441507, "retorno líquido")
     _close(m.net_yield_annual_252, 1.077942431049, "anualizado líquido")
     _close(m.net_excess_over_cdi_annual_252, 0.957942431049, "excesso líquido")
+
+
+def test_trava_de_baixa_com_call_golden_extremos_liquidos() -> None:
+    """Mesma trava: breakeven e extremos líquidos (ADR-0005 item 4).
+
+    exercício da vendida (call 32) = 0,0002 x 3.200,00 + 2,00            = 2,64
+    exercício das duas (32 e 34)   = 0,0002 x 6.600,00 + 2 x 2,00        = 5,32
+    ganho máximo líquido = 75,00 - 10,0725 - 9,739125 (IR)                = 55,188375
+    perda máxima líquida = -125,00 - 10,0725 - 5,32 (sem IR)              = -140,3925
+    breakeven líquido    = 32,00 + 0,75 - (10,0725 + 2,64) / 100          = 32,622875
+    """
+    m = _spread(_bear_call(), business_days=126)
+    _close(m.net_max_gain_per_position, 55.188375, "ganho máximo líquido")
+    _close(m.net_max_loss_per_position, -140.3925, "perda máxima líquida")
+    _close(m.net_breakeven, 32.622875, "breakeven líquido")
+
+
+@pytest.mark.parametrize(
+    ("trava", "strike_vendido"),
+    [
+        (_bull_put(premiums=(0.05, 0.16)), 30.0),
+        (_bear_call(premiums=(0.16, 0.05)), 32.0),
+    ],
+)
+def test_trava_breakeven_liquido_no_salto_do_exercicio(
+    trava: Strategy, strike_vendido: float
+) -> None:
+    """Crédito 0,11: (10,0105 + 2,60 ou 2,64) / 100 > 0,11 — o trecho exercido nunca zera.
+
+    O resultado só fica >= 0 no strike vendido, onde o exercício some.
+    ganho máximo líquido = (11,00 - 10,0105) x 0,85 = 0,841075
+    """
+    m = _spread(trava)
+    _close(m.net_breakeven, strike_vendido, "breakeven no strike vendido")
+    _close(m.net_max_gain_per_position, 0.841075, "ganho máximo líquido")
 
 
 @pytest.mark.parametrize("trava", [_bull_put(quantity=100), _bear_call(quantity=100)])
@@ -469,6 +580,8 @@ def test_trava_com_credito_zero() -> None:
     _close(m.max_loss_per_position, -200.0, "pior resultado")
     _close(m.net_yield_period, -0.05025, "retorno líquido")
     assert m.costs.income_tax == 0.0
+    assert m.net_breakeven is None
+    _close(m.net_max_loss_per_position, -215.21, "perda máxima líquida")
 
 
 @pytest.mark.parametrize("premiums", [(0.10, 2.10), (0.10, 2.50)])
@@ -547,6 +660,9 @@ def test_trava_entradas_invalidas(overrides: dict[str, Any]) -> None:
         {"breakeven": float("nan")},
         {"max_gain_per_position": float("inf")},
         {"max_loss_per_position": float("-inf")},
+        {"net_breakeven": float("nan")},
+        {"net_max_gain_per_position": float("inf")},
+        {"net_max_loss_per_position": float("nan")},
         {"yield_annual_252": None},
         {"net_excess_over_cdi_annual_252": float("nan")},
         {"business_days": 0},  # anualizados presentes com 0 du

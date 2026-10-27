@@ -20,17 +20,31 @@ DECIMAL (0.02 == 2%), nunca pontos percentuais:
   com ``du`` contado pelo ``TradingCalendar`` (meio-aberto, CONVENTIONS §2).
 - ``excess_over_cdi_annual_252``: ``yield_annual_252`` menos o CDI efetivo
   anual base 252 (diferença simples, CONVENTIONS §3).
-- ``net_*``: os mesmos três, LÍQUIDOS dos custos estimados da montagem
-  (``costs.py``) para o tamanho de referência da posição, sobre a MESMA base
-  de capital do bruto — a diferença bruto/líquido é exatamente o custo, e o
-  líquido é monótono em cada parâmetro da tabela de custos.
+- ``net_*`` de rendimento: os mesmos três, LÍQUIDOS dos custos do cenário
+  de rendimento (montagem + IR, ``costs.py``) para o tamanho de referência
+  da posição, sobre a MESMA base de capital do bruto (ADR-0005, escolha 1)
+  — a diferença bruto/líquido é exatamente o custo, e o líquido é monótono
+  em cada parâmetro da tabela de custos.
 
 ``du = 0`` (vencimento hoje) não tem período a anualizar: as métricas
 anualizadas valem ``None`` — explícito no tipo, nunca divisão por zero nem
 número inventado.
 
 Cenário do rendimento: a opção vendida vira pó no vencimento e o prêmio é
-todo ganho — é sobre esse ganho que o IR é estimado. Prêmio fora dos limites
+todo ganho — é sobre esse ganho, menos a montagem, que o IR é estimado.
+
+Perfil no vencimento, bruto e líquido (ADR-0005 item 4). O resultado
+líquido no preço ``S`` do subjacente no vencimento é
+``bruto(S) - montagem - exercício(S) - IR(S)``: ``exercício(S)`` das pernas
+que terminam dentro do dinheiro em ``S`` (strike ultrapassado; no dinheiro
+não há exercício) e ``IR(S)`` de ``estimate_income_tax`` — alíquota sobre o
+resultado positivo, limitado ao resultado do prêmio. Como o IR só encolhe
+resultado positivo, o sinal do líquido é o do resultado antes do IR: o
+breakeven líquido é o zero do resultado antes do IR, e cada extremo líquido
+é o extremo antes do IR menos o IR do próprio cenário. A regra de cada
+estrutura está na docstring da sua função.
+
+Prêmio fora dos limites
 de não-arbitragem da estrutura (dado inconsistente) é rejeitado com
 ``InvalidDomainValueError`` e motivo explícito, nunca vira número.
 """
@@ -44,6 +58,7 @@ from options_engine.domain.income.costs import (
     CostSchedule,
     OperationCosts,
     OrderCosts,
+    estimate_exercise_costs,
     estimate_income_tax,
     estimate_setup_costs,
 )
@@ -178,7 +193,8 @@ class IncomeMetrics:
     - ``reference_shares``: tamanho da posição dos custos e dos valores
       ``*_per_position``.
     - ``cdi``: taxa de comparação, efetiva anual base 252.
-    - ``costs``: custos estimados da montagem, com a ``CostSchedule`` usada.
+    - ``costs``: custos do cenário de rendimento (montagem + IR), com a
+      ``CostSchedule`` usada.
 
     Rendimentos em decimal (ver docstring do módulo): ``yield_period``,
     ``yield_annual_252``, ``excess_over_cdi_annual_252`` e os ``net_*``.
@@ -194,6 +210,21 @@ class IncomeMetrics:
       são todas LIMITADAS (ação não vale menos que zero; trava limitada pela
       largura), por isso os extremos são ``float`` e nunca ``None`` (que no
       ``PayoffProfile`` significa ilimitado).
+
+    Perfil no vencimento, LÍQUIDO (ADR-0005 item 4), na mesma unidade e com a
+    mesma semântica de sinal — montagem, exercício das pernas exercidas e IR
+    estimado do cenário (docstring do módulo; regra de cada estrutura na
+    docstring da sua função):
+
+    - ``net_breakeven``: preço do subjacente no vencimento em que o resultado
+      líquido troca de sinal; no salto do custo de exercício, o strike da
+      perna vendida. ``None`` quando o resultado líquido nunca chega a zero
+      (custos maiores que o prêmio) — explícito no tipo, nunca número
+      inventado.
+    - ``net_max_gain_per_position`` / ``net_max_loss_per_position``:
+      resultado líquido do cenário de ganho máximo e do de perda máxima. O
+      ganho máximo paga IR só sobre o prêmio; perda não paga IR.
+
     - ``downside_protection``: só na venda coberta — fração de queda do spot
       coberta pelo prêmio (decimal); ``None`` nas demais estruturas.
     """
@@ -214,6 +245,9 @@ class IncomeMetrics:
     breakeven: float
     max_gain_per_position: float
     max_loss_per_position: float
+    net_breakeven: float | None
+    net_max_gain_per_position: float
+    net_max_loss_per_position: float
     downside_protection: float | None
 
     def __post_init__(self) -> None:
@@ -231,10 +265,16 @@ class IncomeMetrics:
             "breakeven": self.breakeven,
             "max_gain_per_position": self.max_gain_per_position,
             "max_loss_per_position": self.max_loss_per_position,
+            "net_max_gain_per_position": self.net_max_gain_per_position,
+            "net_max_loss_per_position": self.net_max_loss_per_position,
         }
         for nome, valor in finitos.items():
             if not isfinite(valor):
                 raise InvalidDomainValueError(f"{nome} deve ser finito; recebido {valor!r}")
+        if self.net_breakeven is not None and not isfinite(self.net_breakeven):
+            raise InvalidDomainValueError(
+                f"net_breakeven deve ser finito ou None; recebido {self.net_breakeven!r}"
+            )
         anualizados = {
             "yield_annual_252": self.yield_annual_252,
             "excess_over_cdi_annual_252": self.excess_over_cdi_annual_252,
@@ -261,31 +301,45 @@ class IncomeMetrics:
             )
 
 
+def _depois_do_ir(schedule: CostSchedule, resultado: float, premium_result: float) -> float:
+    """Resultado líquido de um cenário: o resultado antes do IR menos o IR estimado dele."""
+    imposto = estimate_income_tax(schedule, pre_tax_result=resultado, premium_result=premium_result)
+    return fsum((resultado, -imposto))
+
+
 def _metricas(
     structure: IncomeStructure,
     *,
     premium_per_share: float,
     capital_base_per_share: float,
     setup: OrderCosts,
+    premium_result: float,
     breakeven: float,
     max_gain_per_share: float,
     max_loss_per_share: float,
+    net_breakeven: float | None,
+    pre_tax_max_gain_per_position: float,
+    pre_tax_max_loss_per_position: float,
     downside_protection: float | None,
     business_days: int,
     cdi: RiskFreeRate,
     reference_shares: int,
 ) -> IncomeMetrics:
-    """Núcleo comum: IR, rendimento bruto/líquido, anualização e excesso.
+    """Núcleo comum: IR, rendimento bruto/líquido, anualização, excesso e extremos.
 
     Cada estrutura só decide a SUA geometria (base de capital, breakeven,
-    extremos) e a SUA montagem; o resto é idêntico para todas — um único lugar.
+    extremos brutos e antes do IR) e os SEUS custos de montagem e exercício;
+    o IR e o resto são idênticos para todas — um único lugar.
+    ``premium_result``: prêmio x ações menos as ordens de opção (o teto da
+    base do IR, ``estimate_income_tax``).
     """
+    schedule = setup.schedule
     receita = premium_per_share * reference_shares
     antes_do_ir = fsum((receita, -setup.total))
     custos = OperationCosts(
         setup=setup,
         income_tax=estimate_income_tax(
-            setup.schedule, pre_tax_result=antes_do_ir, premium_result=antes_do_ir
+            schedule, pre_tax_result=antes_do_ir, premium_result=premium_result
         ),
     )
     bruto = premium_per_share / capital_base_per_share
@@ -309,6 +363,13 @@ def _metricas(
         breakeven=breakeven,
         max_gain_per_position=max_gain_per_share * reference_shares,
         max_loss_per_position=max_loss_per_share * reference_shares,
+        net_breakeven=net_breakeven,
+        net_max_gain_per_position=_depois_do_ir(
+            schedule, pre_tax_max_gain_per_position, premium_result
+        ),
+        net_max_loss_per_position=_depois_do_ir(
+            schedule, pre_tax_max_loss_per_position, premium_result
+        ),
         downside_protection=downside_protection,
     )
 
@@ -333,6 +394,18 @@ def cash_secured_put_metrics(
     strike - prêmio; ganho máximo = prêmio (put vira pó); pior resultado =
     -(strike - prêmio) (exercida com a ação a zero). Uma ordem (uma perna).
 
+    Líquido (ADR-0005 item 4), por posição de ``n`` ações; a put exercida
+    compra as ações ao strike e paga o exercício:
+
+    - ganho máximo: put vira pó (S >= K), sem exercício: prêmio x n -
+      montagem - IR;
+    - perda máxima: exercida com a ação a zero: -(K - prêmio) x n - montagem
+      - exercício; sem IR;
+    - breakeven: no trecho exercido, ``K - prêmio + (montagem + exercício) /
+      n``. Se esse ponto não fica abaixo de K, o resultado só fica >= 0 em K,
+      onde o exercício some: breakeven = K. Prêmio menos montagem negativo:
+      ``None``.
+
     Prêmio >= strike -> ``InvalidDomainValueError``: uma put nunca vale o
     strike ou mais (arbitragem ou dado inconsistente).
     """
@@ -343,22 +416,35 @@ def cash_secured_put_metrics(
             f"put coberta exige prêmio < strike (arbitragem ou dado inconsistente); "
             f"recebido prêmio={premium_per_share!r}, strike={strike!r}"
         )
+    n = reference_shares
+    montagem = estimate_setup_costs(
+        cost_schedule, option_leg_premiums_per_share=(premium_per_share,), shares=n
+    )
+    exercicio = estimate_exercise_costs(cost_schedule, exercised_strikes=(strike,), shares=n)
+    resultado_do_premio = fsum((premium_per_share * n, -montagem.total))
+    if resultado_do_premio < 0.0:
+        breakeven_liquido = None
+    else:
+        custo_por_acao = fsum((montagem.total, exercicio.total)) / n
+        breakeven_liquido = min(fsum((strike, -premium_per_share, custo_por_acao)), strike)
     return _metricas(
         IncomeStructure.CASH_SECURED_PUT,
         premium_per_share=premium_per_share,
         capital_base_per_share=strike,
-        setup=estimate_setup_costs(
-            cost_schedule,
-            option_leg_premiums_per_share=(premium_per_share,),
-            shares=reference_shares,
-        ),
+        setup=montagem,
+        premium_result=resultado_do_premio,
         breakeven=strike - premium_per_share,
         max_gain_per_share=premium_per_share,
         max_loss_per_share=-(strike - premium_per_share),
+        net_breakeven=breakeven_liquido,
+        pre_tax_max_gain_per_position=resultado_do_premio,
+        pre_tax_max_loss_per_position=fsum(
+            (-(strike - premium_per_share) * n, -montagem.total, -exercicio.total)
+        ),
         downside_protection=None,
         business_days=business_days,
         cdi=cdi,
-        reference_shares=reference_shares,
+        reference_shares=n,
     )
 
 
@@ -386,6 +472,21 @@ def covered_call_metrics(
     ``spot x ações`` + corretagem de uma ordem). O rendimento líquido
     desconta a montagem inteira, na mesma base do bruto (o spot).
 
+    Líquido (ADR-0005 itens 3 e 4), por posição de ``n`` ações:
+
+    - ganho máximo: call exercida (S > K), as ações saem ao strike pagando o
+      exercício: (K - spot + prêmio) x n - montagem - exercício - IR, com o
+      IR só sobre o prêmio menos a ordem da opção (a valorização da ação
+      fica fora, ADR-0005 escolha 2). Com S = K a call não é exercida e a
+      ação fica marcada a K sem custo de venda: esse ponto vale mais que o
+      ganho máximo, no máximo pelo custo de exercício. A mesa mede o ganho
+      máximo no cenário exercido;
+    - perda máxima: ação a zero, call vira pó: -(spot - prêmio) x n -
+      montagem; sem IR;
+    - breakeven: no trecho não exercido, ``spot - prêmio + montagem / n``.
+      Se esse ponto passa do strike, nenhum preço zera o resultado líquido
+      (o exercido é ainda menor): ``None``.
+
     Limites de não-arbitragem: ``max(spot - strike, 0) <= prêmio < spot`` —
     call abaixo do intrínseco ou valendo o spot inteiro é dado inconsistente
     -> ``InvalidDomainValueError``.
@@ -399,23 +500,35 @@ def covered_call_metrics(
             f"inconsistente); recebido prêmio={premium_per_share!r}, spot={spot!r}, "
             f"strike={strike!r}"
         )
+    n = reference_shares
+    montagem = estimate_setup_costs(
+        cost_schedule,
+        option_leg_premiums_per_share=(premium_per_share,),
+        stock_purchase_price_per_share=spot,
+        shares=n,
+    )
+    ordem_da_opcao = estimate_setup_costs(
+        cost_schedule, option_leg_premiums_per_share=(premium_per_share,), shares=n
+    )
+    exercicio = estimate_exercise_costs(cost_schedule, exercised_strikes=(strike,), shares=n)
+    ganho_maximo = fsum((strike, -spot, premium_per_share))
+    breakeven_liquido = fsum((spot, -premium_per_share, montagem.total / n))
     return _metricas(
         IncomeStructure.COVERED_CALL,
         premium_per_share=premium_per_share,
         capital_base_per_share=spot,
-        setup=estimate_setup_costs(
-            cost_schedule,
-            option_leg_premiums_per_share=(premium_per_share,),
-            stock_purchase_price_per_share=spot,
-            shares=reference_shares,
-        ),
+        setup=montagem,
+        premium_result=fsum((premium_per_share * n, -ordem_da_opcao.total)),
         breakeven=spot - premium_per_share,
-        max_gain_per_share=fsum((strike, -spot, premium_per_share)),
+        max_gain_per_share=ganho_maximo,
         max_loss_per_share=-(spot - premium_per_share),
+        net_breakeven=breakeven_liquido if breakeven_liquido <= strike else None,
+        pre_tax_max_gain_per_position=fsum((ganho_maximo * n, -montagem.total, -exercicio.total)),
+        pre_tax_max_loss_per_position=fsum((-(spot - premium_per_share) * n, -montagem.total)),
         downside_protection=premium_per_share / spot,
         business_days=business_days,
         cdi=cdi,
-        reference_shares=reference_shares,
+        reference_shares=n,
     )
 
 
@@ -441,6 +554,20 @@ def credit_spread_metrics(
     crédito (puts) ou K baixo + crédito (calls); ganho máximo = crédito;
     pior resultado = -risco. Duas ordens; emolumento sobre cada perna.
 
+    Líquido (ADR-0005 item 4), por posição de ``n`` ações; cada perna que
+    termina dentro do dinheiro paga o exercício ao próprio strike:
+
+    - ganho máximo: as duas viram pó, sem exercício: crédito x n - montagem
+      - IR;
+    - perda máxima: as duas exercidas: -(largura - crédito) x n - montagem -
+      exercício das duas; sem IR;
+    - breakeven: no trecho em que só a vendida é exercida, ``K alto -
+      crédito + (montagem + exercício da vendida) / n`` (puts) ou ``K baixo
+      + crédito - (montagem + exercício da vendida) / n`` (calls). Se esse
+      ponto sai do trecho pelo lado do ganho, o resultado troca de sinal no
+      strike vendido, onde o exercício some: breakeven = strike vendido.
+      Crédito menos montagem negativo: ``None``.
+
     Rejeições, todas com motivo explícito (o painel exclui o candidato):
 
     - trava de débito ou estrutura que não é trava -> ``InvalidStrategyError``;
@@ -457,31 +584,53 @@ def credit_spread_metrics(
         )
     perna_baixa, perna_alta = trava.legs
     credito = net_premium_cashflow(trava) / perna_baixa.quantity
-    largura = perna_alta.terms.strike - perna_baixa.terms.strike
+    k_baixo, k_alto = perna_baixa.terms.strike, perna_alta.terms.strike
+    largura = k_alto - k_baixo
     if not (0.0 <= credito < largura):
         raise InvalidDomainValueError(
             f"trava de crédito exige 0 <= crédito < largura (arbitragem ou dado "
             f"inconsistente); recebido crédito={credito!r}, largura={largura!r}"
         )
-    if perna_baixa.terms.option_type is OptionType.PUT:
-        breakeven = perna_alta.terms.strike - credito
-    else:
-        breakeven = perna_baixa.terms.strike + credito
+    # Crédito: a perna vendida é a mais valiosa — put de strike maior, call de
+    # strike menor (vertical_spread_direction já garantiu a direção).
+    de_puts = perna_baixa.terms.option_type is OptionType.PUT
+    strike_vendido = k_alto if de_puts else k_baixo
     # Todas as pernas têm prêmio (net_premium_cashflow já exigiu); o filtro
     # só estreita o tipo para float.
     premios = tuple(leg.premium for leg in trava.legs if leg.premium is not None)
+    n = reference_shares
+    montagem = estimate_setup_costs(cost_schedule, option_leg_premiums_per_share=premios, shares=n)
+    exercicio_da_vendida = estimate_exercise_costs(
+        cost_schedule, exercised_strikes=(strike_vendido,), shares=n
+    )
+    exercicio_das_duas = estimate_exercise_costs(
+        cost_schedule, exercised_strikes=(k_baixo, k_alto), shares=n
+    )
+    resultado_do_premio = fsum((credito * n, -montagem.total))
+    custo_por_acao = fsum((montagem.total, exercicio_da_vendida.total)) / n
+    breakeven_liquido: float | None
+    if resultado_do_premio < 0.0:
+        breakeven_liquido = None
+    elif de_puts:
+        breakeven_liquido = min(fsum((k_alto, -credito, custo_por_acao)), k_alto)
+    else:
+        breakeven_liquido = max(fsum((k_baixo, credito, -custo_por_acao)), k_baixo)
     return _metricas(
         IncomeStructure.CREDIT_SPREAD,
         premium_per_share=credito,
         capital_base_per_share=largura - credito,
-        setup=estimate_setup_costs(
-            cost_schedule, option_leg_premiums_per_share=premios, shares=reference_shares
-        ),
-        breakeven=breakeven,
+        setup=montagem,
+        premium_result=resultado_do_premio,
+        breakeven=k_alto - credito if de_puts else k_baixo + credito,
         max_gain_per_share=credito,
         max_loss_per_share=-(largura - credito),
+        net_breakeven=breakeven_liquido,
+        pre_tax_max_gain_per_position=resultado_do_premio,
+        pre_tax_max_loss_per_position=fsum(
+            (-(largura - credito) * n, -montagem.total, -exercicio_das_duas.total)
+        ),
         downside_protection=None,
         business_days=business_days,
         cdi=cdi,
-        reference_shares=reference_shares,
+        reference_shares=n,
     )
