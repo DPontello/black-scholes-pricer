@@ -20,6 +20,9 @@ Atualizado em 2026-10-27, na segunda máquina. Todas as branches partem de
 | `feat/option-chain` | `OptionQuote`, `OptionChain`, `PriceQuality`, `LegPremium`, `executable_premium`, `OptionChainPort` + suíte de contrato | Mergeada; achados da §3 pendentes |
 | `docs/sprint-5-handoff` | Este documento e o plano da fase 2 | Mergeada |
 | `feat/income-metrics` | `domain/income/` (custos de montagem e exercício, IR, anualização, métricas e extremos líquidos das 3 estruturas) + `vertical_spread` | Mergeada depois da §2 |
+| `fix/revisao-kernel` | Correções da §3 no kernel e na IV + cota física no oráculo da IV | Mergeada |
+| `fix/revisao-call-americana` | Call americana com r < 0 rejeitada, testes de rejeição no motor, ADR-0002 | Mergeada |
+| `docs/revisao-sprint-5` | ARCH e VV-PLAN atualizados (call americana, IV, fronteiras, tolerâncias de renda) | Mergeada |
 
 Gates depois de cada merge (pytest + cobertura, mypy strict, ruff
 check/format, lint-imports): todos verdes; 3233 testes, cobertura 99%. O
@@ -56,53 +59,31 @@ Itens 3–5 da ADR-0005 aplicados em commits pequenos e mergeados na
 Decisões de implementação que a mesa deve conhecer estão na nota de estado
 da ADR-0005 (base do IR limitada ao prêmio; ganho máximo da venda coberta no
 cenário exercido, com S = K valendo até o custo de exercício a mais).
-Pendente de documentação: tolerâncias de renda (`REL/ABS_INCOME`,
-`*_INCOME_ORACLE`) ainda fora da tabela do VV-PLAN.
+As tolerâncias de renda entraram na tabela do VV-PLAN com a revisão da §3.
 
-**Próxima tarefa:** verificar os achados da §3.
+## 3. Achados de revisão — verificados em 2026-10-27
 
-## 3. Achados de revisão ainda NÃO verificados
+Cada achado foi reproduzido antes de qualquer correção; os corrigidos têm
+teste que falha no código anterior. Um fuzz de magnitudes extremas (200 mil
+casos) achou mais um furo na IV e confirmou os do kernel; depois das
+correções, zero exceções cruas. Oráculo scipy verde depois das mudanças.
 
-Os verificadores caíram no limite de uso. Cada item abaixo precisa ser
-confirmado (reproduzir) antes de corrigir; não são defeitos comprovados.
-
-**feat/american-call-approx**
-- (médio) Com taxa negativa, a call americana sai com preço europeu abaixo do
-  intrínseco: a premissa da ADR-0002 (sem exercício antecipado) exige r >= 0.
-  Sugestão: rejeitar CALL+AMERICAN com r contínua < 0 em `_price_single` e
-  registrar a condição na ADR-0002; o teste de propriedade `_pares_de_calls`
-  fixa hoje a igualdade com r em [-0.02, 0.30].
-- (médio) O motor de simulação continua rejeitando a CALL americana, mas a
-  ADR-0002 diz que os testes de rejeição passam a cobrir só PUT e o ROADMAP
-  quer travas com call no `stress_grid`. Decidir: levar a marca aos
-  resultados do motor ou registrar a restrição na ADR.
-- (médio/baixo) Faltam testes de rejeição em `pnl_curve`, `stress_grid` e
-  `portfolio_greeks`; PUT americana sem teste no motor; docstring de
-  `PriceOptionUseCase` ainda diz "opção europeia".
-- Docs ainda desatualizadas: ARCH §2.1/§3/§6 e VV-PLAN §6 (linha "Exercício
-  AMERICAN"), catálogo de VOs sem `PricingApproximation`.
-
-**fix/kernel-preco-nao-negativo**
-- (baixo) `max(price, 0.0)` transforma -inf (overflow) em 0.0 válido; piso só
-  para ruído finito (`if isfinite(price) and price < 0.0`).
-- (baixo) Docstring promete "preço >= 0.0 sempre", falso se sair NaN de inf*0.
-- (baixo, pré-existente) `log(s / k)` com underflow vaza `ValueError` cru; usar
-  `log(s) - log(k)`. `s * sig_sqrt_tau` com underflow vaza `ZeroDivisionError`
-  no gamma.
-
-**feat/option-chain**
-- (médio) `trades` validado com `self.trades < 0` (não negado, sem checar
-  tipo): NaN/float/bool passam. Um revisor anterior refutou com o argumento
-  de que o mypy barra floats e o resto do código valida ints assim.
-- (baixo) `OptionChain.__post_init__` não normaliza `quotes` para tuple
-  (gerador esgota antes da checagem de duplicatas). Refutado antes pelo
-  mesmo argumento (mypy + suíte de contrato exige tuple).
-- (baixo) `worst_quality` vaza `ValueError` cru se receber `None`.
-
-**feat/implied-vol**: nenhuma revisão rodou. Pontos do próprio engenheiro:
-preço exatamente no intrínseco descontado vira `CONVERGED` com sigma = 0.0
-(decidir se o smile/painel aceita IV 0); piso do oráculo com K >> S fica
-frouxo; ARCH §5–§7 e VV-PLAN §3/§7 não citam `implied_vol`.
+| Achado | Veredito | Onde ficou |
+|---|---|---|
+| Kernel: `max(price, 0.0)` vira `-inf` em 0.0 | **Confirmado** (put com S=K=1,78e308 saía 0.0; o valor real é ~1e307) e corrigido: piso só para ruído finito; o não finito chega aos VOs, que o rejeitam | `fix/revisao-kernel` |
+| Kernel: docstring "preço >= 0 sempre" com NaN | **Confirmado** e corrigido: "sempre que finito", com o caso de overflow documentado | `fix/revisao-kernel` |
+| Kernel: `log(s / k)` com underflow vaza `ValueError` | **Confirmado** e corrigido: `log(s/k)` no caminho normal, `log(s) - log(k)` fora da faixa | `fix/revisao-kernel` |
+| Kernel: `s * sig_sqrt_tau` com underflow vaza `ZeroDivisionError` no gamma | **Confirmado** e corrigido: gamma por divisões sucessivas | `fix/revisao-kernel` |
+| IV: chute inicial divide por `min(S̃, K̃)·sqrt(tau)` (achado novo do fuzz) | **Confirmado** (~9% dos casos extremos) e corrigido do mesmo jeito | `fix/revisao-kernel` |
+| IV: piso do oráculo frouxo com K ≫ S | **Confirmado** por medição (piso até 4,4× o preço) e corrigido: cota física pela escala de cancelamento (margem 28×, cota <= 1,1e-6 do preço) | `fix/revisao-kernel` |
+| Call americana com r < 0 abaixo do intrínseco | **Confirmado** (S=100, K=50, r=-2%, T=5: 44,74 contra 50) e corrigido: `price_many` rejeita; propriedade `C >= S - K` com r >= 0 | `fix/revisao-call-americana` |
+| Motor rejeita a call americana, contra a ADR-0002 e o ROADMAP | **Confirmado** como inconsistência de docs. Decisão: o motor segue europeu-only (os resultados não carregam a marca); ADR-0002 (nota 2) e ROADMAP registram | `fix/revisao-call-americana` |
+| Faltam testes de rejeição em `pnl_curve`, `stress_grid`, `portfolio_greeks` e da PUT no motor; docstring "opção europeia" | **Confirmado** e corrigido: 14 testes (7 entradas × CALL/PUT); docstring do `PriceOptionUseCase` | `fix/revisao-call-americana` |
+| Docs de ARCH/VV-PLAN desatualizadas (americana e IV) | **Confirmado** e corrigido | `docs/revisao-sprint-5` |
+| Option chain: `trades` NaN/float/bool passa | **Reproduzível só com tipo errado** (o mypy strict barra NaN e float; `True` vale 1 negócio, como o `int` 1). O domínio não checa tipo em runtime em lugar nenhum. **Não corrigido**; ver fase 2 abaixo | — |
+| Option chain: `quotes` gerador não vira tuple | **Reproduzível só com tipo errado** (gerador esvazia a checagem e a cadeia). Mesma convenção; a suíte de contrato exige tuple. **Não corrigido** | — |
+| `worst_quality(None)` vaza `ValueError` | **Reproduzível só com tipo errado** (`None` numa lista de `PriceQuality`). **Não corrigido** | — |
+| IV: preço no intrínseco descontado vira `CONVERGED` com sigma = 0.0 | Comportamento do contrato (regra 5), não defeito. **Decisão da fase 2**: o smile e o preço TEORICO aceitam IV 0? Sugestão: tirar esses pontos do smile com motivo, porque não carregam informação sobre sigma | fase 2 |
 
 **Pontos em aberto gerais**
 - Vol realizada zero ou histórico insuficiente: a suíte de contrato exige
@@ -113,8 +94,11 @@ frouxo; ARCH §5–§7 e VV-PLAN §3/§7 não citam `implied_vol`.
   conferidos no primeiro arquivo real do cadastro/COTAHIST.
 - `valid_from` da tabela de custos: a B3 não publica vigência; o plano usa
   2025-08-01 (OC 025/2025-VPC), com a origem anotada.
+- Adapter COTAHIST/brapi: converter `trades` com `int()` estrito na
+  fronteira. Dado vindo de JSON chega como `Any` e escapa do mypy, que é o
+  que protege o tipo dentro do domínio (achado de option chain da §3).
 
-## 4. Depois disso: fase 2
+## 4. Próxima tarefa: fase 2
 
 Especificação completa em [`plano-fase-2.md`](plano-fase-2.md): extensões de
 domínio (`UnderlyingUnavailableError`, `RejectedSeries`,
