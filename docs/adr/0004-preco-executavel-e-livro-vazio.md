@@ -43,6 +43,11 @@ Regras complementares:
 - **Ativo-objeto com livro vazio:** o adapter não inventa bid/ask; se não
   houver preço utilizável de fechamento, o subjacente fica fora do painel
   do dia com motivo explícito.
+- **Ativo-objeto com fechamento mas sem ofertas** (decidido pela mesa em
+  2026-10-26): o spot é o preço de fechamento e o ativo **continua no
+  painel**, com a marca "sem ofertas". O snapshot carrega o fechamento como
+  referência, a cadeia sinaliza que o book do ativo-objeto não foi
+  observado, e nenhuma métrica de renda usa bid/ask do ativo-objeto.
 
 Esclarecido em 2026-10-26 (Sprint 5), sem mudar a decisão: as condições
 das linhas `INDICATIVO` e `TEORICO` da tabela e as duas primeiras regras

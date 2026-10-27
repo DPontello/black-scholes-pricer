@@ -56,6 +56,10 @@ Fontes avaliadas para a cadeia de opções:
 - **Decisão: download manual.** O usuário baixa no site da B3 o ZIP do
   pregão e o CSV do cadastro de instrumentos; o adapter **só lê arquivos
   locais**. Nenhum download automático e nenhum contorno de CAPTCHA.
+  Como a vol realizada do subjacente precisa de vários pregões, o usuário
+  baixa também o arquivo **anual ou mensal** (ou os diários da janela) do
+  COTAHIST; com histórico insuficiente, o subjacente fica fora do painel
+  do dia com motivo explícito, nunca com vol inventada.
 
 ### Estilo de exercício (decidido pela mesa em 2026-10-26)
 
