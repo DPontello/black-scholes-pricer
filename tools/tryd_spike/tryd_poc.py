@@ -17,14 +17,17 @@ Modos (rode da raiz do repositório)::
 - ``diagnostico``: só lê o registro e o ambiente (ProgID ``tryd.rtdserver``,
   DLL ou EXE do servidor e a arquitetura dela, bitness do Python, type library
   do Excel, Tryd rodando). Não muda nada.
-- ``autoteste``: roda o cliente RTD contra um servidor RTD FALSO no mesmo
-  processo, sem Tryd e sem registro no Windows — valida o encanamento COM
-  (ServerStart, ConnectData, UpdateNotify, RefreshData, parâmetros ByRef).
+- ``autoteste``: roda o cliente RTD contra um servidor RTD FALSO, sem Tryd e
+  sem registro no Windows: primeiro no mesmo processo, depois noutro processo
+  que morre no meio da captura. Valida o encanamento COM (ServerStart,
+  ConnectData, UpdateNotify, RefreshData, parâmetros ByRef, marshaling entre
+  processos) e a detecção de servidor perdido por Heartbeat.
 - ``rtd``: assina ``=RTD("tryd.rtdserver";;"COT";ATIVO;CAMPO)`` para cada ativo
   e campo, bombeia mensagens por N segundos e grava em JSON cada atualização
   com o valor CRU (tipo e repr) — se número chega como float ou como texto
-  pt-BR é uma das perguntas do spike.
-- ``dde``: pede itens por DDE (``servico|topico!item``), uma vez.
+  pt-BR é uma das perguntas do spike. Servidor perdido sai com código 1.
+- ``dde``: pede itens por DDE (``servico|topico!item``), uma vez; item que
+  falha vira ``{"erro": ...}`` sem derrubar os outros.
 
 Fórmula RTD e campos do tipo COT segundo um blog de 2017 (a conferir no Tryd
 atual, roteiro em ``docs/spikes/tryd-intraday.md``): Ult, PrcCpa, PrcVda,
@@ -34,8 +37,11 @@ QtdNeg, Vol, DataHora, Exerc, Expir, DiaUtExp, Estado.
 import argparse
 import contextlib
 import datetime as dt
+import importlib
 import json
+import os
 import platform
+import re
 import struct
 import subprocess
 import sys
@@ -71,6 +77,19 @@ def _arquitetura_pe(caminho: Path) -> str:
     )
 
 
+def _arquivo_do_comando(comando: str) -> Path:
+    """O executável/DLL de um valor InprocServer32/LocalServer32.
+
+    O valor pode vir com aspas ou sem, com argumentos (``EXCEL.EXE /automation``)
+    e com variáveis de ambiente (``%SystemRoot%``).
+    """
+    texto = os.path.expandvars(comando.strip())
+    if texto.startswith('"'):
+        return Path(texto[1:].split('"', 1)[0])
+    achado = re.search(r"\.(exe|dll)\b", texto, re.IGNORECASE)
+    return Path(texto[: achado.end()] if achado else texto)
+
+
 def _valor(chave: str, visao: int = 0) -> str | None:
     import winreg
 
@@ -99,9 +118,10 @@ def diagnostico() -> int:
             ("32 bits", winreg.KEY_WOW64_32KEY),
         ):
             for servidor in ("InprocServer32", "LocalServer32"):
-                caminho = _valor(f"HKLM\\SOFTWARE\\Classes\\CLSID\\{clsid}\\{servidor}", visao)
+                # HKCR é a visão unida de HKLM e HKCU: pega registro por usuário também.
+                caminho = _valor(f"HKCR\\CLSID\\{clsid}\\{servidor}", visao)
                 if caminho:
-                    arquivo = Path(caminho.strip('"').split('" ')[0])
+                    arquivo = _arquivo_do_comando(caminho)
                     arq = _arquitetura_pe(arquivo) if arquivo.exists() else "arquivo ausente"
                     print(f"     visão {nome}: {servidor} = {caminho} [{arq}]")
         print(
@@ -225,6 +245,19 @@ class ClienteRtd:
         ids, valores = dados[0], dados[1]
         return [(self._topicos.get(int(i), ("?",)), v) for i, v in zip(ids, valores, strict=False)]
 
+    def vivo(self) -> bool:
+        """Heartbeat, como o Excel faz quando o servidor fica em silêncio.
+
+        Sem isso, um servidor que morre só para de mandar UpdateNotify e o
+        cliente segue com os últimos valores congelados, sem erro nenhum.
+        """
+        import pythoncom
+
+        try:
+            return int(self._servidor.Heartbeat()) > 0
+        except pythoncom.com_error:
+            return False
+
     def encerrar(self) -> None:
         for topico in list(self._topicos):
             with contextlib.suppress(Exception):
@@ -252,12 +285,17 @@ def capturar_rtd(
     campos: Sequence[str],
     segundos: float,
     ao_assinar: Callable[[], None] | None = None,
+    pulso_s: float = 5.0,
 ) -> dict[str, Any]:
     """Assina COT x ativo x campo, coleta por ``segundos`` e devolve a captura em JSON.
 
-    Como o Excel, só chama RefreshData depois de um UpdateNotify novo.
+    Como o Excel, só chama RefreshData depois de um UpdateNotify novo e chama
+    Heartbeat depois de ``pulso_s`` sem aviso. Servidor perdido encerra a
+    captura e fica registrado em ``servidor_perdido``.
     ``ao_assinar`` roda logo depois das assinaturas (o autoteste publica ali).
     """
+    import pythoncom
+
     inicio = dt.datetime.now().astimezone()
     iniciais: dict[str, dict[str, Any]] = {}
     for ativo in ativos:
@@ -268,22 +306,37 @@ def capturar_rtd(
     atualizacoes = []
     ultimos: dict[str, dict[str, Any]] = {a: dict(c) for a, c in iniciais.items()}
     processados = 0
-    fim = time.monotonic() + segundos
-    while time.monotonic() < fim:
+    perdido: dict[str, str] | None = None
+    ultimo_sinal = time.monotonic()
+    fim = ultimo_sinal + segundos
+    while time.monotonic() < fim and perdido is None:
         _bombear(0.25)
+        agora = dt.datetime.now().astimezone().isoformat(timespec="milliseconds")
         if cliente.aviso.avisos > processados:
             processados = cliente.aviso.avisos
-            for strings, valor in cliente.atualizar():
-                agora = dt.datetime.now().astimezone().isoformat(timespec="milliseconds")
+            ultimo_sinal = time.monotonic()
+            try:
+                mudancas = cliente.atualizar()
+            except pythoncom.com_error as erro:
+                perdido = {"t": agora, "erro": f"RefreshData: {erro}"}
+                break
+            for strings, valor in mudancas:
                 if len(strings) == 3:
                     _, ativo, campo = strings
                     ultimos.setdefault(ativo, {})[campo] = _cru(valor)
                 atualizacoes.append({"t": agora, "topico": list(strings), **_cru(valor)})
+        elif cliente.aviso.desconectado:
+            perdido = {"t": agora, "erro": "o servidor chamou Disconnect"}
+        elif time.monotonic() - ultimo_sinal >= pulso_s:
+            if not cliente.vivo():
+                perdido = {"t": agora, "erro": f"Heartbeat falhou após {pulso_s:g} s sem aviso"}
+            ultimo_sinal = time.monotonic()
     return {
         "progid": PROGID,
         "inicio": inicio.isoformat(timespec="seconds"),
         "duracao_s": segundos,
         "avisos_update_notify": cliente.aviso.avisos,
+        "servidor_perdido": perdido,
         "valores_iniciais": iniciais,
         "ultimos": ultimos,
         "atualizacoes": atualizacoes,
@@ -395,8 +448,68 @@ def autoteste() -> int:
     ultimo = captura["ultimos"]["PETRK300"]["Ult"]
     print(f"captura: {len(captura['atualizacoes'])} atualização(ões), último Ult {ultimo}")
     ok = ok and len(captura["atualizacoes"]) == 1 and ultimo == {"tipo": "float", "repr": "1.24"}
+    ok = _autoteste_entre_processos() and ok
     print("AUTOTESTE OK: encanamento COM do cliente RTD funcionando" if ok else "AUTOTESTE FALHOU")
     return 0 if ok else 1
+
+
+_CLSID_AUTOTESTE = "{6C1B5E0A-2F44-4B7E-9D7A-3A1F0B9C7E11}"
+
+
+def servir_falso(segundos: float) -> int:
+    """Servidor falso noutro processo, como o Tryd: um negócio a cada 0,5 s, depois sai.
+
+    Publica-se na tabela de objetos ativos do COM: nada é gravado no registro.
+    """
+    import pythoncom
+    from win32com.server import util
+
+    _tipos_rtd()
+    falso = _ServidorFalso()
+    registro = pythoncom.RegisterActiveObject(util.wrap(falso), _CLSID_AUTOTESTE, 0)
+    print("pronto", flush=True)
+    agora = time.monotonic()
+    fim, proximo = agora + segundos, agora + 0.5
+    while time.monotonic() < fim:
+        pythoncom.PumpWaitingMessages()
+        if falso.callback is not None and falso.topicos and time.monotonic() >= proximo:
+            falso.publicar()
+            proximo += 0.5
+        time.sleep(0.01)
+    pythoncom.RevokeActiveObject(registro)
+    return 0
+
+
+def _autoteste_entre_processos() -> bool:
+    """Cliente aqui, servidor noutro processo que morre no meio da captura."""
+    import pythoncom
+
+    servidor = subprocess.Popen(
+        [sys.executable, str(Path(__file__).resolve()), "servidor-falso", "--segundos", "2"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    inicio = time.monotonic()
+    try:
+        assert servidor.stdout is not None
+        servidor.stdout.readline()  # "pronto", ou vazio se o servidor falhou
+        try:
+            bruto = pythoncom.GetActiveObject(_CLSID_AUTOTESTE)
+        except pythoncom.com_error as erro:
+            print(f"entre processos: servidor falso não apareceu ({erro})")
+            return False
+        cliente = ClienteRtd(bruto.QueryInterface(pythoncom.IID_IDispatch))
+        captura = capturar_rtd(cliente, ["PETRK300"], ["Ult"], 8.0, pulso_s=1.0)
+        cliente.encerrar()
+    finally:
+        servidor.wait(timeout=15)
+    duracao = time.monotonic() - inicio
+    perdido = captura["servidor_perdido"]
+    print(
+        f"entre processos: {len(captura['atualizacoes'])} atualização(ões); servidor "
+        f"perdido detectado em {duracao:.1f} s: {perdido['erro'] if perdido else 'NÃO'}"
+    )
+    return len(captura["atualizacoes"]) >= 2 and perdido is not None and duracao < 8.0
 
 
 # ---------------------------------------------------------------------------
@@ -406,10 +519,13 @@ def autoteste() -> int:
 
 def pedir_dde(servico: str, topico: str, itens: Sequence[str]) -> dict[str, Any]:
     try:
-        import dde
-        import win32ui  # noqa: F401  # o módulo dde do pywin32 depende do win32ui
+        # O win32ui tem de vir ANTES: sem ele, "import dde" falha com "This must
+        # be an MFC application". O importlib impede o isort de inverter a ordem.
+        import win32ui  # noqa: F401
+
+        dde = importlib.import_module("dde")
     except ImportError as erro:
-        raise SpikeError("pywin32 não instalado (módulo dde): pip install pywin32") from erro
+        raise SpikeError(f"módulo dde do pywin32 indisponível ({erro})") from erro
     servidor = dde.CreateServer()
     servidor.Create("SpikeTryd")
     try:
@@ -421,7 +537,14 @@ def pedir_dde(servico: str, topico: str, itens: Sequence[str]) -> dict[str, Any]
                 f"DDE {servico}|{topico} não respondeu ({erro}); confira o nome do serviço "
                 f"e do tópico nos links que o Tryd gera"
             ) from erro
-        return {item: _cru(conversa.Request(item)) for item in itens}
+        resposta: dict[str, Any] = {}
+        for item in itens:
+            # Item inexistente falha só ele (dde.error "Request failed"); os outros seguem.
+            try:
+                resposta[item] = _cru(conversa.Request(item))
+            except dde.error as erro:
+                resposta[item] = {"erro": str(erro)}
+        return resposta
     finally:
         servidor.Destroy()
 
@@ -449,6 +572,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     p_dde.add_argument("--servico", required=True)
     p_dde.add_argument("--topico", required=True)
     p_dde.add_argument("--itens", required=True, type=_lista)
+    p_falso = sub.add_parser("servidor-falso", help="uso interno do autoteste")
+    p_falso.add_argument("--segundos", type=float, default=2.0)
     args = parser.parse_args(argv)
     if sys.platform != "win32":
         print("o spike Tryd só roda no Windows", file=sys.stderr)
@@ -458,6 +583,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return diagnostico()
         if args.modo == "autoteste":
             return autoteste()
+        if args.modo == "servidor-falso":
+            return servir_falso(args.segundos)
         if args.modo == "rtd":
             cliente = ClienteRtd.do_progid(PROGID)
             try:
@@ -473,6 +600,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             else:
                 print(texto)
+            if perdido := captura["servidor_perdido"]:
+                print(f"aviso: servidor RTD perdido: {perdido}", file=sys.stderr)
+                return 1
             return 0
         resposta = pedir_dde(args.servico, args.topico, args.itens)
         print(json.dumps(resposta, ensure_ascii=False, indent=2))
