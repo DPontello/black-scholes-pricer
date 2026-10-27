@@ -31,7 +31,7 @@ from options_engine.domain.model.errors import UnsupportedExerciseStyleError
 from options_engine.domain.model.results import PricingResult
 from options_engine.domain.pricing.black_scholes import BlackScholesPricingModel
 from options_engine.domain.pricing.model import PricingRequest
-from tests._tolerances import ABS_BOOK_2DP, assert_close
+from tests._tolerances import ABS_BOOK_2DP, INEQ_SLACK, assert_close
 from tests.domain._builders import make_snapshot, make_terms
 
 MODEL = BlackScholesPricingModel()
@@ -173,14 +173,16 @@ def _sem_marca(resultado: PricingResult) -> PricingResult:
 def _pares_de_calls(draw: st.DrawFn) -> tuple[PricingRequest, PricingRequest]:
     """(call europeia, call americana) com termos e mercado idênticos.
 
-    Inclui os ramos fechados do kernel (tau = 0, sigma = 0) e taxa negativa:
-    a identidade tem de valer em todo o domínio, não só no miolo da fórmula.
+    Inclui os ramos fechados do kernel (tau = 0, sigma = 0) e taxa zero: a
+    identidade tem de valer em todo o domínio, não só no miolo da fórmula.
+    Taxa negativa fica de fora: a ADR-0002 exige r >= 0 e a call americana
+    com r < 0 é rejeitada (teste próprio).
     """
     spot = draw(st.floats(1.0, 500.0))
     strike = spot * math.exp(draw(st.floats(-1.5, 1.5)))
     tau = draw(st.one_of(st.just(0.0), st.floats(1.0 / 252.0, 5.0)))
     vol = draw(st.one_of(st.just(0.0), st.floats(1e-3, 2.0)))
-    rate = draw(st.floats(-0.02, 0.30))
+    rate = draw(st.one_of(st.just(0.0), st.floats(0.0, 0.30)))
     snapshot = make_snapshot(
         spot=spot,
         bid=spot,
@@ -199,8 +201,58 @@ def _pares_de_calls(draw: st.DrawFn) -> tuple[PricingRequest, PricingRequest]:
     return _request(ExerciseStyle.EUROPEAN), _request(ExerciseStyle.AMERICAN)
 
 
+def _request_taxa_negativa(exercise_style: ExerciseStyle) -> PricingRequest:
+    """Call ITM profunda com r = -2% contínua: S = 100, K = 50, sigma = 1%, T = 5."""
+    return PricingRequest(
+        terms=make_terms(strike=50.0, option_type=OptionType.CALL, exercise_style=exercise_style),
+        snapshot=make_snapshot(
+            spot=100.0,
+            bid=100.0,
+            ask=100.0,
+            mid=100.0,
+            rate=-0.02,
+            compounding=Compounding.CONTINUOUS,
+            vol=0.01,
+        ),
+        time_to_expiry=TimeToExpiry(5.0, DayCountConvention.BUSINESS_252),
+    )
+
+
 class TestCallAmericanaComoEuropeia:
     """ADR-0002: call americana = call europeia (q = 0) + marca de aproximação."""
+
+    def test_taxa_negativa_rejeita_a_call_americana(self) -> None:
+        """Achado da revisão da Sprint 5: com r < 0 o exercício antecipado pode ser ótimo.
+
+        O preço europeu é ~100 - 50·e^(0,1) = 44,74, abaixo do intrínseco 50
+        que o exercício imediato garante — a premissa da ADR-0002 exige r >= 0.
+        """
+        with pytest.raises(UnsupportedExerciseStyleError, match=r"r >= 0"):
+            MODEL.price_many([_request_taxa_negativa(ExerciseStyle.AMERICAN)])
+
+    def test_taxa_negativa_segue_valendo_na_call_europeia(self) -> None:
+        """A europeia não tem exercício antecipado: valer menos que o intrínseco é correto."""
+        resultado = MODEL.price_many([_request_taxa_negativa(ExerciseStyle.EUROPEAN)])[0]
+        assert resultado.approximation is None
+        assert resultado.price < 100.0 - 50.0
+
+    def test_taxa_zero_ainda_aceita_a_call_americana(self) -> None:
+        request = replace(
+            _request_taxa_negativa(ExerciseStyle.AMERICAN),
+            snapshot=make_snapshot(spot=100.0, bid=100.0, ask=100.0, mid=100.0, rate=0.0, vol=0.01),
+        )
+        resultado = MODEL.price_many([request])[0]
+        assert resultado.approximation is PricingApproximation.AMERICAN_CALL_AS_EUROPEAN
+
+    @given(par=_pares_de_calls())
+    def test_call_americana_nunca_vale_menos_que_o_intrinseco(
+        self, par: tuple[PricingRequest, PricingRequest]
+    ) -> None:
+        """Com r >= 0 e q = 0, C >= S - K·e^(-rT) >= S - K: a premissa da ADR-0002."""
+        _, request_americana = par
+        americana = MODEL.price_many([request_americana])[0]
+        spot, strike = request_americana.snapshot.spot, request_americana.terms.strike
+        assert americana.price >= spot - strike - INEQ_SLACK * max(spot, strike)
 
     def test_hull_call_americana_vale_a_europeia_e_sai_marcada(self) -> None:
         europeia, americana = MODEL.price_many(
