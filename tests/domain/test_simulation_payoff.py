@@ -245,24 +245,33 @@ def test_short_e_menos_long_ponto_a_ponto(estrutura: Strategy, spot: float) -> N
 # ---------------------------------------------------------------------------
 
 
-def _estrutura_americana() -> Strategy:
-    """CALL americana de propósito: é a que o ``PricingModel`` aceita pela
-    ADR-0002 — o caso mais fácil de vazar para o motor por engano, cujos
-    resultados não carregam a marca de aproximação exigida pela ADR."""
-    terms = make_terms(option_type=OptionType.CALL, exercise_style=ExerciseStyle.AMERICAN)
+def _estrutura_americana(option_type: OptionType) -> Strategy:
+    """A CALL americana é a que o ``PricingModel`` aceita pela ADR-0002 — o
+    caso mais fácil de vazar para o motor por engano, cujos resultados não
+    carregam a marca de aproximação exigida pela ADR. A PUT americana fica
+    fora em toda parte."""
+    terms = make_terms(option_type=option_type, exercise_style=ExerciseStyle.AMERICAN)
     return Strategy.create("americana", [make_leg(terms=terms, premium=1.0)])
 
 
-def test_payoff_rejeita_american() -> None:
+_TIPOS = pytest.mark.parametrize(
+    "option_type", [OptionType.CALL, OptionType.PUT], ids=["call", "put"]
+)
+
+
+@_TIPOS
+def test_payoff_rejeita_american(option_type: OptionType) -> None:
     with pytest.raises(UnsupportedExerciseStyleError, match="ADR-0002"):
-        payoff_at_expiry(_estrutura_americana(), 30.0)
+        payoff_at_expiry(_estrutura_americana(option_type), 30.0)
 
 
-def test_pnl_rejeita_american() -> None:
+@_TIPOS
+def test_pnl_rejeita_american(option_type: OptionType) -> None:
     with pytest.raises(UnsupportedExerciseStyleError):
-        pnl(_estrutura_americana(), 30.0)
+        pnl(_estrutura_americana(option_type), 30.0)
 
 
-def test_perfil_rejeita_american() -> None:
+@_TIPOS
+def test_perfil_rejeita_american(option_type: OptionType) -> None:
     with pytest.raises(UnsupportedExerciseStyleError):
-        payoff_profile(_estrutura_americana(), (20.0, 30.0, 40.0))
+        payoff_profile(_estrutura_americana(option_type), (20.0, 30.0, 40.0))
