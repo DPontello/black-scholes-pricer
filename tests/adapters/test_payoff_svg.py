@@ -74,6 +74,79 @@ def test_curvas_bruta_e_liquida_com_um_vertice_por_ponto_do_perfil(ranking: Inco
     assert '<line class="ganho-max"' in svg and '<line class="perda-max"' in svg
 
 
+# Estimativa CONSERVADORA da largura de um caractere a font-size 10 numa
+# fonte sans-serif (dígitos e minúsculas ficam em torno de 5,5 px). Própria
+# do teste: não reaproveita a constante do adapter, para não validar a
+# implementação contra ela mesma.
+_LARGURA_POR_CARACTERE = 6.0
+_COR_DA_GRADE = "#d0d7de"
+
+
+def _rotulos_do_eixo(svg: str) -> list[tuple[str, float, float, str]]:
+    """(texto, x, y, cor) dos rótulos do eixo de preço — os únicos centralizados."""
+    return [
+        (texto, float(x), float(y), cor)
+        for x, y, cor, texto in re.findall(
+            r'<text [^>]*x="([0-9.]+)" y="([0-9.]+)"[^>]*fill="([^"]+)"[^>]*'
+            r'text-anchor="middle"[^>]*>([^<]+)</text>',
+            svg,
+        )
+    ]
+
+
+def _assert_rotulos_legiveis(svg: str) -> None:
+    caixa = re.search(r'viewBox="0 0 ([0-9.]+) ([0-9.]+)"', svg)
+    assert caixa is not None
+    largura, altura = float(caixa.group(1)), float(caixa.group(2))
+    rotulos = _rotulos_do_eixo(svg)
+    assert rotulos, "nenhum rótulo no eixo de preço"
+    extensoes = []
+    for texto, x, y, _ in rotulos:
+        meia = len(texto) * _LARGURA_POR_CARACTERE / 2
+        assert x - meia >= 0.0 and x + meia <= largura, f"{texto!r} sai do desenho"
+        assert y <= altura, f"{texto!r} abaixo da altura do SVG"
+        extensoes.append((texto, y, x - meia, x + meia))
+    for i, (a, ya, esq_a, dir_a) in enumerate(extensoes):
+        for b, yb, esq_b, dir_b in extensoes[i + 1 :]:
+            if ya == yb:
+                assert dir_a <= esq_b or dir_b <= esq_a, f"{a!r} sobrepõe {b!r} em y={ya}"
+
+
+def test_rotulos_do_eixo_nao_se_sobrepoem(ranking: IncomeRanking) -> None:
+    """Na fixture, strikes, spot e breakevens ficam a poucos px: precisam empilhar."""
+    for candidato in ranking.ranked:
+        _assert_rotulos_legiveis(render_payoff_svg(candidato, title="t", chart_id="c"))
+
+
+def test_marcas_no_mesmo_preco_ocupam_linhas_distintas(ranking: IncomeRanking) -> None:
+    candidato = ranking.ranked[0]
+    spot = candidato.profile.current_spot
+    mesmas = replace(
+        candidato, metrics=replace(candidato.metrics, breakeven=spot, net_breakeven=spot)
+    )
+    svg = render_payoff_svg(mesmas, title="t", chart_id="c")
+    _assert_rotulos_legiveis(svg)
+    linhas = {y for texto, _, y, _ in _rotulos_do_eixo(svg) if texto.startswith(("spot", "BE"))}
+    assert len(linhas) == 3
+
+
+def test_rotulo_na_borda_do_eixo_fica_dentro_do_desenho(ranking: IncomeRanking) -> None:
+    candidato = ranking.ranked[0]
+    pontos = candidato.profile.points
+    nas_bordas = replace(
+        candidato,
+        metrics=replace(candidato.metrics, breakeven=pontos[-1].spot, net_breakeven=pontos[0].spot),
+    )
+    _assert_rotulos_legiveis(render_payoff_svg(nas_bordas, title="t", chart_id="c"))
+
+
+def test_rotulo_de_strike_nao_usa_a_cor_da_grade(ranking: IncomeRanking) -> None:
+    """A linha do strike é clara de propósito; o texto precisa de contraste."""
+    svg = render_payoff_svg(ranking.ranked[0], title="t", chart_id="c")
+    strikes = [cor for texto, _, _, cor in _rotulos_do_eixo(svg) if texto.startswith("K ")]
+    assert strikes and _COR_DA_GRADE not in strikes
+
+
 def test_titulo_acessivel_e_escapado(ranking: IncomeRanking) -> None:
     svg = render_payoff_svg(ranking.ranked[0], title='<b>"x"</b>', chart_id='c"1')
     assert 'role="img"' in svg
