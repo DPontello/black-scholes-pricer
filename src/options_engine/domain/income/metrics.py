@@ -381,8 +381,10 @@ def covered_call_metrics(
     máximo = strike - spot + prêmio (exercida); pior resultado =
     -(spot - prêmio) (ação a zero).
 
-    Custos: uma ordem, só a perna de opção — a compra da ação e o exercício
-    ficam fora (a perna de ação não é modelada na Sprint 5).
+    Montagem (ADR-0005 item 3): a ordem da opção (emolumentos de opções sobre
+    o prêmio + corretagem) e a compra das ações (emolumentos do à vista sobre
+    ``spot x ações`` + corretagem de uma ordem). O rendimento líquido
+    desconta a montagem inteira, na mesma base do bruto (o spot).
 
     Limites de não-arbitragem: ``max(spot - strike, 0) <= prêmio < spot`` —
     call abaixo do intrínseco ou valendo o spot inteiro é dado inconsistente
@@ -404,6 +406,7 @@ def covered_call_metrics(
         setup=estimate_setup_costs(
             cost_schedule,
             option_leg_premiums_per_share=(premium_per_share,),
+            stock_purchase_price_per_share=spot,
             shares=reference_shares,
         ),
         breakeven=spot - premium_per_share,

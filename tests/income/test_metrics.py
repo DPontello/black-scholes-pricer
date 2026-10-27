@@ -1,9 +1,10 @@
 """Métricas de renda por estrutura — golden cases à mão, bordas e monotonia.
 
 Oráculo: aritmética à mão (docstring de cada golden case) sobre a tabela de
-custos ILUSTRATIVA dos builders (emolumentos 0,05% do prêmio, corretagem
-5,00 por ordem, IR 15% sobre o ganho positivo), CDI 12% a.a. efetivo base
-252 e o tamanho de referência de 100 ações. Os literais anualizados vêm de
+custos ILUSTRATIVA dos builders (emolumentos de opções 0,05% do prêmio, do
+à vista 0,02%, corretagem 5,00 por ordem, corretagem de exercício 2,00, IR
+15% sobre o ganho positivo), CDI 12% a.a. efetivo base 252 e o tamanho de
+referência de 100 ações. Os literais anualizados vêm de
 potências inteiras exatas (252/du inteiro), expandidas com aritmética
 racional a 19 algarismos.
 """
@@ -238,19 +239,23 @@ def test_venda_coberta_golden_bruto() -> None:
 
 
 def test_venda_coberta_golden_liquido() -> None:
-    """Mesma operação, líquida de custos (100 ações, 1 ordem — só a opção).
+    """Mesma operação, líquida de custos (100 ações; montagem = opção + compra da ação).
 
-    custos = 0,04 (emol.) + 5,00 (corret.) + 0,15 x 74,96 (IR = 11,244) = 16,284
-    resultado líquido  = 80,00 - 16,284                  = 63,716
-    rendimento líquido = 63,716 / (32,00 x 100)          = 0,01991125
-    anualizado líquido = 1,01991125^6 - 1                = 0,125574624109128730...
-    excesso líquido    = 0,1255746241091287 - 0,12       = 0,0055746241091287
+    montagem = 0,0005 x 80,00 + 0,0002 x 3.200,00 = 0,68 (emol.) + 2 x 5,00 (corret.)
+                                                  = 10,68
+    IR       = 0,15 x (80,00 - 10,68) = 0,15 x 69,32 = 10,398
+    custos   = 10,68 + 10,398                      = 21,078
+    resultado líquido  = 80,00 - 21,078            = 58,922
+    rendimento líquido = 58,922 / (32,00 x 100)    = 0,018413125
+    anualizado líquido = 1,018413125^6 - 1         = 0,115690991462836284...
+    excesso líquido    = 0,1156909914628363 - 0,12 = -0,0043090085371637
     """
     m = _cc()
-    _close(m.costs.total, 16.284, "custos")
-    _close(m.net_yield_period, 0.01991125, "rendimento líquido")
-    _close(m.net_yield_annual_252, 0.1255746241091287306, "anualizado líquido")
-    _close(m.net_excess_over_cdi_annual_252, 0.0055746241091287306, "excesso líquido")
+    _close(m.costs.setup.total, 10.68, "montagem")
+    _close(m.costs.total, 21.078, "custos")
+    _close(m.net_yield_period, 0.018413125, "rendimento líquido")
+    _close(m.net_yield_annual_252, 0.1156909914628362845, "anualizado líquido")
+    _close(m.net_excess_over_cdi_annual_252, -0.0043090085371637155, "excesso líquido")
 
 
 def test_venda_coberta_dentro_do_dinheiro() -> None:
@@ -276,11 +281,15 @@ def test_venda_coberta_vencendo_hoje_nao_anualiza() -> None:
 
 
 def test_venda_coberta_premio_zero() -> None:
-    """Prêmio zero: rendimento e proteção nulos; líquido = -5,00 / 3.200,00."""
+    """Prêmio zero: rendimento e proteção nulos; o líquido paga a montagem sem IR.
+
+    montagem = 5,00 (ordem da opção) + 0,64 + 5,00 (compra da ação) = 10,64
+    rendimento líquido = -10,64 / 3.200,00 = -0,003325
+    """
     m = _cc(premium_per_share=0.0)
     _close(m.yield_period, 0.0, "rendimento")
     _close(m.downside_protection, 0.0, "proteção")
-    _close(m.net_yield_period, -5.0 / 3200.0, "rendimento líquido")
+    _close(m.net_yield_period, -0.003325, "rendimento líquido")
     assert m.costs.income_tax == 0.0
 
 
