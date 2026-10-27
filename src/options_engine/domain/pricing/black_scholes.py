@@ -10,9 +10,12 @@ existe na assinatura desde a Sprint 1 e entra pelo modelo na Fase 5.
 
 Escopo de exercício (decisão nº 2, emendada pela ADR-0002): europeias são
 precificadas exatamente; calls americanas de ação são aceitas como
-aproximação europeia com ``q = 0`` e saem MARCADAS no resultado; puts
-americanas seguem rejeitadas — o exercício antecipado da put pode ser ótimo
-mesmo sem dividendos, e a aproximação europeia não é defensável para elas.
+aproximação europeia com ``q = 0`` e ``r >= 0`` e saem MARCADAS no
+resultado; puts americanas seguem rejeitadas — o exercício antecipado da put
+pode ser ótimo mesmo sem dividendos, e a aproximação europeia não é
+defensável para elas. Com taxa contínua negativa o mesmo vale para a call: o
+preço europeu cai abaixo do intrínseco ``S - K`` que o exercício imediato
+garante, e a call americana com ``r < 0`` também é rejeitada.
 """
 
 from collections.abc import Sequence
@@ -50,6 +53,10 @@ class BlackScholesPricingModel:
     ``UnsupportedExerciseStyleError``: o modelo nunca precifica errado em
     silêncio. ``supports()`` existe para o chamador falhar cedo; a rejeição
     aqui é defesa em profundidade, no mesmo espírito das guardas do kernel.
+
+    A condição ``r >= 0`` da call americana depende do mercado, não dos
+    termos: ``supports()`` não a vê, e ``price_many`` rejeita o request com
+    taxa contínua negativa com o mesmo erro.
     """
 
     @property
@@ -74,11 +81,18 @@ class BlackScholesPricingModel:
         approximation = (
             PricingApproximation.AMERICAN_CALL_AS_EUROPEAN if _is_american_call(terms) else None
         )
+        r = request.snapshot.risk_free_rate.as_continuous()
+        if approximation is not None and r < 0.0:
+            raise UnsupportedExerciseStyleError(
+                f"{self.model_id} não precifica call americana com taxa contínua negativa "
+                f"(r={r!r}): com r < 0 o exercício antecipado pode ser ótimo e o preço "
+                f"europeu fica abaixo do intrínseco — a aproximação da ADR-0002 exige r >= 0"
+            )
         out = bs_outputs(
             request.snapshot.spot,
             terms.strike,
             request.time_to_expiry.year_fraction,
-            request.snapshot.risk_free_rate.as_continuous(),
+            r,
             request.snapshot.volatility.value,
             is_call=terms.option_type.is_call,
         )

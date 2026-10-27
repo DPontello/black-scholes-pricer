@@ -80,9 +80,10 @@ class UnsupportedExerciseStyleError(DomainError):
     """Estilo de exercício legal no domínio, mas fora do modelo (decisão nº 2).
 
     Desde a emenda da ADR-0002, o Black-Scholes europeu aceita a CALL
-    americana como aproximação marcada (``PricingApproximation``) e rejeita
-    explicitamente a PUT americana, cujo exercício antecipado pode ser ótimo
-    mesmo sem dividendos; o motor de simulação segue rejeitando qualquer leg
+    americana como aproximação marcada (``PricingApproximation``), desde que
+    a taxa contínua seja >= 0, e rejeita explicitamente a PUT americana, cujo
+    exercício antecipado pode ser ótimo mesmo sem dividendos (como o da call
+    com taxa negativa); o motor de simulação segue rejeitando qualquer leg
     americana. Precificar errado em silêncio nunca é opção. Suporte
     americano exato (binomial) é Fase 6, atrás do seam ``supports()``.
     """

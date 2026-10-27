@@ -52,7 +52,11 @@ class PriceOptionCommand:
 
 @runtime_checkable
 class PriceOptionUseCase(Protocol):
-    """Precifica uma opção europeia com dados de mercado atuais."""
+    """Precifica uma opção com dados de mercado atuais.
+
+    Europeia exata; call americana como aproximação europeia marcada no
+    resultado (ADR-0002, com taxa >= 0); put americana rejeitada.
+    """
 
     def execute(self, command: PriceOptionCommand) -> PricingResult: ...
 
