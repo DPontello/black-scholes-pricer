@@ -6,26 +6,33 @@ está (ou vai para) as ADRs, o ROADMAP e o código.
 
 ## 1. Onde está cada coisa
 
-Nada da Sprint 5 está na `development` ainda. Todas as branches partem de
-`development` (0f00a9f) e estão publicadas no GitHub:
+Atualizado em 2026-10-27, na segunda máquina. Todas as branches partem de
+`development` (0f00a9f) e estão publicadas no GitHub. Merges feitos na
+`development` (`--no-ff`, sem apagar branches), nesta ordem:
 
 | Branch | O que tem | Estado |
 |---|---|---|
-| `docs/adr-pendencias-renda` | ADRs 0002–0006 com o resultado do spike e **todas** as decisões da mesa; ROADMAP da Sprint 5 atualizado | Pronta para merge |
-| `fix/kernel-preco-nao-negativo` | Kernel nunca devolve preço negativo (subnormal por cancelamento) | Pronta; revisão parcial (ver §3) |
-| `feat/american-call-approx` | ADR-0002: CALL+AMERICAN precificada como europeia com `PricingResult.approximation`; PUT+AMERICAN rejeitada | Pronta; revisão parcial (ver §3) |
-| `feat/implied-vol` | `implied_vol` no kernel + oráculo scipy de ida e volta (verde em venv isolado) | Pronta; revisão não rodou (ver §3) |
-| `feat/option-chain` | `OptionQuote`, `OptionChain`, `PriceQuality`, `LegPremium`, `executable_premium`, `OptionChainPort` + suíte de contrato | Pronta; revisão parcial (ver §3) |
-| `feat/income-metrics` | `domain/income/` (custos, anualização, métricas das 3 estruturas) + `vertical_spread` | **Desatualizada**: falta aplicar as decisões da §2 |
+| `fix/ruff-format-markdown` | Gate de formatação do ruff ignora `.md` (o ruff 0.17 passou a formatar os blocos de código das docs e derrubou o CI desde 2026-10-26) | Mergeada |
+| `docs/adr-pendencias-renda` | ADRs 0002–0006 com o resultado do spike e **todas** as decisões da mesa; ROADMAP da Sprint 5 atualizado | Mergeada |
+| `fix/kernel-preco-nao-negativo` | Kernel nunca devolve preço negativo (subnormal por cancelamento) | Mergeada; achados da §3 pendentes |
+| `feat/american-call-approx` | ADR-0002: CALL+AMERICAN precificada como europeia com `PricingResult.approximation`; PUT+AMERICAN rejeitada | Mergeada; achados da §3 pendentes |
+| `feat/implied-vol` | `implied_vol` no kernel + oráculo scipy de ida e volta | Mergeada; revisão da §3 pendente |
+| `feat/option-chain` | `OptionQuote`, `OptionChain`, `PriceQuality`, `LegPremium`, `executable_premium`, `OptionChainPort` + suíte de contrato | Mergeada; achados da §3 pendentes |
+| `docs/sprint-5-handoff` | Este documento e o plano da fase 2 | Mergeada |
+| `feat/income-metrics` | `domain/income/` (custos, anualização, métricas das 3 estruturas) + `vertical_spread` | **Fora da `development`**: falta aplicar as decisões da §2 |
 
-Gates relatados em cada branch (pytest + cobertura, mypy strict, ruff
-check/format, lint-imports): todos verdes no último commit.
+Gates depois de cada merge (pytest + cobertura, mypy strict, ruff
+check/format, lint-imports): todos verdes; 2999 testes, cobertura 99%. O
+oráculo scipy (`tests/oracle/scipy_oracle.py`) passou na `development` final.
+O merge de teste de `feat/income-metrics` na `development` não tem conflito.
 
-**Ordem de merge sugerida na `development`** (`--no-ff`, sem apagar
-branches): docs → kernel-fix → american-call → implied-vol → option-chain →
-income-metrics (depois da §2). Conflitos esperados e triviais em
-`tests/_tolerances.py` (adições de várias branches) e
-`tests/domain/_builders.py`. Rode os gates depois de cada merge.
+Os PRs #1 (`docs/sprint-5-handoff`) e #2 (`feat/implied-vol`) foram
+mergeados direto na `master` pelo GitHub, fora da convenção (feature entra na
+`development`; a `master` só recebe a `development` no fechamento de versão),
+e com o CI vermelho pelo motivo acima. O histórico não foi reescrito: a
+`master` foi mergeada de volta na `development` sem mudança de conteúdo, então
+continua ancestral dela e o merge da v0.4.0 sai limpo. A `master` fica com o
+CI vermelho até esse merge. PRs novos apontam para a `development`.
 
 ## 2. Próxima tarefa obrigatória: ajustar `feat/income-metrics`
 
