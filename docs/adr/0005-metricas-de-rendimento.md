@@ -1,8 +1,8 @@
 # ADR-0005 — Métricas de rendimento, anualização e custos
 
 - **Status:** Aceita (itens 5–8 fechados pela mesa em 2026-10-26; premissas
-  verificadas no spike da mesma data; dois itens do modelo de custos
-  **em decisão pela mesa**)
+  verificadas no spike da mesma data; modelo de custos fechado pela mesa no
+  mesmo dia)
 - **Data:** 2026-10-26
 - **Decisores:** mesa de operações
 
@@ -105,13 +105,34 @@ Escolhas de cálculo **aprovadas pela mesa em 2026-10-26**:
 2. **IR só sobre o prêmio:** na venda coberta, a valorização da ação até o
    strike fica fora da estimativa de IR.
 
-**Em decisão pela mesa (26/10/2026)** — propostas da implementação, ainda
-sem aprovação:
+Duas propostas da implementação foram **recusadas pela mesa** em
+2026-10-26 e substituídas pelas decisões abaixo, tomadas no mesmo dia:
 
-3. **Custos da venda coberta só da ordem da opção:** a compra da ação e o
-   exercício ficariam fora dos custos.
-4. **Extremos e breakeven brutos:** breakeven, ganho máximo e perda máxima
-   sairiam sem custos.
+3. **Venda coberta paga a compra da ação e o exercício.** Os custos de
+   montagem incluem a ordem da opção (emolumento sobre o prêmio +
+   corretagem) **e a compra das ações** (emolumento do à vista sobre
+   `spot × ações` + corretagem de uma ordem). No cenário em que a call é
+   exercida (ganho máximo), entram também os custos do **exercício**
+   (emolumento do à vista sobre `strike × ações` + corretagem de
+   exercício). Proposta recusada: contar só a ordem da opção.
+4. **Breakeven, ganho máximo e perda máxima brutos e líquidos.** O painel
+   mostra os dois, como já faz com o rendimento. O líquido desconta os
+   custos incorridos naquele cenário (montagem + exercício das pernas
+   exercidas) e, no ganho máximo, o IR estimado conforme o item 2; perda
+   não paga IR. Proposta recusada: só os brutos.
+5. **Corretagem de exercício da Necton: R$ 0,00**, informada pela mesa em
+   2026-10-26 (o valor de terceiros, R$ 25,21 + 0,5%, não é usado).
+   Parâmetro próprio na tabela versionada.
+
+Pelo mesmo princípio dos itens 3 e 4, o exercício entra nos cenários em que
+acontece também na **put coberta** (put exercida: compra das ações ao
+strike, nos cenários de breakeven e perda máxima) e na **trava de crédito**
+(pernas que terminam dentro do dinheiro). A regra exata de cada cenário fica
+documentada nas docstrings de `domain/income/`.
+
+> **Estado da implementação (2026-10-27):** a branch `feat/income-metrics`
+> ainda segue as propostas recusadas (só a ordem da opção; extremos só
+> brutos). Ajustá-la aos itens 3–5 é a próxima tarefa dessa branch.
 
 ## Consequências
 
