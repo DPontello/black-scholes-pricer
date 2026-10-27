@@ -19,12 +19,12 @@ Atualizado em 2026-10-27, na segunda máquina. Todas as branches partem de
 | `feat/implied-vol` | `implied_vol` no kernel + oráculo scipy de ida e volta | Mergeada; revisão da §3 pendente |
 | `feat/option-chain` | `OptionQuote`, `OptionChain`, `PriceQuality`, `LegPremium`, `executable_premium`, `OptionChainPort` + suíte de contrato | Mergeada; achados da §3 pendentes |
 | `docs/sprint-5-handoff` | Este documento e o plano da fase 2 | Mergeada |
-| `feat/income-metrics` | `domain/income/` (custos, anualização, métricas das 3 estruturas) + `vertical_spread` | **Fora da `development`**: falta aplicar as decisões da §2 |
+| `feat/income-metrics` | `domain/income/` (custos de montagem e exercício, IR, anualização, métricas e extremos líquidos das 3 estruturas) + `vertical_spread` | Mergeada depois da §2 |
 
 Gates depois de cada merge (pytest + cobertura, mypy strict, ruff
-check/format, lint-imports): todos verdes; 2999 testes, cobertura 99%. O
-oráculo scipy (`tests/oracle/scipy_oracle.py`) passou na `development` final.
-O merge de teste de `feat/income-metrics` na `development` não tem conflito.
+check/format, lint-imports): todos verdes; 3233 testes, cobertura 99%. O
+oráculo scipy (`tests/oracle/scipy_oracle.py`) passou na `development` depois
+das branches de kernel (`feat/income-metrics` não toca o kernel).
 
 Os PRs #1 (`docs/sprint-5-handoff`) e #2 (`feat/implied-vol`) foram
 mergeados direto na `master` pelo GitHub, fora da convenção (feature entra na
@@ -34,34 +34,32 @@ e com o CI vermelho pelo motivo acima. O histórico não foi reescrito: a
 continua ancestral dela e o merge da v0.4.0 sai limpo. A `master` fica com o
 CI vermelho até esse merge. PRs novos apontam para a `development`.
 
-## 2. Próxima tarefa obrigatória: ajustar `feat/income-metrics`
+## 2. Ajuste de `feat/income-metrics` — feito em 2026-10-27
 
-A mesa recusou duas propostas da implementação (ADR-0005, itens 3–5). Ajustar
-em commits pequenos:
+Itens 3–5 da ADR-0005 aplicados em commits pequenos e mergeados na
+`development`:
 
-1. `CostSchedule` ganha, com unidade no nome e validação: taxa de
-   emolumentos do mercado à vista/exercício (fração decimal; vale para a
-   compra da ação e para o exercício) e corretagem de exercício por ordem. A
-   corretagem de ordem existente vale também para a ordem de compra da ação.
-2. Separar custos de **montagem** (o que o rendimento líquido usa) dos custos
-   de **exercício** por cenário; uma função pura para cada; `OperationCosts`
-   continua carregando a `CostSchedule` usada.
-3. Venda coberta: montagem = ordem da opção (emolumento sobre prêmio × ações
-   + corretagem) + compra da ação (emolumento do à vista sobre spot × ações +
-   corretagem). Rendimento líquido na mesma base do bruto.
-4. `IncomeMetrics` expõe também `net_breakeven`, `net_max_gain_per_position`
-   e `net_max_loss_per_position`, em forma fechada para as três estruturas:
-   o líquido desconta montagem + exercício das pernas exercidas no cenário e,
-   no ganho máximo, o IR estimado só sobre o prêmio; perda não paga IR. Mesmo
-   princípio na put coberta (exercício nos cenários de breakeven e perda
-   máxima) e na trava (pernas que terminam dentro do dinheiro).
-5. Golden cases recalculados à mão (put coberta, venda coberta, trava de alta
-   com put, trava de baixa com call), brutos e líquidos, com os valores de
-   referência: opções 0,1340% por perna; à vista/exercício 0,0300%;
-   corretagem R$ 0,00; corretagem de exercício R$ 0,00; IR 15%. Conferir
-   breakeven e extremos líquidos contra uma avaliação numérica independente
-   do P&L líquido no vencimento. Propriedades: líquido <= bruto no ganho
-   máximo; perda líquida <= perda bruta; custo zero => líquido == bruto.
+- `CostSchedule` com `option_exchange_fee_rate` (renomeada),
+  `spot_exchange_fee_rate`, `brokerage_per_order`,
+  `exercise_brokerage_per_order` e `income_tax_rate`.
+- `estimate_setup_costs`, `estimate_exercise_costs` e `estimate_income_tax`
+  (funções puras); `OrderCosts` (emolumentos + corretagem) e
+  `OperationCosts` (montagem + IR do cenário de rendimento, com a tabela).
+- Venda coberta paga a compra das ações na montagem.
+- `IncomeMetrics.net_breakeven` (`None` quando o líquido nunca zera),
+  `net_max_gain_per_position` e `net_max_loss_per_position`.
+- Golden cases à mão com a tabela de referência e com a ilustrativa;
+  oráculo numérico independente do P&L líquido (extremos por cenário e
+  grade, breakeven por bisseção) em casos fixos e aleatórios; propriedades
+  pedidas. Mutantes nas fórmulas líquidas são mortos.
+
+Decisões de implementação que a mesa deve conhecer estão na nota de estado
+da ADR-0005 (base do IR limitada ao prêmio; ganho máximo da venda coberta no
+cenário exercido, com S = K valendo até o custo de exercício a mais).
+Pendente de documentação: tolerâncias de renda (`REL/ABS_INCOME`,
+`*_INCOME_ORACLE`) ainda fora da tabela do VV-PLAN.
+
+**Próxima tarefa:** verificar os achados da §3.
 
 ## 3. Achados de revisão ainda NÃO verificados
 
