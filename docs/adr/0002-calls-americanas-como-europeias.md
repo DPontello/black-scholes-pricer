@@ -101,5 +101,27 @@ Nuances, que não reabrem a ADR:
 - Volatilidade implícita de call americana fica levemente viesada perto de
   datas ex; o painel sinaliza séries com vencimento após uma data ex
   conhecida quando essa informação estiver disponível.
-- Os testes da decisão nº 2 (rejeição de AMERICAN) passam a cobrir só PUT;
-  um teste novo fixa a aceitação de CALL com a marca de aproximação.
+- Os testes da decisão nº 2 (rejeição de AMERICAN) passam a cobrir só PUT
+  **no `PricingModel`**; um teste novo fixa a aceitação de CALL com a marca
+  de aproximação. No motor de simulação a rejeição segue valendo para CALL
+  e PUT (nota de implementação 2).
+
+## Notas de implementação (2026-10-27)
+
+1. **Condição r >= 0.** A premissa "sem dividendos, o exercício antecipado
+   da call nunca é ótimo" vale só com taxa livre de risco não negativa:
+   com r < 0 o preço europeu pode cair abaixo do intrínseco `S − K` que o
+   exercício imediato garante (S = 100, K = 50, r = −2%, T = 5: 44,74). O
+   `BlackScholesPricingModel` rejeita a call americana com taxa contínua
+   negativa (`UnsupportedExerciseStyleError`). A condição depende do
+   mercado, não dos termos: `supports()` não a vê e `price_many` a aplica.
+   O CDI é positivo, então o painel não é afetado.
+2. **Motor de simulação segue europeu-only.** A marca de aproximação vive
+   no `PricingResult`; perfil de payoff, P&L, curva a mercado, grid de
+   estresse e gregas agregadas do motor não carregam marca, e aceitar a
+   call americana ali faria a aproximação viajar como valor exato. Por isso
+   o motor rejeita qualquer leg americana, e uma trava com calls americanas
+   fica fora de `payoff_profile` e `stress_grid` até a Fase 6 (ou até a
+   marca chegar aos resultados do motor). As métricas de renda
+   (`domain/income/`) não passam pelo motor e aceitam a trava com calls
+   americanas; o painel da fase 2 não usa o motor.
