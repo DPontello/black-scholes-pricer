@@ -38,9 +38,14 @@ Contrato de fronteira (tabela normativa em docs/ARCHITECTURE.md):
     sigma·sqrt(tau) em underflow (sigma > 0 e tau > 0, mas o produto vale
         0.0 em float64) -> mesmo ramo determinístico: sem difusão
         representável, o limite correto é o intrínseco descontado.
-    preço >= 0.0 sempre (VV-PLAN §6, linha Deep OTM): piso em zero contra o
-        ruído de cancelamento em float — ver ``bs_outputs`` e
+    preço >= 0.0 sempre que finito (VV-PLAN §6, linha Deep OTM): piso em
+        zero contra o ruído de cancelamento em float — ver ``bs_outputs`` e
         ``_deterministic``.
+    overflow de um produto intermediário (s ou k perto do máximo do
+        float64) -> a saída afetada sai inf ou NaN, nunca um número finito
+        inventado: o piso em zero não toca valor não finito, e os VOs de
+        resultado (``PricingResult``, ``Greeks``) rejeitam o não finito com
+        ``InvalidDomainValueError``.
 
 O par (preço, 5 gregas) é derivado de UM único conjunto de intermediários
 (d1, d2, N(d1), N(d2), n(d1), fatores de desconto) — risco B3: recomputar
@@ -115,6 +120,17 @@ def _expired(s: float, k: float, *, is_call: bool) -> BSOutputs:
     return BSOutputs(price, delta, 0.0, 0.0, 0.0, 0.0)
 
 
+def _floor_finite_noise(price: float) -> float:
+    """Piso em zero só para o ruído FINITO de cancelamento (ver ``bs_outputs``).
+
+    ``-inf`` (overflow de um produto intermediário) e NaN (``inf·0``,
+    ``inf - inf``) passam intactos: ``max(-inf, 0.0)`` devolvia 0.0, um preço
+    válido inventado onde o valor verdadeiro era representável (achado da
+    revisão da Sprint 5).
+    """
+    return 0.0 if (isfinite(price) and price < 0.0) else price
+
+
 def _deterministic(
     s: float, k: float, tau: float, r: float, q: float, *, is_call: bool
 ) -> BSOutputs:
@@ -136,7 +152,7 @@ def _deterministic(
     if is_call:
         if forward > k:
             return BSOutputs(
-                price=max(s * df_q - k * df_r, 0.0),
+                price=_floor_finite_noise(s * df_q - k * df_r),
                 delta=df_q,
                 gamma=0.0,
                 theta_per_year=q * s * df_q - r * k * df_r,
@@ -147,7 +163,7 @@ def _deterministic(
         return BSOutputs(0.0, delta, 0.0, 0.0, 0.0, 0.0)
     if forward < k:
         return BSOutputs(
-            price=max(k * df_r - s * df_q, 0.0),
+            price=_floor_finite_noise(k * df_r - s * df_q),
             delta=-df_q,
             gamma=0.0,
             theta_per_year=r * k * df_r - q * s * df_q,
@@ -245,9 +261,8 @@ def bs_outputs(
     # subnormal NEGATIVO (ex.: -1e-323) onde o valor exato é um positivo
     # menor que esse ruído. O piso move o preço menos que o próprio ruído da
     # subtração (ordens abaixo da tolerância da paridade) e as gregas não
-    # dependem dele. A ordem max(price, 0.0) preserva um eventual NaN em vez
-    # de mascará-lo como 0.0.
-    price = max(price, 0.0)
+    # dependem dele. Não finito passa intacto (``_floor_finite_noise``).
+    price = _floor_finite_noise(price)
 
     # Gamma e vega são idênticos para call e put de mesmos parâmetros —
     # mesma expressão, mesmos intermediários (propriedade testada).
