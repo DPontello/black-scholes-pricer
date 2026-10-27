@@ -130,9 +130,24 @@ strike, nos cenários de breakeven e perda máxima) e na **trava de crédito**
 (pernas que terminam dentro do dinheiro). A regra exata de cada cenário fica
 documentada nas docstrings de `domain/income/`.
 
-> **Estado da implementação (2026-10-27):** a branch `feat/income-metrics`
-> ainda segue as propostas recusadas (só a ordem da opção; extremos só
-> brutos). Ajustá-la aos itens 3–5 é a próxima tarefa dessa branch.
+> **Estado da implementação (2026-10-27):** itens 3–5 implementados na
+> branch `feat/income-metrics`. Notas de implementação (regra completa nas
+> docstrings de `domain/income/`):
+>
+> - **IR de cada cenário** = alíquota × max(min(resultado, resultado do
+>   prêmio), 0), com resultado do prêmio = prêmio − ordens de opção. Tira a
+>   valorização da ação da base (escolha 2) sem deixar de abater uma perda
+>   da ação; perda não paga IR (item 4).
+> - **Exercício** só com o strike estritamente ultrapassado (no dinheiro não
+>   há exercício), cobrado por perna, ao próprio strike.
+> - **Venda coberta:** o ganho máximo líquido é o do cenário exercido (item
+>   3). Com S = K a call não é exercida e a ação fica marcada a K sem custo
+>   de venda: esse ponto vale mais que o ganho máximo, no máximo pelo custo
+>   de exercício (≈ 0,03% do strike × ações na tabela de referência).
+> - **Breakeven líquido:** `None` quando o resultado líquido nunca chega a
+>   zero (prêmio menos montagem negativo; na venda coberta, zero acima do
+>   strike); igual ao strike vendido quando a troca de sinal acontece no
+>   salto do custo de exercício.
 
 ## Consequências
 

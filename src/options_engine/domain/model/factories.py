@@ -20,7 +20,15 @@ from options_engine.domain.model.enums import OptionType, Side
 from options_engine.domain.model.errors import InvalidStrategyError
 from options_engine.domain.model.strategy import Strategy, StrategyLeg
 
-__all__ = ["butterfly", "condor_direction", "iron_condor", "straddle", "strangle"]
+__all__ = [
+    "butterfly",
+    "condor_direction",
+    "iron_condor",
+    "straddle",
+    "strangle",
+    "vertical_spread",
+    "vertical_spread_direction",
+]
 
 
 def _ordenadas_por_strike(
@@ -192,3 +200,71 @@ def butterfly(legs: Sequence[StrategyLeg], name: str | None = None) -> Strategy:
         )
     rotulo = "comprada" if asa_baixa.side is Side.BUY else "vendida"
     return Strategy.create(name if name is not None else f"butterfly {rotulo}", ordenadas)
+
+
+def _direcao_da_trava(perna_baixa: StrategyLeg, perna_alta: StrategyLeg) -> Side:
+    """Lado da perna MAIS VALIOSA da trava — a direção da estrutura.
+
+    Por não-arbitragem, a call de strike menor vale mais que a de strike
+    maior, e a put de strike maior vale mais que a de strike menor. Vender a
+    perna mais valiosa monta crédito (SELL); comprá-la, débito (BUY).
+    """
+    dominante = perna_baixa if perna_baixa.terms.option_type is OptionType.CALL else perna_alta
+    return dominante.side
+
+
+def vertical_spread(legs: Sequence[StrategyLeg], name: str | None = None) -> Strategy:
+    """Valida e monta uma trava vertical: 2 pernas, mesmo tipo, strikes distintos.
+
+    Aceita as DUAS direções e os dois tipos (ROADMAP Sprint 5) — a
+    tendência é lida do lado da perna de strike menor (comprada = alta):
+
+    - puts:  compra K baixo + vende K alto = trava de alta com put (crédito);
+             o espelho é a trava de baixa com put (débito).
+    - calls: vende K baixo + compra K alto = trava de baixa com call
+             (crédito); o espelho é a trava de alta com call (débito).
+
+    Geometria: strikes ESTRITAMENTE distintos (strikes iguais se anulam — não
+    há estrutura). Composição: mesmo tipo nas duas pernas, lados opostos,
+    quantidades iguais. A direção (crédito/débito) é lida da estrutura,
+    nunca assumida — ver ``vertical_spread_direction``.
+    """
+    ordenadas = _ordenadas_por_strike(legs, 2, "trava vertical")
+    perna_baixa, perna_alta = ordenadas
+    if perna_baixa.terms.option_type is not perna_alta.terms.option_type:
+        raise InvalidStrategyError(
+            f"trava vertical exige as duas pernas do mesmo tipo (call/call ou put/put); "
+            f"recebido {[leg.terms.option_type.value for leg in ordenadas]!r}"
+        )
+    if not (perna_baixa.terms.strike < perna_alta.terms.strike):
+        raise InvalidStrategyError(
+            f"trava vertical exige strikes distintos; recebido "
+            f"{[leg.terms.strike for leg in ordenadas]!r}"
+        )
+    if perna_baixa.side is not perna_alta.side.opposite:
+        raise InvalidStrategyError(
+            f"trava vertical exige uma perna comprada e outra vendida; recebido "
+            f"{[leg.side.value for leg in ordenadas]!r}"
+        )
+    _exige_quantidades_iguais(ordenadas, "trava vertical")
+    tendencia = "alta" if perna_baixa.side is Side.BUY else "baixa"
+    tipo = perna_baixa.terms.option_type.value
+    credito = _direcao_da_trava(perna_baixa, perna_alta) is Side.SELL
+    rotulo = f"trava de {tendencia} com {tipo} ({'crédito' if credito else 'débito'})"
+    return Strategy.create(name if name is not None else rotulo, ordenadas)
+
+
+def vertical_spread_direction(strategy: Strategy) -> Side:
+    """Direção de uma trava JÁ validada por ``vertical_spread``.
+
+    SELL = crédito (trava de alta com put, trava de baixa com call); BUY =
+    débito (as espelhadas). Mesmo padrão de ``condor_direction``: a direção
+    é ESTRUTURAL — lado da perna mais valiosa por não-arbitragem — e não
+    depende de prêmio informado. Com prêmios, o sinal de
+    ``net_premium_cashflow`` coincide com ela salvo arbitragem ou dado
+    inconsistente (ex.: book largo), que as métricas de renda rejeitam.
+
+    Pré-condição: a estrutura veio da factory (legs ordenadas por strike,
+    composição garantida).
+    """
+    return _direcao_da_trava(strategy.legs[0], strategy.legs[1])
