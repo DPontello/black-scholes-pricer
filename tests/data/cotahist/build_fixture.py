@@ -126,7 +126,7 @@ def _series_petr4() -> list[_Serie]:
     ]
     series += [
         _Serie(f"PETRL{int(k * 10)}", "PETR4", _CALL, k, DEZEMBRO, estilo="EURO")
-        for k in (29.0, 30.0, 31.0, 32.0)
+        for k in (28.0, 29.0, 30.0, 31.0, 32.0)
     ]
     series += [
         _Serie(f"PETRX{int(k * 10)}", "PETR4", _PUT, k, DEZEMBRO) for k in (28.0, 29.0, 31.0)
@@ -136,6 +136,7 @@ def _series_petr4() -> list[_Serie]:
         "PETRK330": {"book": "so_ask"},
         "PETRW260": {"book": "vazio_com_negocio"},
         "PETRW270": {"book": "vazio_sem_negocio"},
+        "PETRX280": {"book": "vazio_com_negocio"},  # perna comprada INDICATIVO
     }
     series = [_Serie(**{**s.__dict__, **especiais.get(s.simbolo, {})}) for s in series]
     series += [
