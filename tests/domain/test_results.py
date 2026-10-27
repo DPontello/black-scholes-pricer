@@ -3,6 +3,7 @@
 import pytest
 
 from options_engine.domain.model.conventions import DayCountConvention, TimeToExpiry
+from options_engine.domain.model.enums import PricingApproximation
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.results import Greeks, PayoffProfile, PricingResult
 from tests.domain._builders import make_snapshot
@@ -50,6 +51,31 @@ def test_pricing_result_carrega_inputs_para_auditoria() -> None:
     assert resultado.snapshot is snap
     assert resultado.time_to_expiry.convention is DayCountConvention.BUSINESS_252
     assert resultado.model_id == "black-scholes-v1"
+
+
+def test_pricing_result_sem_marca_e_exato_por_default() -> None:
+    """ADR-0002: a marca é o último campo, com default None — construtores
+    anteriores à emenda continuam válidos e significam preço exato."""
+    resultado = PricingResult(
+        price=2.47,
+        greeks=_greeks(),
+        model_id="black-scholes-v1",
+        snapshot=make_snapshot(),
+        time_to_expiry=TimeToExpiry.from_days(126),
+    )
+    assert resultado.approximation is None
+
+
+def test_pricing_result_carrega_a_marca_de_aproximacao() -> None:
+    resultado = PricingResult(
+        price=2.47,
+        greeks=_greeks(),
+        model_id="black-scholes-v1",
+        snapshot=make_snapshot(),
+        time_to_expiry=TimeToExpiry.from_days(126),
+        approximation=PricingApproximation.AMERICAN_CALL_AS_EUROPEAN,
+    )
+    assert resultado.approximation is PricingApproximation.AMERICAN_CALL_AS_EUROPEAN
 
 
 def test_preco_nao_finito_e_irrepresentavel() -> None:
