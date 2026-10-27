@@ -112,6 +112,7 @@ testes, cobertura 99%, kernel em 100%):
 | `feat/rank-income` | tabela de custos versionada + `schedule_on`, smile e preço TEÓRICO, VOs do ranking e `RankIncomeOpportunitiesService` |
 | `feat/painel-html` | `html_report.py`, `build_income_panel` e `python -m options_engine painel` |
 | `docs/fase-2` | ARCH §4.1/§4.2/§6/§7, CONVENTIONS §9 (rendimento e vol), README, ROADMAP e versão 0.4.0 |
+| `feat/grafico-payoff` | Gráfico de payoff por linha do ranking (item acrescentado ao plano pelo autor em 2026-10-27): `domain/income/profile.py` (bruto e líquido por preço, conferido contra o oráculo de `test_net_profile.py`) e `adapters/inbound/payoff_svg.py` |
 
 **Falta para fechar a Sprint 5:**
 

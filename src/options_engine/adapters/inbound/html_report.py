@@ -21,6 +21,7 @@ from datetime import date
 from html import escape
 from typing import Final
 
+from options_engine.adapters.inbound.payoff_svg import render_payoff_svg
 from options_engine.domain.income.metrics import IncomeMetrics, IncomeStructure
 from options_engine.domain.income.ranking import (
     CandidateLeg,
@@ -62,6 +63,7 @@ td.t{text-align:left}
 .q-executavel{color:#1a7f37}.q-indicativo{color:#9a6700}.q-teorico{color:#8250df}
 .marca{display:inline-block;padding:0 6px;border-radius:9px;background:#fff8c5;color:#633c01;
 font-size:12px;margin-right:4px}
+details{margin:6px 0}summary{cursor:pointer}details svg{display:block;margin:6px 0}
 dl{display:grid;grid-template-columns:max-content auto;gap:2px 16px;margin:0}
 dt{color:#57606a}dd{margin:0}
 ul.notas li{margin-bottom:4px}
@@ -237,6 +239,25 @@ def _tabela(candidatos: Iterable[IncomeCandidate], vols: Mapping[str, float], va
     )
 
 
+def _graficos(candidatos: tuple[IncomeCandidate, ...]) -> str:
+    """Um gráfico de payoff recolhível por linha do ranking, na ordem do ranking."""
+    if not candidatos:
+        return "<p>Sem estruturas no ranking.</p>"
+    blocos = []
+    for posicao, candidato in enumerate(candidatos, start=1):
+        rotulo = (
+            f"{posicao}. {candidato.underlying} · {_estrutura(candidato)} · "
+            f"{' / '.join(leg.symbol for leg in candidato.legs)} · {_data(candidato.expiry)}"
+        )
+        svg = render_payoff_svg(
+            candidato,
+            title=f"Resultado no vencimento: {rotulo}",
+            chart_id=f"payoff-{posicao}",
+        )
+        blocos.append(f"<details><summary>{_e(rotulo)}</summary>{svg}</details>")
+    return "".join(blocos)
+
+
 def _ativos(resumos: Iterable[UnderlyingSummary]) -> str:
     linhas = []
     for r in resumos:
@@ -354,6 +375,10 @@ def render_income_report(
         _custos(ranking.underlyings),
         f"<h2>Ranking — executável ({len(ranking.ranked)})</h2>",
         _tabela(ranking.ranked, vols, "Nenhuma estrutura executável dentro dos filtros."),
+        "<h2>Gráficos de payoff do ranking</h2>",
+        "<p>Resultado por posição no vencimento, em função do preço do ativo-objeto: payoff "
+        "bruto e resultado líquido de custos e IR estimado.</p>",
+        _graficos(ranking.ranked),
         f"<h2>Referências — indicativo e teórico ({len(ranking.references)})</h2>",
         _tabela(ranking.references, vols, "Nenhuma referência."),
         f"<h2>Exclusões ({len(ranking.exclusions)})</h2>",

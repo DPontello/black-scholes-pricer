@@ -117,7 +117,9 @@ python -m options_engine painel --pregao 2026-10-23 \
 
 A saída é reprodutível: a mesma entrada produz os mesmos bytes (há teste que verifica). O
 ranking só tem estruturas com preço EXECUTÁVEL; referências INDICATIVO e TEÓRICO aparecem
-rotuladas à parte, e tudo o que ficou de fora aparece com motivo.
+rotuladas à parte, e tudo o que ficou de fora aparece com motivo. Cada linha do ranking tem
+um gráfico de payoff recolhível (SVG inline, sem JavaScript) com o resultado bruto e o
+líquido de custos e IR no vencimento, spot, strikes, breakevens e extremos.
 
 ## Arquitetura
 
