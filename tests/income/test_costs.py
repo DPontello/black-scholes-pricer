@@ -7,6 +7,7 @@ ordem, IR 15% sobre o ganho positivo). Tolerâncias de ``tests/_tolerances.py``.
 
 from dataclasses import FrozenInstanceError
 from datetime import date
+from typing import Any
 
 import pytest
 from hypothesis import given
@@ -30,25 +31,31 @@ from tests.income._builders import make_cost_schedule, zero_cost_schedule
 def test_tabela_carrega_vigencia_e_parametros() -> None:
     tabela = CostSchedule(
         valid_from=date(2026, 3, 2),
-        exchange_fee_rate=0.0005,
+        option_exchange_fee_rate=0.0005,
+        spot_exchange_fee_rate=0.0002,
         brokerage_per_order=5.0,
+        exercise_brokerage_per_order=2.0,
         income_tax_rate=0.15,
     )
     assert tabela.valid_from == date(2026, 3, 2)
     # Valores armazenados e relidos sem aritmética: == permitido.
-    assert tabela.exchange_fee_rate == 0.0005
+    assert tabela.option_exchange_fee_rate == 0.0005
+    assert tabela.spot_exchange_fee_rate == 0.0002
     assert tabela.brokerage_per_order == 5.0
+    assert tabela.exercise_brokerage_per_order == 2.0
     assert tabela.income_tax_rate == 0.15
     assert tabela == make_cost_schedule(valid_from=date(2026, 3, 2))
 
 
 def test_tabela_sem_custo_e_legal() -> None:
     tabela = zero_cost_schedule()
-    assert (tabela.exchange_fee_rate, tabela.brokerage_per_order, tabela.income_tax_rate) == (
-        0.0,
-        0.0,
-        0.0,
-    )
+    assert (
+        tabela.option_exchange_fee_rate,
+        tabela.spot_exchange_fee_rate,
+        tabela.brokerage_per_order,
+        tabela.exercise_brokerage_per_order,
+        tabela.income_tax_rate,
+    ) == (0.0, 0.0, 0.0, 0.0, 0.0)
 
 
 def test_tabela_e_imutavel() -> None:
@@ -60,10 +67,12 @@ def test_tabela_e_imutavel() -> None:
 _ILEGAIS_FRACAO = [float("nan"), float("inf"), -0.01, 1.0, 1.5]
 
 
+@pytest.mark.parametrize("campo", ["option_exchange_fee_rate", "spot_exchange_fee_rate"])
 @pytest.mark.parametrize("taxa", _ILEGAIS_FRACAO)
-def test_emolumento_fora_de_0_1_e_irrepresentavel(taxa: float) -> None:
-    with pytest.raises(InvalidDomainValueError):
-        make_cost_schedule(exchange_fee_rate=taxa)
+def test_emolumento_fora_de_0_1_e_irrepresentavel(campo: str, taxa: float) -> None:
+    with pytest.raises(InvalidDomainValueError, match=campo):
+        parametros: dict[str, Any] = {campo: taxa}
+        make_cost_schedule(**parametros)
 
 
 @pytest.mark.parametrize("taxa", _ILEGAIS_FRACAO)
@@ -72,10 +81,12 @@ def test_aliquota_de_ir_fora_de_0_1_e_irrepresentavel(taxa: float) -> None:
         make_cost_schedule(income_tax_rate=taxa)
 
 
+@pytest.mark.parametrize("campo", ["brokerage_per_order", "exercise_brokerage_per_order"])
 @pytest.mark.parametrize("valor", [float("nan"), float("inf"), -0.01])
-def test_corretagem_negativa_ou_nao_finita_e_irrepresentavel(valor: float) -> None:
-    with pytest.raises(InvalidDomainValueError):
-        make_cost_schedule(brokerage_per_order=valor)
+def test_corretagem_negativa_ou_nao_finita_e_irrepresentavel(campo: str, valor: float) -> None:
+    with pytest.raises(InvalidDomainValueError, match=campo):
+        parametros: dict[str, Any] = {campo: valor}
+        make_cost_schedule(**parametros)
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +227,7 @@ def test_componentes_nao_negativos_e_total_e_a_soma(
     fee: float, corretagem: float, ir: float, premios: list[float], ganho: float, acoes: int
 ) -> None:
     tabela = make_cost_schedule(
-        exchange_fee_rate=fee, brokerage_per_order=corretagem, income_tax_rate=ir
+        option_exchange_fee_rate=fee, brokerage_per_order=corretagem, income_tax_rate=ir
     )
     custos = estimate_operation_costs(
         tabela, leg_premiums_per_share=premios, gross_gain=ganho, shares=acoes
@@ -247,10 +258,10 @@ def test_mais_custo_na_tabela_nunca_reduz_o_custo_total(
 ) -> None:
     """Monotonia: subir emolumento, corretagem ou alíquota nunca barateia a operação."""
     barata = make_cost_schedule(
-        exchange_fee_rate=base[0], brokerage_per_order=base[1], income_tax_rate=base[2]
+        option_exchange_fee_rate=base[0], brokerage_per_order=base[1], income_tax_rate=base[2]
     )
     cara = make_cost_schedule(
-        exchange_fee_rate=min(base[0] + acrescimo[0], 0.99),
+        option_exchange_fee_rate=min(base[0] + acrescimo[0], 0.99),
         brokerage_per_order=base[1] + acrescimo[1],
         income_tax_rate=min(base[2] + acrescimo[2], 0.99),
     )

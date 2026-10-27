@@ -62,9 +62,17 @@ class CostSchedule:
 
     Unidade no nome do campo (CONVENTIONS — unidade é contrato):
 
-    - ``exchange_fee_rate``: emolumentos da B3 como fração DECIMAL do valor
-      financeiro do prêmio (0.0005 == 0,05%), em [0, 1).
+    - ``option_exchange_fee_rate``: emolumentos da B3 de opções como fração
+      DECIMAL do valor financeiro do prêmio de cada perna (0.00134 ==
+      0,1340%), em [0, 1).
+    - ``spot_exchange_fee_rate``: emolumentos da B3 do mercado à vista como
+      fração DECIMAL do valor financeiro (0.0003 == 0,0300%), em [0, 1).
+      Vale para a compra da ação na venda coberta e para o exercício, que a
+      B3 cobra pela tabela do à vista sobre ``strike x ações``.
     - ``brokerage_per_order``: corretagem fixa, em moeda, por ordem; >= 0.
+      Vale para as ordens de opção e para a ordem de compra da ação.
+    - ``exercise_brokerage_per_order``: corretagem fixa, em moeda, por
+      exercício de uma perna; >= 0.
     - ``income_tax_rate``: alíquota de IR como fração DECIMAL do ganho
       positivo (0.15 == 15%), em [0, 1).
 
@@ -74,13 +82,17 @@ class CostSchedule:
     """
 
     valid_from: date
-    exchange_fee_rate: float
+    option_exchange_fee_rate: float
+    spot_exchange_fee_rate: float
     brokerage_per_order: float
+    exercise_brokerage_per_order: float
     income_tax_rate: float
 
     def __post_init__(self) -> None:
-        _exige_fracao("exchange_fee_rate", self.exchange_fee_rate)
+        _exige_fracao("option_exchange_fee_rate", self.option_exchange_fee_rate)
+        _exige_fracao("spot_exchange_fee_rate", self.spot_exchange_fee_rate)
         _exige_nao_negativo("brokerage_per_order", self.brokerage_per_order)
+        _exige_nao_negativo("exercise_brokerage_per_order", self.exercise_brokerage_per_order)
         _exige_fracao("income_tax_rate", self.income_tax_rate)
 
 
@@ -118,7 +130,7 @@ def estimate_operation_costs(
 ) -> OperationCosts:
     """Custos de montar a operação com ``shares`` ações em cada perna.
 
-    - emolumentos = ``exchange_fee_rate`` x soma de (prêmio_i x ``shares``)
+    - emolumentos = ``option_exchange_fee_rate`` x soma de (prêmio_i x ``shares``)
       — valor financeiro de CADA perna, comprada ou vendida;
     - corretagem = ``brokerage_per_order`` x número de pernas;
     - IR = ``income_tax_rate`` x max(ganho bruto - emolumentos - corretagem, 0).
@@ -136,7 +148,9 @@ def estimate_operation_costs(
         raise InvalidDomainValueError(f"shares deve ser >= 1; recebido {shares!r}")
     if not isfinite(gross_gain):
         raise InvalidDomainValueError(f"gross_gain deve ser finito; recebido {gross_gain!r}")
-    emolumentos = schedule.exchange_fee_rate * fsum(p * shares for p in leg_premiums_per_share)
+    emolumentos = schedule.option_exchange_fee_rate * fsum(
+        p * shares for p in leg_premiums_per_share
+    )
     corretagem = schedule.brokerage_per_order * len(leg_premiums_per_share)
     base_do_ir = fsum((gross_gain, -emolumentos, -corretagem))
     imposto = schedule.income_tax_rate * max(base_do_ir, 0.0)

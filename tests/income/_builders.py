@@ -1,8 +1,9 @@
 """Construtores canônicos da suíte de renda.
 
-Os valores da tabela de custos são ILUSTRATIVOS (escolhidos para golden
-cases calculáveis à mão) — não são as tabelas vigentes da B3 nem da
-corretora, que chegam pela configuração versionada.
+Os valores de ``make_cost_schedule`` são ILUSTRATIVOS (escolhidos para golden
+cases calculáveis à mão e com corretagem não nula, que a tabela vigente não
+tem) — não são as tabelas vigentes da B3 nem da corretora, que chegam pela
+configuração versionada.
 """
 
 from datetime import date
@@ -16,21 +17,31 @@ CDI_PADRAO = 0.12  # efetivo anual, base 252 — ilustrativo
 
 def make_cost_schedule(
     valid_from: date = VIGENCIA_PADRAO,
-    exchange_fee_rate: float = 0.0005,
+    option_exchange_fee_rate: float = 0.0005,
+    spot_exchange_fee_rate: float = 0.0002,
     brokerage_per_order: float = 5.0,
+    exercise_brokerage_per_order: float = 2.0,
     income_tax_rate: float = 0.15,
 ) -> CostSchedule:
     return CostSchedule(
         valid_from=valid_from,
-        exchange_fee_rate=exchange_fee_rate,
+        option_exchange_fee_rate=option_exchange_fee_rate,
+        spot_exchange_fee_rate=spot_exchange_fee_rate,
         brokerage_per_order=brokerage_per_order,
+        exercise_brokerage_per_order=exercise_brokerage_per_order,
         income_tax_rate=income_tax_rate,
     )
 
 
 def zero_cost_schedule() -> CostSchedule:
     """Tabela sem custo algum: o líquido coincide com o bruto."""
-    return make_cost_schedule(exchange_fee_rate=0.0, brokerage_per_order=0.0, income_tax_rate=0.0)
+    return make_cost_schedule(
+        option_exchange_fee_rate=0.0,
+        spot_exchange_fee_rate=0.0,
+        brokerage_per_order=0.0,
+        exercise_brokerage_per_order=0.0,
+        income_tax_rate=0.0,
+    )
 
 
 def make_cdi(rate: float = CDI_PADRAO) -> RiskFreeRate:

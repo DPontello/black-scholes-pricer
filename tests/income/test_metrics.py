@@ -560,8 +560,10 @@ _fracao_do_strike = st.floats(min_value=0.0, max_value=0.5)
 _du = st.integers(min_value=0, max_value=504)
 _tabela = st.builds(
     make_cost_schedule,
-    exchange_fee_rate=st.floats(min_value=0.0, max_value=0.01),
+    option_exchange_fee_rate=st.floats(min_value=0.0, max_value=0.01),
+    spot_exchange_fee_rate=st.floats(min_value=0.0, max_value=0.01),
     brokerage_per_order=st.floats(min_value=0.0, max_value=50.0),
+    exercise_brokerage_per_order=st.floats(min_value=0.0, max_value=50.0),
     income_tax_rate=st.floats(min_value=0.0, max_value=0.3),
 )
 
@@ -588,8 +590,12 @@ def _assert_todos_nao_pioram(antes: IncomeMetrics, depois: IncomeMetrics) -> Non
 def _somar_tabelas(barata: CostSchedule, acrescimo: CostSchedule) -> CostSchedule:
     """Tabela mais cara em TODOS os parâmetros (cada um >= o da barata)."""
     return make_cost_schedule(
-        exchange_fee_rate=barata.exchange_fee_rate + acrescimo.exchange_fee_rate,
+        option_exchange_fee_rate=barata.option_exchange_fee_rate
+        + acrescimo.option_exchange_fee_rate,
+        spot_exchange_fee_rate=barata.spot_exchange_fee_rate + acrescimo.spot_exchange_fee_rate,
         brokerage_per_order=barata.brokerage_per_order + acrescimo.brokerage_per_order,
+        exercise_brokerage_per_order=barata.exercise_brokerage_per_order
+        + acrescimo.exercise_brokerage_per_order,
         income_tax_rate=barata.income_tax_rate + acrescimo.income_tax_rate,
     )
 
@@ -669,8 +675,10 @@ _fracao_da_largura = st.floats(min_value=0.1, max_value=0.9)
 _premio_comprado = st.integers(min_value=0, max_value=200).map(lambda centavos: centavos / 100.0)
 _tabela_trava = st.builds(
     make_cost_schedule,
-    exchange_fee_rate=st.floats(min_value=0.0, max_value=0.01),
+    option_exchange_fee_rate=st.floats(min_value=0.0, max_value=0.01),
+    spot_exchange_fee_rate=st.floats(min_value=0.0, max_value=0.01),
     brokerage_per_order=st.floats(min_value=0.0, max_value=2.0),
+    exercise_brokerage_per_order=st.floats(min_value=0.0, max_value=2.0),
     income_tax_rate=st.floats(min_value=0.0, max_value=0.3),
 )
 
