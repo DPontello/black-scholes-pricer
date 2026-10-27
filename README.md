@@ -189,7 +189,7 @@ Documentação completa em [`docs/`](docs/):
 | 1 — Fundação Matemática | Kernel BSM + gregas, V&V de 4 camadas, CI, oráculo | ✅ `v0.1.0` |
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
-| 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` (merge na `master` e tag pendentes) |
+| 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` |
 | 4 — API e Portfólio | FastAPI como adapter fino, benchmark, ADRs | após a Sprint 5 |
 
 Fora do MVP (mapeado no roadmap): dividendos discretos, exercício americano exato

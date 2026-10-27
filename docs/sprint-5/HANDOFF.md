@@ -116,10 +116,9 @@ testes, cobertura 99%, kernel em 100%):
 
 **Falta para fechar a Sprint 5:**
 
-1. Merge da `development` na `master` e tag `v0.4.0`. O CI do GitHub só roda
-   em push na `master` e em PR: os gates desta fase rodaram localmente (Python
-   3.14); um PR `development` -> `master` roda a matriz 3.12/3.13 e o oráculo
-   antes do merge.
+1. ~~Merge da `development` na `master` e tag `v0.4.0`~~ — feito em
+   2026-10-27: PR #3 com CI verde (gates em Python 3.12 e 3.13 e oráculo
+   scipy), merge `ba1003c` na `master` e tag anotada `v0.4.0`.
 2. Conferir no primeiro arquivo REAL da B3 as premissas registradas nas
    docstrings do adapter: TOTREG do trailer conta header e trailer; domínio
    do `OptnStyle`; conteúdo do ESPECI das opções (desempate PETR3/PETR4);
