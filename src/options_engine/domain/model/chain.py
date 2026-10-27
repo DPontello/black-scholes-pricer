@@ -31,6 +31,7 @@ __all__ = [
     "OptionChain",
     "OptionQuote",
     "PriceQuality",
+    "RejectedSeries",
     "executable_premium",
     "worst_quality",
 ]
@@ -134,6 +135,26 @@ class OptionQuote:
 
 
 @dataclass(frozen=True, slots=True)
+class RejectedSeries:
+    """Série que a fonte trouxe e o adapter não pôde virar ``OptionQuote`` sem inventar dado.
+
+    Exemplos: sem estilo de exercício no cadastro (obrigatório pela mesa,
+    ADR-0006), book cruzado na fonte, ticker duplicado no pregão, strike
+    corrigido por índice. A série sai do painel, mas o motivo chega até ele
+    — exclusão silenciosa esconderia problema de dado.
+    """
+
+    symbol: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        if not self.symbol.strip():
+            raise InvalidDomainValueError("symbol da série rejeitada não pode ser vazio")
+        if not self.reason.strip():
+            raise InvalidDomainValueError(f"série rejeitada {self.symbol!r} exige motivo não vazio")
+
+
+@dataclass(frozen=True, slots=True)
 class OptionChain:
     """Todas as séries de um subjacente num pregão, junto com o próprio subjacente.
 
@@ -150,10 +171,23 @@ class OptionChain:
 
     Cadeia vazia é legal: um subjacente sem séries no pregão é informação
     para o painel, não estado inválido.
+
+    ``rejected_series``: séries da fonte que não viraram cotação, cada uma
+    com motivo (``RejectedSeries``). Símbolos únicos entre si e disjuntos
+    dos ``quotes`` — a mesma série não pode estar dentro e fora do painel.
+
+    ``underlying_book_available`` (decisão da mesa, ADR-0004): ``False``
+    quando o ativo-objeto tem fechamento mas não tem ofertas no pregão. O
+    adapter monta o snapshot com ``spot = bid = ask = mid = fechamento``:
+    com ``False``, bid, ask e mid do snapshot NÃO foram observados — são a
+    referência do fechamento, e nenhuma métrica de renda pode usá-los. O
+    painel exibe a marca "sem ofertas".
     """
 
     underlying: MarketSnapshot
     quotes: tuple[OptionQuote, ...]
+    rejected_series: tuple[RejectedSeries, ...] = ()
+    underlying_book_available: bool = True
 
     def __post_init__(self) -> None:
         simbolo = self.underlying.underlying_symbol
@@ -171,6 +205,18 @@ class OptionChain:
         if duplicados:
             raise InvalidDomainValueError(
                 f"cadeia de {simbolo!r} repete séries (tickers devem ser únicos): {duplicados!r}"
+            )
+        rejeitadas = Counter(serie.symbol for serie in self.rejected_series)
+        repetidas = sorted(ticker for ticker, vezes in rejeitadas.items() if vezes > 1)
+        if repetidas:
+            raise InvalidDomainValueError(
+                f"cadeia de {simbolo!r} rejeita a mesma série mais de uma vez: {repetidas!r}"
+            )
+        dentro_e_fora = sorted(rejeitadas.keys() & contagem.keys())
+        if dentro_e_fora:
+            raise InvalidDomainValueError(
+                f"cadeia de {simbolo!r} tem séries cotadas e rejeitadas ao mesmo tempo: "
+                f"{dentro_e_fora!r}"
             )
 
 
