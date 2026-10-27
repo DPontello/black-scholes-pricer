@@ -35,7 +35,6 @@ de não-arbitragem da estrutura (dado inconsistente) é rejeitado com
 ``InvalidDomainValueError`` e motivo explícito, nunca vira número.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum, unique
 from math import expm1, fsum, isfinite, log1p
@@ -44,7 +43,9 @@ from options_engine.domain.income.costs import (
     REFERENCE_POSITION_SHARES,
     CostSchedule,
     OperationCosts,
-    estimate_operation_costs,
+    OrderCosts,
+    estimate_income_tax,
+    estimate_setup_costs,
 )
 from options_engine.domain.model.conventions import (
     Compounding,
@@ -265,27 +266,27 @@ def _metricas(
     *,
     premium_per_share: float,
     capital_base_per_share: float,
-    leg_premiums_per_share: Sequence[float],
+    setup: OrderCosts,
     breakeven: float,
     max_gain_per_share: float,
     max_loss_per_share: float,
     downside_protection: float | None,
     business_days: int,
     cdi: RiskFreeRate,
-    cost_schedule: CostSchedule,
     reference_shares: int,
 ) -> IncomeMetrics:
-    """Núcleo comum: custos, rendimento bruto/líquido, anualização e excesso.
+    """Núcleo comum: IR, rendimento bruto/líquido, anualização e excesso.
 
     Cada estrutura só decide a SUA geometria (base de capital, breakeven,
-    extremos, pernas); o resto é idêntico para todas — um único lugar.
+    extremos) e a SUA montagem; o resto é idêntico para todas — um único lugar.
     """
     receita = premium_per_share * reference_shares
-    custos = estimate_operation_costs(
-        cost_schedule,
-        leg_premiums_per_share=leg_premiums_per_share,
-        gross_gain=receita,
-        shares=reference_shares,
+    antes_do_ir = fsum((receita, -setup.total))
+    custos = OperationCosts(
+        setup=setup,
+        income_tax=estimate_income_tax(
+            setup.schedule, pre_tax_result=antes_do_ir, premium_result=antes_do_ir
+        ),
     )
     bruto = premium_per_share / capital_base_per_share
     liquido = fsum((receita, -custos.total)) / (capital_base_per_share * reference_shares)
@@ -346,14 +347,17 @@ def cash_secured_put_metrics(
         IncomeStructure.CASH_SECURED_PUT,
         premium_per_share=premium_per_share,
         capital_base_per_share=strike,
-        leg_premiums_per_share=(premium_per_share,),
+        setup=estimate_setup_costs(
+            cost_schedule,
+            option_leg_premiums_per_share=(premium_per_share,),
+            shares=reference_shares,
+        ),
         breakeven=strike - premium_per_share,
         max_gain_per_share=premium_per_share,
         max_loss_per_share=-(strike - premium_per_share),
         downside_protection=None,
         business_days=business_days,
         cdi=cdi,
-        cost_schedule=cost_schedule,
         reference_shares=reference_shares,
     )
 
@@ -397,14 +401,17 @@ def covered_call_metrics(
         IncomeStructure.COVERED_CALL,
         premium_per_share=premium_per_share,
         capital_base_per_share=spot,
-        leg_premiums_per_share=(premium_per_share,),
+        setup=estimate_setup_costs(
+            cost_schedule,
+            option_leg_premiums_per_share=(premium_per_share,),
+            shares=reference_shares,
+        ),
         breakeven=spot - premium_per_share,
         max_gain_per_share=fsum((strike, -spot, premium_per_share)),
         max_loss_per_share=-(spot - premium_per_share),
         downside_protection=premium_per_share / spot,
         business_days=business_days,
         cdi=cdi,
-        cost_schedule=cost_schedule,
         reference_shares=reference_shares,
     )
 
@@ -464,13 +471,14 @@ def credit_spread_metrics(
         IncomeStructure.CREDIT_SPREAD,
         premium_per_share=credito,
         capital_base_per_share=largura - credito,
-        leg_premiums_per_share=premios,
+        setup=estimate_setup_costs(
+            cost_schedule, option_leg_premiums_per_share=premios, shares=reference_shares
+        ),
         breakeven=breakeven,
         max_gain_per_share=credito,
         max_loss_per_share=-(largura - credito),
         downside_protection=None,
         business_days=business_days,
         cdi=cdi,
-        cost_schedule=cost_schedule,
         reference_shares=reference_shares,
     )

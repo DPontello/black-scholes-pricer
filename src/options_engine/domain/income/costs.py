@@ -1,13 +1,24 @@
 """Custos estimados de uma operação de renda — tabela parametrizável (ADR-0005).
 
-Modelo decidido pela mesa (ADR-0005 §4, detalhado na Sprint 5):
+Modelo decidido pela mesa (ADR-0005, "Modelo de custos e decisões de
+cálculo"), com uma função pura para cada parte:
 
-- **emolumentos da B3:** TAXA sobre o valor financeiro do prêmio de CADA
-  perna (a compra e a venda pagam);
-- **corretagem:** valor FIXO por ordem — uma ordem por perna;
-- **IR:** alíquota sobre o ganho POSITIVO da operação, depois de
-  emolumentos e corretagem. É ESTIMATIVA por operação, não cálculo fiscal
-  (sem apuração mensal, sem compensação de prejuízos).
+- **montagem** (``estimate_setup_costs``): o que se paga para abrir a
+  estrutura, e o que o rendimento líquido desconta. Cada perna de opção paga
+  emolumentos de opções sobre o valor financeiro do PRÓPRIO prêmio (comprada
+  ou vendida) e uma ordem de corretagem; a venda coberta paga também a compra
+  das ações (emolumentos do à vista sobre ``spot x ações`` + uma ordem).
+- **exercício** (``estimate_exercise_costs``): o que se paga no vencimento
+  por perna que termina dentro do dinheiro — emolumentos do à vista sobre
+  ``strike x ações`` (a B3 cobra o exercício pela tabela do à vista) + a
+  corretagem de exercício. Depende do cenário: só entra onde a perna é
+  exercida.
+- **IR** (``estimate_income_tax``): alíquota sobre o resultado POSITIVO do
+  cenário depois de montagem e exercício, limitado ao resultado do prêmio
+  (prêmio menos as ordens de opção) — a valorização da ação fica fora da
+  estimativa (ADR-0005, escolha 2) e perda não paga IR (item 4). É
+  ESTIMATIVA por operação, não cálculo fiscal (sem apuração mensal, sem
+  compensação de prejuízos).
 
 Nenhum valor de tabela vive no código: os números chegam da configuração
 versionada dentro de um ``CostSchedule`` com data de vigência — a
@@ -31,7 +42,10 @@ __all__ = [
     "REFERENCE_POSITION_SHARES",
     "CostSchedule",
     "OperationCosts",
-    "estimate_operation_costs",
+    "OrderCosts",
+    "estimate_exercise_costs",
+    "estimate_income_tax",
+    "estimate_setup_costs",
 ]
 
 REFERENCE_POSITION_SHARES: Final[int] = 100
@@ -54,6 +68,21 @@ def _exige_fracao(nome: str, valor: float) -> None:
 def _exige_nao_negativo(nome: str, valor: float) -> None:
     if not (isfinite(valor) and valor >= 0.0):
         raise InvalidDomainValueError(f"{nome} deve ser finito e >= 0; recebido {valor!r}")
+
+
+def _exige_positivo(nome: str, valor: float) -> None:
+    if not (isfinite(valor) and valor > 0.0):
+        raise InvalidDomainValueError(f"{nome} deve ser finito e > 0; recebido {valor!r}")
+
+
+def _exige_finito(nome: str, valor: float) -> None:
+    if not isfinite(valor):
+        raise InvalidDomainValueError(f"{nome} deve ser finito; recebido {valor!r}")
+
+
+def _exige_acoes(shares: int) -> None:
+    if shares < 1:
+        raise InvalidDomainValueError(f"shares deve ser >= 1; recebido {shares!r}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,66 +126,138 @@ class CostSchedule:
 
 
 @dataclass(frozen=True, slots=True)
-class OperationCosts:
-    """Custos estimados de UMA operação, em moeda, para o tamanho de posição usado.
+class OrderCosts:
+    """Emolumentos e corretagem de um conjunto de ordens ou exercícios, em moeda.
 
-    Carrega a ``CostSchedule`` que os produziu — todo número é reconstruível
+    Sem IR: o imposto depende do resultado do cenário, não das ordens.
+    Carrega a ``CostSchedule`` que o produziu — todo número é reconstruível
     a posteriori (mesma disciplina de auditoria do ``PricingResult``).
-    ``income_tax`` é ESTIMATIVA por operação, não cálculo fiscal.
     """
 
     schedule: CostSchedule
     exchange_fees: float
     brokerage: float
-    income_tax: float
 
     def __post_init__(self) -> None:
         _exige_nao_negativo("exchange_fees", self.exchange_fees)
         _exige_nao_negativo("brokerage", self.brokerage)
-        _exige_nao_negativo("income_tax", self.income_tax)
 
     @property
     def total(self) -> float:
-        """Soma dos custos (emolumentos + corretagem + IR estimado), em moeda."""
-        return fsum((self.exchange_fees, self.brokerage, self.income_tax))
+        """Emolumentos + corretagem, em moeda."""
+        return fsum((self.exchange_fees, self.brokerage))
 
 
-def estimate_operation_costs(
+@dataclass(frozen=True, slots=True)
+class OperationCosts:
+    """Custos do cenário de rendimento de UMA operação: montagem + IR estimado.
+
+    É o custo que o rendimento líquido desconta. No cenário de rendimento a
+    opção vendida vira pó: não há exercício. ``income_tax`` é ESTIMATIVA por
+    operação, não cálculo fiscal. A ``CostSchedule`` usada vem da montagem.
+    """
+
+    setup: OrderCosts
+    income_tax: float
+
+    def __post_init__(self) -> None:
+        _exige_nao_negativo("income_tax", self.income_tax)
+
+    @property
+    def schedule(self) -> CostSchedule:
+        """Tabela de custos que produziu estes números."""
+        return self.setup.schedule
+
+    @property
+    def total(self) -> float:
+        """Montagem (emolumentos + corretagem) + IR estimado, em moeda."""
+        return fsum((self.setup.exchange_fees, self.setup.brokerage, self.income_tax))
+
+
+def estimate_setup_costs(
     schedule: CostSchedule,
     *,
-    leg_premiums_per_share: Sequence[float],
-    gross_gain: float,
+    option_leg_premiums_per_share: Sequence[float],
+    stock_purchase_price_per_share: float | None = None,
     shares: int = REFERENCE_POSITION_SHARES,
-) -> OperationCosts:
+) -> OrderCosts:
     """Custos de montar a operação com ``shares`` ações em cada perna.
 
-    - emolumentos = ``option_exchange_fee_rate`` x soma de (prêmio_i x ``shares``)
-      — valor financeiro de CADA perna, comprada ou vendida;
-    - corretagem = ``brokerage_per_order`` x número de pernas;
-    - IR = ``income_tax_rate`` x max(ganho bruto - emolumentos - corretagem, 0).
+    - emolumentos = ``option_exchange_fee_rate`` x soma de (prêmio_i x
+      ``shares``) — valor financeiro de CADA perna de opção, comprada ou
+      vendida — mais, com ação comprada, ``spot_exchange_fee_rate`` x
+      (preço da ação x ``shares``);
+    - corretagem = ``brokerage_per_order`` x número de ordens: uma por perna
+      de opção e, com ação comprada, mais uma.
 
-    ``leg_premiums_per_share``: prêmio unitário (moeda por ação) de cada
-    perna — uma ordem por perna. ``gross_gain``: resultado bruto da operação
-    em moeda, para ``shares`` ações, no cenário em que o rendimento é medido
-    (o prêmio/crédito recebido); ``<= 0`` não paga IR.
+    ``option_leg_premiums_per_share``: prêmio unitário (moeda por ação) de
+    cada perna de opção. ``stock_purchase_price_per_share``: preço de compra
+    da ação, só na venda coberta; ``None`` nas estruturas sem ação.
     """
-    if len(leg_premiums_per_share) == 0:
+    if len(option_leg_premiums_per_share) == 0:
         raise InvalidDomainValueError("operação exige ao menos uma perna (uma ordem por perna)")
-    for premio in leg_premiums_per_share:
+    for premio in option_leg_premiums_per_share:
         _exige_nao_negativo("prêmio da perna", premio)
-    if shares < 1:
-        raise InvalidDomainValueError(f"shares deve ser >= 1; recebido {shares!r}")
-    if not isfinite(gross_gain):
-        raise InvalidDomainValueError(f"gross_gain deve ser finito; recebido {gross_gain!r}")
-    emolumentos = schedule.option_exchange_fee_rate * fsum(
-        p * shares for p in leg_premiums_per_share
+    _exige_acoes(shares)
+    emolumentos_opcoes = schedule.option_exchange_fee_rate * fsum(
+        p * shares for p in option_leg_premiums_per_share
     )
-    corretagem = schedule.brokerage_per_order * len(leg_premiums_per_share)
-    base_do_ir = fsum((gross_gain, -emolumentos, -corretagem))
-    imposto = schedule.income_tax_rate * max(base_do_ir, 0.0)
-    return OperationCosts(
+    ordens = len(option_leg_premiums_per_share)
+    if stock_purchase_price_per_share is None:
+        emolumentos = emolumentos_opcoes
+    else:
+        _exige_positivo("preço de compra da ação", stock_purchase_price_per_share)
+        emolumentos_acao = schedule.spot_exchange_fee_rate * stock_purchase_price_per_share * shares
+        emolumentos = fsum((emolumentos_opcoes, emolumentos_acao))
+        ordens += 1
+    return OrderCosts(
         schedule=schedule,
         exchange_fees=emolumentos,
-        brokerage=corretagem,
-        income_tax=imposto,
+        brokerage=schedule.brokerage_per_order * ordens,
     )
+
+
+def estimate_exercise_costs(
+    schedule: CostSchedule,
+    *,
+    exercised_strikes: Sequence[float],
+    shares: int = REFERENCE_POSITION_SHARES,
+) -> OrderCosts:
+    """Custos do exercício das pernas que terminam dentro do dinheiro num cenário.
+
+    - emolumentos = ``spot_exchange_fee_rate`` x soma de (strike_i x
+      ``shares``) — a B3 cobra o exercício pela tabela do à vista, sobre o
+      volume financeiro ao strike;
+    - corretagem = ``exercise_brokerage_per_order`` x número de pernas
+      exercidas.
+
+    ``exercised_strikes`` vazio é o cenário sem exercício: custo zero.
+    """
+    for strike in exercised_strikes:
+        _exige_positivo("strike exercido", strike)
+    _exige_acoes(shares)
+    return OrderCosts(
+        schedule=schedule,
+        exchange_fees=schedule.spot_exchange_fee_rate * fsum(k * shares for k in exercised_strikes),
+        brokerage=schedule.exercise_brokerage_per_order * len(exercised_strikes),
+    )
+
+
+def estimate_income_tax(
+    schedule: CostSchedule,
+    *,
+    pre_tax_result: float,
+    premium_result: float,
+) -> float:
+    """IR estimado de um cenário: ``income_tax_rate`` x max(min(resultado, prêmio), 0).
+
+    ``pre_tax_result``: resultado do cenário em moeda, depois de montagem e
+    exercício. ``premium_result``: resultado do prêmio em moeda — prêmio (ou
+    crédito) recebido menos os custos das ordens de OPÇÃO. O limite pelo
+    prêmio tira da base a valorização da ação (venda coberta exercida) sem
+    deixar de abater uma perda da ação; nas estruturas sem ação o resultado
+    nunca passa do prêmio e o limite não atua. Resultado <= 0 não paga IR.
+    """
+    _exige_finito("pre_tax_result", pre_tax_result)
+    _exige_finito("premium_result", premium_result)
+    return schedule.income_tax_rate * max(min(pre_tax_result, premium_result), 0.0)
