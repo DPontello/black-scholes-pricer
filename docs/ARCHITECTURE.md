@@ -161,7 +161,25 @@ class RandomSource(Protocol):
 
     def gaussians(self, n: int) -> tuple[float, ...]: ...
     def uniform(self, low: float, high: float) -> float: ...
+
+
+@runtime_checkable
+class OptionChainPort(Protocol):
+    """Cadeia de opções de um subjacente (Sprint 5, ADR-0003). Fase 1: COTAHIST de fim de
+    dia (CotahistOptionChainAdapter); intraday depois — mesmo contrato e mesma suíte.
+    Lado ausente do book é None, nunca 0; séries que a fonte trouxe e o adapter não pôde
+    representar sem inventar dado saem em OptionChain.rejected_series, com motivo.
+    Desconhecido -> UnknownSymbolError; conhecido sem preço utilizável no pregão
+    (sem fechamento, histórico insuficiente para a vol realizada) ->
+    UnderlyingUnavailableError. Ativo-objeto com fechamento mas sem ofertas:
+    spot = bid = ask = mid = fechamento e underlying_book_available = False."""
+
+    def get_chain(self, underlying_symbol: str) -> OptionChain: ...
 ```
+
+A suíte herdável `tests/contract/option_chain_contract.py` é o gate de conformidade de
+todo adapter de cadeia, inclusive os intraday futuros; o COTAHIST a herda em
+`tests/contract/test_cotahist_option_chain.py` sobre a fixture sintética.
 
 ### 4.2 Inbound (use cases) — `application/ports/inbound.py`
 
@@ -193,7 +211,19 @@ class StressTestUseCase(Protocol):
     def execute(
         self, strategy: Strategy, scenarios: Sequence[StressScenario]
     ) -> StressTestReport: ...
+
+
+@runtime_checkable
+class RankIncomeOpportunitiesUseCase(Protocol):   # Sprint 5
+    def execute(self, command: RankIncomeCommand) -> IncomeRanking: ...
 ```
+
+`RankIncomeCommand` carrega os ativos do usuário e os filtros com os defaults da mesa
+(faixa de delta 0,15–0,35 em módulo, dois vencimentos, sem filtro de liquidez,
+anualizado líquido, 100 ações). O resultado `IncomeRanking` (VOs de
+`domain/income/ranking.py`) já sai decidido: ranking só EXECUTAVEL, referências
+INDICATIVO/TEORICO rotuladas e exclusões com motivo. A data de valoração do painel é a do
+**pregão da cadeia** (timestamp do snapshot no fuso de valoração), não o relógio.
 
 Os adapters inbound (CLI hoje, FastAPI na Sprint 4) dependem **apenas** destes Protocols. O endpoint FastAPI será ~10 linhas de tradução HTTP→command — prova concreta de que o framework é adapter, não fundação.
 
@@ -273,7 +303,7 @@ Norma única referenciada por arquitetura, V&V e roadmap — resolve "quem valid
 | CALL AMERICAN | Legal, aproximação ([ADR-0002](adr/0002-calls-americanas-como-europeias.md)) | `supports()` + `price_many` | Preço europeu marcado `AMERICAN_CALL_AS_EUROPEAN`; taxa contínua < 0 → `UnsupportedExerciseStyleError`; o motor de simulação rejeita |
 | PUT AMERICAN | Legal no domínio, fora do modelo | `supports()` no use case | `UnsupportedExerciseStyleError` — nunca preço silenciosamente errado (fase 6: binomial) |
 
-Hierarquia de exceções (`domain/model/errors.py`): raiz `DomainError`; filhas `InvalidKernelInputError`, `InvalidDomainValueError` (invariante de VO violada na construção), `EmptyStrategyError`, `MixedUnderlyingError`, `MixedExpiryError` (decisão nº 6), `InvalidStrategyError`, `UnsupportedExerciseStyleError`, `MissingPremiumError` (decisão nº 4: `pnl` sem prêmio), `MixedAnnualizationBaseError` (vol e τ em bases distintas — a armadilha do CONVENTIONS §2 tornada detectável), `UnknownSymbolError`, `ExpiredOptionError` (Sprint 3: vencimento anterior à data de valoração num caminho de precificação; no próprio dia é legal — τ = 0). Catálogo canônico único — pré-requisito do mapeamento HTTP da Sprint 4.
+Hierarquia de exceções (`domain/model/errors.py`): raiz `DomainError`; filhas `InvalidKernelInputError`, `InvalidDomainValueError` (invariante de VO violada na construção), `EmptyStrategyError`, `MixedUnderlyingError`, `MixedExpiryError` (decisão nº 6), `InvalidStrategyError`, `UnsupportedExerciseStyleError`, `MissingPremiumError` (decisão nº 4: `pnl` sem prêmio), `MixedAnnualizationBaseError` (vol e τ em bases distintas — a armadilha do CONVENTIONS §2 tornada detectável), `UnknownSymbolError`, `UnderlyingUnavailableError` (Sprint 5: subjacente conhecido sem preço utilizável no pregão, com o motivo), `ExpiredOptionError` (Sprint 3: vencimento anterior à data de valoração num caminho de precificação; no próprio dia é legal — τ = 0). Catálogo canônico único — pré-requisito do mapeamento HTTP da Sprint 4.
 
 ---
 
@@ -295,9 +325,10 @@ black-scholes-pricer/
 │   │   ├── ports/               # inbound.py, outbound.py
 │   │   └── use_cases/
 │   ├── adapters/
-│   │   ├── inbound/             # cli/ (S3), rest/ (FastAPI, S4)
+│   │   ├── inbound/             # html_report.py (painel, S5), rest/ (FastAPI, S4)
 │   │   └── outbound/            # mock_orderbook/, system_clock.py, seeded_random.py,
-│   │                            #   b3_calendar.py (arquivo estático versionado)
+│   │                            #   b3_calendar.py e cost_schedules.py (arquivos estáticos
+│   │                            #   versionados em data/), cotahist/ (S5)
 │   └── config/
 │       └── composition.py       # composition root — wiring explícito, sem DI framework
 └── tests/
@@ -345,4 +376,4 @@ black-scholes-pricer/
 
 Cada decisão acima deve virar ADR curto em `docs/adr/` quando a sprint correspondente a materializar.
 
-**Painel de Renda (Sprint 5, mesa 2026-10-26):** as decisões nº 9 a 16 — prioridade, calls americanas, `OptionChainPort`, regra de livro vazio, métricas de rendimento, fontes de dados, painel e universo — estão na tabela do [ROADMAP](ROADMAP.md) e nas [ADRs 0001–0007](adr/README.md). Esta seção e o §4.1 recebem o detalhe de arquitetura quando a sprint as materializar; até lá, as ADRs são a fonte de verdade. A restrição "vol flat por subjacente" acima é a que a Sprint 5 remove (volatilidade implícita por série).
+**Painel de Renda (Sprint 5, mesa 2026-10-26):** as decisões nº 9 a 16 — prioridade, calls americanas, `OptionChainPort`, regra de livro vazio, métricas de rendimento, fontes de dados, painel e universo — estão na tabela do [ROADMAP](ROADMAP.md) e nas [ADRs 0001–0007](adr/README.md). O §4.1 (`OptionChainPort`), o §4.2 (`RankIncomeOpportunitiesUseCase`) e o §6 registram o que a Sprint 5 materializou; as ADRs seguem a fonte de verdade das decisões de negócio. A restrição "vol flat por subjacente" acima é a que a Sprint 5 remove (volatilidade implícita por série).

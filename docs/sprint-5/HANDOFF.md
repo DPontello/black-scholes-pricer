@@ -83,7 +83,7 @@ correções, zero exceções cruas. Oráculo scipy verde depois das mudanças.
 | Option chain: `trades` NaN/float/bool passa | **Reproduzível só com tipo errado** (o mypy strict barra NaN e float; `True` vale 1 negócio, como o `int` 1). O domínio não checa tipo em runtime em lugar nenhum. **Não corrigido**; ver fase 2 abaixo | — |
 | Option chain: `quotes` gerador não vira tuple | **Reproduzível só com tipo errado** (gerador esvazia a checagem e a cadeia). Mesma convenção; a suíte de contrato exige tuple. **Não corrigido** | — |
 | `worst_quality(None)` vaza `ValueError` | **Reproduzível só com tipo errado** (`None` numa lista de `PriceQuality`). **Não corrigido** | — |
-| IV: preço no intrínseco descontado vira `CONVERGED` com sigma = 0.0 | Comportamento do contrato (regra 5), não defeito. **Decisão da fase 2**: o smile e o preço TEORICO aceitam IV 0? Sugestão: tirar esses pontos do smile com motivo, porque não carregam informação sobre sigma | fase 2 |
+| IV: preço no intrínseco descontado vira `CONVERGED` com sigma = 0.0 | Comportamento do contrato (regra 5), não defeito. **Decidido na fase 2**: pontos com sigma = 0 ficam fora do smile (não carregam informação sobre a vol); docstring de `domain/pricing/smile.py` | `feat/rank-income` |
 
 **Pontos em aberto gerais**
 - Vol realizada zero ou histórico insuficiente: a suíte de contrato exige
@@ -94,19 +94,41 @@ correções, zero exceções cruas. Oráculo scipy verde depois das mudanças.
   conferidos no primeiro arquivo real do cadastro/COTAHIST.
 - `valid_from` da tabela de custos: a B3 não publica vigência; o plano usa
   2025-08-01 (OC 025/2025-VPC), com a origem anotada.
-- Adapter COTAHIST/brapi: converter `trades` com `int()` estrito na
-  fronteira. Dado vindo de JSON chega como `Any` e escapa do mypy, que é o
-  que protege o tipo dentro do domínio (achado de option chain da §3).
+- Adapters de cadeia: converter `trades` com `int()` estrito na fronteira.
+  O COTAHIST já o faz (campo numérico de largura fixa); um adapter futuro
+  sobre JSON (brapi) recebe `Any`, que escapa do mypy (achado de option
+  chain da §3).
 
-## 4. Próxima tarefa: fase 2
+## 4. Fase 2 — implementada em 2026-10-27
 
-Especificação completa em [`plano-fase-2.md`](plano-fase-2.md): extensões de
-domínio (`UnderlyingUnavailableError`, `RejectedSeries`,
-`underlying_book_available`), adapter COTAHIST + cadastro + cache sqlite +
-fixtures sintéticas, smile e preço TEÓRICO, tabela de custos versionada,
-`RankIncomeOpportunitiesService`, relatório HTML e subcomando
-`python -m options_engine painel`. Depois: documentação (ARCH §4.1,
-CONVENTIONS, README), versão 0.4.0, merge na `master` e tag `v0.4.0`.
+Especificação em [`plano-fase-2.md`](plano-fase-2.md). Mergeadas na
+`development`, nesta ordem, com gates verdes depois de cada merge (3485
+testes, cobertura 99%, kernel em 100%):
+
+| Branch | O que tem |
+|---|---|
+| `feat/chain-exclusions` | `UnderlyingUnavailableError`, `RejectedSeries`, `OptionChain.rejected_series` e `underlying_book_available`; port e suíte de contrato |
+| `feat/cotahist-adapter` | parser, cadastro de instrumentos, cache sqlite por pregão, `CotahistOptionChainAdapter`, fixture sintética com gerador determinístico; o adapter plugado na suíte de contrato |
+| `feat/rank-income` | tabela de custos versionada + `schedule_on`, smile e preço TEÓRICO, VOs do ranking e `RankIncomeOpportunitiesService` |
+| `feat/painel-html` | `html_report.py`, `build_income_panel` e `python -m options_engine painel` |
+| `docs/fase-2` | ARCH §4.1/§4.2/§6/§7, CONVENTIONS §9 (rendimento e vol), README, ROADMAP e versão 0.4.0 |
+
+**Falta para fechar a Sprint 5:**
+
+1. Merge da `development` na `master` e tag `v0.4.0`. O CI do GitHub só roda
+   em push na `master` e em PR: os gates desta fase rodaram localmente (Python
+   3.14); um PR `development` -> `master` roda a matriz 3.12/3.13 e o oráculo
+   antes do merge.
+2. Conferir no primeiro arquivo REAL da B3 as premissas registradas nas
+   docstrings do adapter: TOTREG do trailer conta header e trailer; domínio
+   do `OptnStyle`; conteúdo do ESPECI das opções (desempate PETR3/PETR4);
+   strike já ajustado no `PREEXE` (ROADMAP, spike).
+
+Observação para a mesa: com o critério default (anualizado líquido), as
+travas de crédito tendem a liderar o ranking, porque o retorno sobre risco
+anualizado de forma composta em poucos du fica muito alto (ex.: 26% em 18
+du vira ~2.600% a.a.). É consequência direta das decisões 6 e 8 da ADR-0005;
+o critério é configurável (`--ordenar`).
 
 ## 5. Ambiente
 

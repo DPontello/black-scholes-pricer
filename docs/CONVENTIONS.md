@@ -151,7 +151,29 @@ amostrada para exibição.
 exige nova verificação independente, novo `verified_on` e justificativa no
 commit. Proveniência é parte do teste (fonte, arredondamento, método).
 
-## 9. Léxico canônico
+## 9. Renda com opções — unidades de rendimento e de volatilidade (Sprint 5)
+
+Unidade no nome do campo, como no resto do domínio (`domain/income/`, ADR-0005):
+
+| Campo | Unidade | Definição |
+|---|---|---|
+| `yield_period` | decimal (0.02 == 2%) | prêmio sobre a base de capital da estrutura, no período até o vencimento: strike (put coberta), spot (venda coberta), largura − crédito (trava, retorno sobre risco) |
+| `yield_annual_252` | decimal | `(1 + yield_period) ** (252 / du) − 1`, composta em dias úteis do `TradingCalendar`; `None` com du = 0 |
+| `excess_over_cdi_annual_252` | decimal | anualizado menos o CDI efetivo anual base 252 (diferença simples) |
+| `net_*` | idem | os mesmos, líquidos de montagem + IR estimado, sobre a MESMA base do bruto |
+| `*_per_position` | moeda | ganho/perda para `reference_shares` ações (default 100); perda é VALOR (<= 0) |
+| `breakeven`, `net_breakeven` | moeda por ação | preço do subjacente no vencimento com resultado zero; `net_breakeven` pode ser `None` |
+| `spread_pct` (painel) | decimal | (ask − bid) / mid, só com book completo |
+
+**Vol realizada vs implícita.** A vol do `MarketSnapshot` de uma cadeia é a REALIZADA do
+ativo-objeto: desvio-padrão amostral dos últimos 21 log-retornos fechamento a fechamento,
+× √252, em `BUSINESS_252` (o COTAHIST não ajusta proventos). A IMPLÍCITA é por série, do
+MID com book completo (o mid só serve para o smile — ADR-0004), e só entra no smile com
+status `CONVERGED` e sigma > 0. O smile é por vencimento, com a série fora do dinheiro em
+cada strike, interpolação linear e sem extrapolação. Delta e N(d2) usam a implícita da
+série, senão a do smile; N(d2) é probabilidade RISCO-NEUTRA de exercício.
+
+## 10. Léxico canônico
 
 | Termo | Significado | Não usar |
 |---|---|---|
