@@ -123,6 +123,12 @@ testes, cobertura 99%, kernel em 100%):
    docstrings do adapter: TOTREG do trailer conta header e trailer; domínio
    do `OptnStyle`; conteúdo do ESPECI das opções (desempate PETR3/PETR4);
    strike já ajustado no `PREEXE` (ROADMAP, spike).
+3. Intraday via Tryd: spike aberto em 2026-10-27. Roteiro em
+   `docs/spikes/tryd-intraday.md`, prova de conceito em
+   `tools/tryd_spike/tryd_poc.py` (só Windows, pywin32 em venv separado) e
+   [ADR-0008](../adr/0008-intraday-tryd-rtd.md) **proposta**. Falta rodar o
+   roteiro numa máquina com o Tryd e preencher os resultados antes de a
+   mesa aceitar ou descartar a ADR.
 
 Observação para a mesa: com o critério default (anualizado líquido), as
 travas de crédito tendem a liderar o ranking, porque o retorno sobre risco

@@ -24,3 +24,7 @@ htmlcov/
 
 # Painel gerado pela CLI (README: --saida painel.html)
 /painel*.html
+
+# Spike Tryd (docs/spikes/tryd-intraday.md): venv com pywin32 e capturas reais
+.venv-tryd/
+captura*.json
