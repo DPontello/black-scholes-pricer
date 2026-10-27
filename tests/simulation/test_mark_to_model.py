@@ -16,7 +16,7 @@ from options_engine.domain.model.conventions import (
     DayCountConvention,
     TimeToExpiry,
 )
-from options_engine.domain.model.enums import ExerciseStyle
+from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import (
     InvalidDomainValueError,
     MissingPremiumError,
@@ -139,8 +139,10 @@ def test_base_misturada_e_rejeitada() -> None:
 
 
 def test_american_e_rejeitado_a_mercado() -> None:
-    leg = make_leg(terms=make_terms(exercise_style=ExerciseStyle.AMERICAN), premium=1.0)
-    americana = Strategy.create("americana", [leg])
+    """Inclusive a CALL americana: a aproximação da ADR-0002 vale só no
+    ``PricingModel``, que marca o resultado; o valor a mercado não tem marca."""
+    terms = make_terms(option_type=OptionType.CALL, exercise_style=ExerciseStyle.AMERICAN)
+    americana = Strategy.create("americana", [make_leg(terms=terms, premium=1.0)])
     with pytest.raises(UnsupportedExerciseStyleError):
         mark_to_model_value(americana, 30.0, time_to_expiry=_TTX, snapshot=make_snapshot())
 

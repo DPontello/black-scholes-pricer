@@ -16,6 +16,12 @@ O que cada oráculo pega: um bug na NOSSA ``norm_cdf`` aparece aqui (CDFs
 independentes); um erro de fórmula copiado para cá não aparece — por isso o
 hardening pós-v1.0 adiciona QuantLib como segundo oráculo (modo de falha
 distinto). Ver docs/VV-PLAN.md.
+
+Volatilidade implícita (Sprint 5): o preço gerado pelo ORÁCULO em sigma é
+invertido pelo kernel (``implied_vol``) e reavaliado pelo oráculo em sigma'
+— ida e volta preço -> volatilidade implícita -> preço dentro da tolerância
+do oráculo, critério de aceite da sprint. Pega erro de inversão que a ida e
+volta interna (mesmo kernel nos dois sentidos) mascararia.
 """
 
 import math
@@ -24,7 +30,14 @@ import random
 import pytest
 
 from options_engine.domain.kernel.black_scholes import bs_outputs
-from tests._tolerances import ABS_ORACLE_FLOOR, REL_ORACLE, assert_close
+from options_engine.domain.kernel.implied_vol import ImpliedVolStatus, implied_vol
+from tests._tolerances import (
+    ABS_IV_ROUNDTRIP_PRICE_FLOOR,
+    ABS_ORACLE_FLOOR,
+    REL_ORACLE,
+    assert_close,
+    iv_sigma_abs_tol,
+)
 
 _scipy_stats = pytest.importorskip(
     "scipy.stats", reason="oráculo diferencial requer scipy (job de CI dedicado)"
@@ -99,3 +112,70 @@ def test_kernel_matches_scipy_oracle_on_10k_random_cases() -> None:
                         f"s={s!r}, k={k!r}, tau={tau!r}, r={r!r}, sigma={sigma!r}, q={q!r}"
                     ),
                 )
+
+
+# Domínio de identificabilidade da inversão (o mesmo da suíte do kernel):
+# fora dele o valor-tempo cai abaixo do ulp do preço e sigma não é
+# recuperável por NENHUMA implementação — é domínio, não tolerância.
+_IV_MAX_STD_MONEYNESS = 3.0  # |ln(F/K)| <= 3 desvios-padrão da vol total
+_IV_MAX_TOTAL_VOL = 3.0  # sigma·sqrt(tau) <= 3
+
+
+def _draw_iv_params(rng: random.Random) -> tuple[float, float, float, float, float, float]:
+    """Escalas do VV-PLAN §3 com o strike em desvios-padrão do forward.
+
+    sigma cobre a faixa inteira do §3 (a partir de 1e-4), cortada só pelo teto
+    de vol total do domínio identificável — a ida e volta vale "em toda a
+    faixa testada" (critério de aceite da Sprint 5).
+    """
+    s = 10.0 ** rng.uniform(-2.0, 6.0)  # S em [0.01, 1e6]
+    tau = 10.0 ** rng.uniform(math.log10(1.0 / 252.0), math.log10(30.0))
+    sigma_max = min(5.0, _IV_MAX_TOTAL_VOL / math.sqrt(tau))
+    sigma = 10.0 ** rng.uniform(-4.0, math.log10(sigma_max))
+    z = rng.uniform(-_IV_MAX_STD_MONEYNESS, _IV_MAX_STD_MONEYNESS)
+    r = rng.uniform(-0.05, 0.5)  # taxa negativa de propósito
+    q = rng.uniform(0.0, 0.12)
+    k = s * math.exp((r - q) * tau - z * sigma * math.sqrt(tau))
+    return s, k, tau, r, sigma, q
+
+
+def test_implied_vol_round_trip_against_scipy_oracle_on_10k_cases() -> None:
+    """Preço do oráculo -> implied_vol (kernel) -> preço do oráculo em sigma'.
+
+    Tolerâncias: o preço reavaliado usa ``REL_ORACLE`` com o piso da ida e
+    volta (cota do solver incluída); sigma usa a divergência de preço
+    tolerada entre as implementações propagada por 1/vega.
+
+    Medido (seed fixa, 20.000 inversões): todas CONVERGED em <= 12
+    iterações; |Δpreço| <= 5.6e-16·escala e o pior erro em sigma usa 3.3e-4
+    da tolerância — margem >= 3e3x, nenhuma tolerância nova foi necessária.
+    """
+    rng = random.Random(SEED)
+    for i in range(N_CASES):
+        s, k, tau, r, sigma, q = _draw_iv_params(rng)
+        scale = max(s, k)
+        for is_call in (True, False):
+            label = (
+                f"caso {i} ({'call' if is_call else 'put'}): "
+                f"s={s!r}, k={k!r}, tau={tau!r}, r={r!r}, sigma={sigma!r}, q={q!r}"
+            )
+            theirs = _oracle_outputs(s, k, tau, r, sigma, q, is_call=is_call)
+            result = implied_vol(theirs["price"], s, k, tau, r, q, is_call=is_call)
+            assert result.status is ImpliedVolStatus.CONVERGED, f"{label} -> {result!r}"
+            assert result.sigma is not None
+            repriced = _oracle_outputs(s, k, tau, r, result.sigma, q, is_call=is_call)["price"]
+            assert_close(
+                repriced,
+                theirs["price"],
+                rel=REL_ORACLE,
+                abs_=ABS_IV_ROUNDTRIP_PRICE_FLOOR * scale,
+                label=f"preço reavaliado {label}",
+            )
+            price_divergence = REL_ORACLE * theirs["price"] + ABS_ORACLE_FLOOR * scale
+            assert_close(
+                result.sigma,
+                sigma,
+                rel=0.0,
+                abs_=iv_sigma_abs_tol(price_divergence, theirs["vega_per_vol_unit"]),
+                label=f"sigma recuperado {label}",
+            )

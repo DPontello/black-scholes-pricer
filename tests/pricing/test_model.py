@@ -9,6 +9,7 @@ import pytest
 
 from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.conventions import DayCountConvention, TimeToExpiry
+from options_engine.domain.model.enums import ExerciseStyle, PricingApproximation
 from options_engine.domain.model.errors import (
     InvalidDomainValueError,
     MixedAnnualizationBaseError,
@@ -71,3 +72,13 @@ class TestContratoEstruturais:
         # Igualdade exata permitida: mesmo binário, mesmo caminho aritmético
         # (price_one delega a price_many por definição).
         assert escalar == lote[0]
+
+    def test_price_one_preserva_a_marca_de_aproximacao(self) -> None:
+        """ADR-0002 não altera o contrato: o açúcar escalar continua sendo
+        ``price_many([r])[0]``, e a marca da call americana sobrevive a ele."""
+        model = BlackScholesPricingModel()
+        request = make_request(terms=make_terms(exercise_style=ExerciseStyle.AMERICAN))
+        escalar = price_one(model, request)
+        assert escalar.approximation is PricingApproximation.AMERICAN_CALL_AS_EUROPEAN
+        # Igualdade exata permitida: price_one delega a price_many.
+        assert escalar == model.price_many([request])[0]

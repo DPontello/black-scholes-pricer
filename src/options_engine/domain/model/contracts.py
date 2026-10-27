@@ -28,8 +28,10 @@ class OptionTerms:
     ex.: PETRA250) pertence à Entity ``OptionContract``.
 
     ``exercise_style`` tem default EUROPEAN por ser o escopo ratificado do
-    MVP (decisão nº 2); AMERICAN é construível (legal no domínio) e
-    rejeitado nos caminhos de precificação.
+    MVP (decisão nº 2). AMERICAN é construível (legal no domínio): nos
+    caminhos de precificação, a call americana vira aproximação europeia
+    marcada (ADR-0002) e a put americana é rejeitada. Aceitar ou rejeitar
+    é decisão do modelo (``supports()``), nunca da construção dos termos.
     """
 
     underlying: str

@@ -38,6 +38,9 @@ Contrato de fronteira (tabela normativa em docs/ARCHITECTURE.md):
     sigma·sqrt(tau) em underflow (sigma > 0 e tau > 0, mas o produto vale
         0.0 em float64) -> mesmo ramo determinístico: sem difusão
         representável, o limite correto é o intrínseco descontado.
+    preço >= 0.0 sempre (VV-PLAN §6, linha Deep OTM): piso em zero contra o
+        ruído de cancelamento em float — ver ``bs_outputs`` e
+        ``_deterministic``.
 
 O par (preço, 5 gregas) é derivado de UM único conjunto de intermediários
 (d1, d2, N(d1), N(d2), n(d1), fatores de desconto) — risco B3: recomputar
@@ -120,6 +123,12 @@ def _deterministic(
     Preço = intrínseco descontado sobre o forward; gregas são os limites
     analíticos da fórmula BS quando sigma -> 0+ (continuidade verificada em
     teste contra sigma = 1e-8).
+
+    O preço tem piso em zero porque o ramo é decidido por ``forward > k`` (ou
+    ``<``) mas precificado por ``s*df_q - k*df_r``: caminhos aritméticos
+    distintos. Com o forward a poucos ulps do strike, a diferença arredonda
+    para um negativo de alguns ulps (~1e-15 com s ~ 30), violando
+    ``e^(-r*tau)*max(F - k, 0) >= 0`` do contrato.
     """
     df_r = exp(-r * tau)
     df_q = exp(-q * tau)
@@ -127,7 +136,7 @@ def _deterministic(
     if is_call:
         if forward > k:
             return BSOutputs(
-                price=s * df_q - k * df_r,
+                price=max(s * df_q - k * df_r, 0.0),
                 delta=df_q,
                 gamma=0.0,
                 theta_per_year=q * s * df_q - r * k * df_r,
@@ -138,7 +147,7 @@ def _deterministic(
         return BSOutputs(0.0, delta, 0.0, 0.0, 0.0, 0.0)
     if forward < k:
         return BSOutputs(
-            price=k * df_r - s * df_q,
+            price=max(k * df_r - s * df_q, 0.0),
             delta=-df_q,
             gamma=0.0,
             theta_per_year=r * k * df_r - q * s * df_q,
@@ -227,6 +236,18 @@ def bs_outputs(
             + r * k * df_r * nmd2
         )
         rho = -k * tau * df_r * nmd2
+
+    # Piso em zero (VV-PLAN §6, Deep OTM: "preço >= 0, sem underflow para
+    # negativo"). Em OTM profundo, s*df_q*N(d1) e k*df_r*N(d2) (na put, o
+    # espelho k*df_r*N(-d2) e s*df_q*N(-d1)) são dois números minúsculos e
+    # quase iguais; cada produto carrega ~1 ulp de arredondamento e a
+    # subtração cancela os dígitos significativos, podendo devolver um
+    # subnormal NEGATIVO (ex.: -1e-323) onde o valor exato é um positivo
+    # menor que esse ruído. O piso move o preço menos que o próprio ruído da
+    # subtração (ordens abaixo da tolerância da paridade) e as gregas não
+    # dependem dele. A ordem max(price, 0.0) preserva um eventual NaN em vez
+    # de mascará-lo como 0.0.
+    price = max(price, 0.0)
 
     # Gamma e vega são idênticos para call e put de mesmos parâmetros —
     # mesma expressão, mesmos intermediários (propriedade testada).

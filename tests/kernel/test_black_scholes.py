@@ -11,13 +11,14 @@ Quatro camadas, cada uma com um oráculo distinto:
 Todas as tolerâncias vêm de ``tests/_tolerances.py`` — nenhuma inline.
 """
 
+import itertools
 import json
 import math
 from pathlib import Path
 from typing import Any
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from options_engine.domain.kernel.black_scholes import bs_outputs, bs_price, d1_d2
@@ -192,6 +193,41 @@ def test_price_bounds_no_arbitrage(params: BSParams) -> None:
     slack = INEQ_SLACK * max(s, k)
     assert max(fwd_s - disc_k, 0.0) - slack <= c <= fwd_s + slack
     assert max(disc_k - fwd_s, 0.0) - slack <= p <= disc_k + slack
+    # O piso é exato, sem folga: a folga acima existe para o intrínseco
+    # calculado no teste, não para um preço negativo (VV-PLAN §6, Deep OTM).
+    assert c >= 0.0
+    assert p >= 0.0
+
+
+@st.composite
+def _deep_otm_params(draw: st.DrawFn) -> tuple[BSParams, bool]:
+    """OTM profundo em desvios-padrão: a região do cancelamento no preço.
+
+    sigma e tau curtos frente à distância log do strike levam d1 e d2 à
+    cauda, onde o preço é a diferença de dois números minúsculos. Medido
+    por amostragem uniforme na fórmula sem piso: ~6e-4 dos preços saíam
+    negativos aqui contra ~5e-6 no domínio de ``_bs_params`` — mais de 100x
+    mais denso, ao alcance do perfil nightly. A regressão determinística
+    fica com ``TestPriceNeverNegative``; esta propriedade explora além da
+    grade.
+    """
+    is_call = draw(st.booleans())
+    s = draw(st.floats(1.0, 5000.0))
+    log_otm = draw(st.floats(0.01, math.log(10.0)))  # até S/K = 0.1 (VV-PLAN §6)
+    k = s * math.exp(log_otm if is_call else -log_otm)
+    tau = draw(st.floats(1.0 / 252.0, 0.25))
+    r = draw(st.floats(-0.05, 0.5))
+    sigma = draw(st.floats(1e-3, 0.3))
+    q = draw(st.floats(0.0, 0.12))
+    return (s, k, tau, r, sigma, q), is_call
+
+
+@given(_deep_otm_params())
+@example(((77.531, 80.440, 0.01122, 0.1054, 0.00875, 0.0), True))  # devolvia -1e-323
+def test_price_nonneg_deep_otm(case: tuple[BSParams, bool]) -> None:
+    """Preço >= 0.0 estrito, sem folga, onde o cancelamento em float morde."""
+    (s, k, tau, r, sigma, q), is_call = case
+    assert bs_price(s, k, tau, r, sigma, q, is_call=is_call) >= 0.0
 
 
 @given(_bs_params())
@@ -413,6 +449,31 @@ class TestSigmaZero:
         assert_close(out.price, 10.0, rel=REL_SELF, abs_=ABS_SELF_FLOOR * 100.0, label="preço")
         assert out.delta == 1.0  # df_q = 1.0 nesse regime (q = 0)
 
+    @pytest.mark.parametrize("is_call", [True, False], ids=["call", "put"])
+    def test_price_never_negative_with_strike_ulps_from_forward(self, is_call: bool) -> None:
+        """Strike a poucos ulps do forward, do lado ITM: preço >= 0.0 estrito.
+
+        O ramo decide ``forward > k`` (ou ``<``) sobre ``s*exp((r-q)*tau)``, mas
+        precifica ``s*df_q - k*df_r`` — caminhos aritméticos distintos. Antes
+        do piso em zero, 9 dos 8.400 pontos desta grade (1 call, 8 puts) davam
+        negativos de ~1e-15, violando ``e^(-r*tau)*max(F - k, 0) >= 0``
+        (VV-PLAN §6).
+        """
+        negatives: list[tuple[float, ...]] = []
+        for s, r, q, tau in itertools.product(
+            (1.0, 7.3, 30.0, 77.531, 100.0, 1234.5, 5000.0),
+            (-0.03, 0.0, 0.05, 0.1054, 0.3),
+            (0.0, 0.02, 0.07),
+            (1.0 / 252.0, 0.01122, 0.5, 2.0, 10.0),
+        ):
+            k = s * math.exp((r - q) * tau)  # mesmo caminho do forward no kernel
+            for _ in range(8):
+                k = math.nextafter(k, 0.0 if is_call else math.inf)
+                price = bs_price(s, k, tau, r, 0.0, q, is_call=is_call)
+                if not (price >= 0.0):
+                    negatives.append((s, k, tau, r, q, price))
+        assert not negatives, f"{len(negatives)} preços negativos: {negatives[:5]}"
+
     @pytest.mark.parametrize("s", [90.0, 110.0])
     @pytest.mark.parametrize("is_call", [True, False])
     def test_continuity_with_tiny_sigma(self, s: float, is_call: bool) -> None:
@@ -427,6 +488,62 @@ class TestSigmaZero:
                 abs_=ABS_SIGMA_CONTINUITY_PER_SPOT * s,
                 label=f"continuidade:{name}",
             )
+
+
+# Grade determinística de OTM profundo: sigma*sqrt(tau) pequeno frente à
+# distância log do strike põe d1 e d2 muitos desvios-padrão na cauda, onde o
+# preço é a diferença de dois números minúsculos e quase iguais. A distância
+# vai até ln(10): S/K = 0.1 na call e S/K = 10 na put (linha Deep OTM do
+# VV-PLAN §6). Antes do piso em zero, 6 dos 12.096 pontos davam negativo
+# (3 calls, 3 puts).
+_DEEP_OTM_GRID: list[tuple[float, float, float, float, float, float]] = list(
+    itertools.product(
+        (10.0, 77.531, 1000.0),  # s
+        (*(i / 100.0 for i in range(1, 41)), 1.0, math.log(10.0)),  # distância log
+        (1.0 / 252.0, 0.01122, 0.05),  # tau
+        (0.0, 0.1054),  # r
+        (0.002, 0.00875, 0.03, 0.1),  # sigma
+        (0.0, 0.04),  # q
+    )
+)
+
+
+class TestPriceNeverNegative:
+    """OTM profundo: preço >= 0.0 ESTRITO, sem folga (VV-PLAN §6, linha Deep OTM).
+
+    ``test_price_bounds_no_arbitrage`` aceita até ``INEQ_SLACK * max(s, k)``
+    abaixo do limite inferior — e essa folga escondeu o bug: o kernel
+    devolvia subnormais negativos (-1e-323) pelo cancelamento em
+    ``s*df_q*N(d1) - k*df_r*N(d2)``. Qualquer consumidor com invariante
+    ``premium >= 0`` (ex.: ``StrategyLeg``) rejeitaria um preço teórico
+    legítimo. Aqui a comparação é contra 0.0 exato: ruído negativo não é
+    aceitável, por menor que seja.
+    """
+
+    @pytest.mark.parametrize(
+        ("s", "k", "tau", "r", "sigma", "q", "is_call"),
+        [
+            # Achado da revisão da Sprint 5: devolvia -1e-323.
+            (77.531, 80.440, 0.01122, 0.1054, 0.00875, 0.0, True),
+            # Espelho na put (s*exp(-0.07)), achado pela grade: devolvia -3e-323.
+            (77.531, 72.28942525112808, 0.05, 0.1054, 0.00875, 0.0, False),
+        ],
+        ids=["call", "put"],
+    )
+    def test_regression_subnormal_negative(
+        self, s: float, k: float, tau: float, r: float, sigma: float, q: float, is_call: bool
+    ) -> None:
+        assert bs_price(s, k, tau, r, sigma, q, is_call=is_call) >= 0.0
+
+    @pytest.mark.parametrize("is_call", [True, False], ids=["call", "put"])
+    def test_deep_otm_sweep(self, is_call: bool) -> None:
+        negatives: list[tuple[float, ...]] = []
+        for s, log_otm, tau, r, sigma, q in _DEEP_OTM_GRID:
+            k = s * math.exp(log_otm if is_call else -log_otm)
+            price = bs_price(s, k, tau, r, sigma, q, is_call=is_call)
+            if not (price >= 0.0):
+                negatives.append((s, k, tau, r, sigma, q, price))
+        assert not negatives, f"{len(negatives)} preços negativos: {negatives[:5]}"
 
 
 class TestIllegalInputs:

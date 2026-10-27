@@ -11,9 +11,13 @@ Três semânticas com NOMES distintos (CONVENTIONS §5) — nenhuma se mistura:
 Fronteiras deste módulo (defendidas em toda entrada pública):
 
 - Europeu-only (decisão nº 2): leg AMERICAN →
-  ``UnsupportedExerciseStyleError``. Vale inclusive para o payoff bruto —
-  uma posição americana pode ser exercida antes; a curva no vencimento
-  descreveria a posição errada em silêncio.
+  ``UnsupportedExerciseStyleError``, inclusive a CALL americana que o
+  ``PricingModel`` aceita pela ADR-0002. A ADR exige marca explícita de
+  aproximação, e os resultados deste motor (perfil, grid, gregas
+  agregadas) não carregam marca — aceitar aqui faria a aproximação viajar
+  como valor exato. Vale inclusive para o payoff bruto — uma posição
+  americana pode ser exercida antes; a curva no vencimento descreveria a
+  posição errada em silêncio.
 - Base de anualização: a vol do snapshot e o tau DEVEM estar na mesma base
   (CONVENTIONS §2) → ``MixedAnnualizationBaseError``. Os VOs carregam a
   base exatamente para esta checagem existir.
@@ -80,8 +84,9 @@ def _require_european(strategy: Strategy) -> None:
         if leg.terms.exercise_style is not ExerciseStyle.EUROPEAN:
             raise UnsupportedExerciseStyleError(
                 f"leg {leg.symbol!r} tem exercício "
-                f"{leg.terms.exercise_style.value!r}; o motor é europeu-only no "
-                f"MVP (decisão nº 2 — americano entra na Fase 6 via binomial)"
+                f"{leg.terms.exercise_style.value!r}; o motor de simulação é europeu-only "
+                f"(decisão nº 2 — a aproximação da ADR-0002 vale só no PricingModel, que "
+                f"marca o resultado; americano exato entra na Fase 6 via binomial)"
             )
 
 

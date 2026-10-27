@@ -115,6 +115,42 @@ def fd_abs_tol(f_scale: float, h: float) -> float:
     return ABS_FD + FD_ROUNDOFF_ULPS * EPS_MACHINE * f_scale / (2.0 * h)
 
 
+# --- volatilidade implícita (Sprint 5) ---------------------------------------
+# Inverter preço em sigma PROPAGA erro de preço por 1/vega (condicionamento):
+# Δsigma ≈ Δpreço / vega. Por isso a tolerância em sigma é uma função
+# (``iv_sigma_abs_tol``), não um número: vega -> 0 (OTM/ITM profundo, tau -> 0)
+# torna sigma fisicamente mal determinado, e a tolerância cresce junto em vez
+# de flakar — mesma lógica do piso de roundoff da FD (VV-PLAN §5).
+#
+# Cota do solver: o critério de parada garante |sigma - raiz| <= sigma_tol
+# (``DEFAULT_SIGMA_TOL`` = 1e-12 no kernel); 1e-11 dá margem 10x e ainda mata
+# erro de status ou de convergência, que erram sigma em >= 1e-6.
+ABS_IV_SIGMA = 1e-11
+# Ruído de avaliação do preço pelo kernel, em ulps da escala max(S, K):
+# medido <= ~4 ulps (|Δpreço|/escala = 9.1e-16 em 40k inversões no domínio
+# identificável); 16 dá margem ~4x.
+IV_ROUNDOFF_ULPS = 16.0
+# Ida e volta preço -> sigma -> preço pelo MESMO kernel: erro = vega·|Δsigma| +
+# ruído. Com vega <= S·sqrt(tau)/sqrt(2π) <= 2.2·S (tau <= 30) e |Δsigma| <=
+# 1e-12, a cota teórica é ~2.2e-12·escala (medido: 9.1e-16·escala); 1e-11 cobre
+# a cota teórica com folga ~4x.
+ABS_IV_ROUNDTRIP_PRICE_FLOOR = 1e-11  # escalar por max(s, k) no ponto de uso
+
+
+def iv_sigma_abs_tol(price_error_bound: float, vega: float) -> float:
+    """Tolerância absoluta em sigma: cota do solver + erro de preço / vega.
+
+    ``price_error_bound`` é a cota de erro do PREÇO que originou a inversão,
+    na moeda do subjacente: ruído do kernel (``IV_ROUNDOFF_ULPS·eps·escala``),
+    divergência entre implementações (oráculo) ou arredondamento do livro
+    (camada *published*). Vega nulo em float64 -> sigma não identificável:
+    tolerância infinita (o teste deve então se apoiar no preço, não em sigma).
+    """
+    if vega <= 0.0:
+        return math.inf
+    return ABS_IV_SIGMA + price_error_bound / vega
+
+
 def assert_close(
     actual: float, expected: float, *, rel: float, abs_: float, label: str = ""
 ) -> None:
