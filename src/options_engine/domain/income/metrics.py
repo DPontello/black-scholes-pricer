@@ -484,8 +484,10 @@ def covered_call_metrics(
     - perda máxima: ação a zero, call vira pó: -(spot - prêmio) x n -
       montagem; sem IR;
     - breakeven: no trecho não exercido, ``spot - prêmio + montagem / n``.
-      Se esse ponto passa do strike, nenhum preço zera o resultado líquido
-      (o exercido é ainda menor): ``None``.
+      Se o resultado em S = K (não exercido) é negativo, esse ponto passa do
+      strike e nenhum preço zera o resultado líquido (o exercido é ainda
+      menor): ``None``. A decisão é tomada em moeda, não no preço
+      arredondado — custo abaixo da resolução do preço não vira breakeven.
 
     Limites de não-arbitragem: ``max(spot - strike, 0) <= prêmio < spot`` —
     call abaixo do intrínseco ou valendo o spot inteiro é dado inconsistente
@@ -512,7 +514,10 @@ def covered_call_metrics(
     )
     exercicio = estimate_exercise_costs(cost_schedule, exercised_strikes=(strike,), shares=n)
     ganho_maximo = fsum((strike, -spot, premium_per_share))
-    breakeven_liquido = fsum((spot, -premium_per_share, montagem.total / n))
+    breakeven_liquido: float | None = None
+    if fsum((ganho_maximo * n, -montagem.total)) >= 0.0:
+        # O min só segura o arredondamento do preço contra o strike.
+        breakeven_liquido = min(fsum((spot, -premium_per_share, montagem.total / n)), strike)
     return _metricas(
         IncomeStructure.COVERED_CALL,
         premium_per_share=premium_per_share,
@@ -522,7 +527,7 @@ def covered_call_metrics(
         breakeven=spot - premium_per_share,
         max_gain_per_share=ganho_maximo,
         max_loss_per_share=-(spot - premium_per_share),
-        net_breakeven=breakeven_liquido if breakeven_liquido <= strike else None,
+        net_breakeven=breakeven_liquido,
         pre_tax_max_gain_per_position=fsum((ganho_maximo * n, -montagem.total, -exercicio.total)),
         pre_tax_max_loss_per_position=fsum((-(spot - premium_per_share) * n, -montagem.total)),
         downside_protection=premium_per_share / spot,

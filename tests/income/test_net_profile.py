@@ -281,15 +281,24 @@ def _resultado_liquido(pernas: tuple[_Perna, ...], s: float, tabela: CostSchedul
     return antes_do_ir - tabela.income_tax_rate * max(min(antes_do_ir, teto), 0.0)
 
 
-def _troca_de_sinal(f: Callable[[float], float], a: float, b: float) -> float:
-    """Bisseção da fronteira entre ``f < 0`` e ``f >= 0`` em [a, b] (sinais opostos nas pontas)."""
-    negativo_em_a = f(a) < 0.0
-    assert (f(b) < 0.0) != negativo_em_a, "o intervalo não contém troca de sinal"
+def _troca_de_sinal(f: Callable[[float], float], a: float, b: float, zona_morta: float) -> float:
+    """Bisseção da fronteira entre ``f < -zona_morta`` e o resto, em [a, b].
+
+    A zona morta é o piso da tolerância do oráculo: um resultado a poucos
+    ulps de zero conta como zero dos dois lados, e a fronteira desloca no
+    máximo ``zona_morta / ações`` no preço — muito abaixo de ``ABS_BREAKEVEN``.
+    """
+
+    def negativo(s: float) -> bool:
+        return f(s) < -zona_morta
+
+    negativo_em_a = negativo(a)
+    assert negativo(b) != negativo_em_a, "o intervalo não contém troca de sinal"
     for _ in range(200):
         meio = (a + b) / 2.0
         if meio in (a, b):
             break
-        if (f(meio) < 0.0) == negativo_em_a:
+        if negativo(meio) == negativo_em_a:
             a = meio
         else:
             b = meio
@@ -432,9 +441,9 @@ def _confere_com_o_oraculo(caso: _Caso, pontos: int) -> None:
         "grade acima do ganho máximo"
     )
     if m.net_breakeven is None:
-        assert max(valores) < 0.0, "breakeven None, mas o líquido chega a zero na grade"
+        assert max(valores) < piso, "breakeven None, mas o líquido chega a zero na grade"
     else:
-        reencontrado = _troca_de_sinal(liquido, *caso.intervalo_do_breakeven)
+        reencontrado = _troca_de_sinal(liquido, *caso.intervalo_do_breakeven, zona_morta=piso)
         assert_close(
             m.net_breakeven,
             reencontrado,

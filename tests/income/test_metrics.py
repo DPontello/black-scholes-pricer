@@ -317,6 +317,25 @@ def test_venda_coberta_sem_breakeven_liquido_quando_passa_do_strike() -> None:
     _close(m.net_max_gain_per_position, -8.2825, "ganho máximo líquido")
 
 
+def test_venda_coberta_breakeven_decidido_em_moeda_e_nao_no_preco_arredondado() -> None:
+    """Custo abaixo da resolução do preço não vira breakeven (achado do Hypothesis).
+
+    Call ATM K = 32 a 0,00 com corretagem de 1e-13 por ordem: montagem = 2e-13 e
+    32 + 2e-15 arredonda para 32 em float64. Em S = K o resultado é -2e-13 < 0:
+    nenhum preço zera o líquido.
+    """
+    quase_sem_custo = make_cost_schedule(
+        option_exchange_fee_rate=0.0,
+        spot_exchange_fee_rate=0.0,
+        brokerage_per_order=1e-13,
+        exercise_brokerage_per_order=0.0,
+        income_tax_rate=0.0,
+    )
+    m = _cc(strike=32.0, premium_per_share=0.0, cost_schedule=quase_sem_custo)
+    assert 32.0 + m.costs.setup.total / 100 == 32.0  # premissa: o custo some no preço
+    assert m.net_breakeven is None
+
+
 def test_venda_coberta_dentro_do_dinheiro() -> None:
     """Strike 30 abaixo do spot 32: ganho máximo = (30 - 32 + 2,50) x 100 = 50,00."""
     m = _cc(strike=30.0, premium_per_share=2.50)
