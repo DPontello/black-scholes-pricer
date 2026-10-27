@@ -1,0 +1,12 @@
+# Tabelas de custos da renda com opções (ADR-0005), uma por vigência.
+# Atualizar = acrescentar uma linha com a nova valid_from; nunca editar código.
+# Taxas em fração DECIMAL; corretagens em reais.
+# Origem da linha de 2025-08-01 (spike de 2026-10-26, decisão da mesa):
+#  - emolumentos de opções 0,1340% por perna: página de tarifas de opções sobre ações da B3,
+#    consultada em 26/10/2026; sem data de vigência publicada; o OC 025/2025-VPC (nova tarifação
+#    do à vista desde 01/08/2025) não mudou derivativos, por isso a vigência adotada é 2025-08-01;
+#  - à vista e exercício 0,0300%: página de tarifas do mercado à vista da B3 (ADTV <= R$ 3 mi);
+#  - corretagem por ordem e de exercício R$ 0,00: informadas pela mesa a partir da conta Necton;
+#  - IR 15%: Lei 11.033/2004, art. 2º, II (estimativa por operação, não cálculo fiscal).
+valid_from,option_exchange_fee_rate,spot_exchange_fee_rate,brokerage_per_order,exercise_brokerage_per_order,income_tax_rate,fonte
+2025-08-01,0.001340,0.000300,0.00,0.00,0.15,spike 2026-10-26 (ADR-0005)

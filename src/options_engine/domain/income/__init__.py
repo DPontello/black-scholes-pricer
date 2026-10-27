@@ -13,6 +13,7 @@ from options_engine.domain.income.costs import (
     estimate_exercise_costs,
     estimate_income_tax,
     estimate_setup_costs,
+    schedule_on,
 )
 from options_engine.domain.income.metrics import (
     IncomeMetrics,
@@ -39,4 +40,5 @@ __all__ = [
     "estimate_income_tax",
     "estimate_setup_costs",
     "excess_over_cdi_annual_252",
+    "schedule_on",
 ]
