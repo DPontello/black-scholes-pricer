@@ -217,11 +217,18 @@ def _initial_guess(
 
     ln(F/K) sai de ``log(s) - log(k)`` (nunca ``log(s_disc / k_disc)``): a
     razão dos descontados pode transbordar ou zerar em entradas extremas.
+
+    O valor-tempo é dividido por um fator de cada vez: o produto
+    ``min(s_disc, k_disc)·sqrt(tau)`` zerava em underflow e vazava
+    ``ZeroDivisionError`` cru (achado da revisão da Sprint 5). Aqui o preço
+    está estritamente entre os limites, o que exige ``s_disc`` e ``k_disc``
+    > 0; um chute grande demais sai ``inf`` e o chamador o limita a
+    ``sigma_max``.
     """
     sqrt_tau = sqrt(tau)
     log_moneyness = log(s) - log(k) + (r - q) * tau
     inflection = sqrt(2.0 * abs(log_moneyness)) / sqrt_tau
-    time_value = (price - lower) * _SQRT_2PI / (min(s_disc, k_disc) * sqrt_tau)
+    time_value = (price - lower) / min(s_disc, k_disc) * _SQRT_2PI / sqrt_tau
     return max(inflection, time_value)
 
 
