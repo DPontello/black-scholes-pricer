@@ -10,8 +10,11 @@ O catálogo espelha a tabela normativa de fronteiras (docs/ARCHITECTURE.md
 exige — nenhuma é especulativa.
 """
 
+from datetime import datetime
+
 __all__ = [
     "DomainError",
+    "DuplicateProfileError",
     "EmptyStrategyError",
     "ExpiredOptionError",
     "InvalidDomainValueError",
@@ -21,7 +24,11 @@ __all__ = [
     "MixedAnnualizationBaseError",
     "MixedExpiryError",
     "MixedUnderlyingError",
+    "NoActiveProfileError",
+    "ProfileFolderUnavailableError",
+    "ProfileLockedError",
     "UnderlyingUnavailableError",
+    "UnknownProfileError",
     "UnknownSymbolError",
     "UnsupportedExerciseStyleError",
 ]
@@ -134,3 +141,38 @@ class UnknownSymbolError(DomainError):
     ou ``None`` vazando pelo port. Declarada aqui porque o catálogo de
     erros é único e canônico.
     """
+
+
+class ProfileFolderUnavailableError(DomainError):
+    """Pasta de perfis fora do ar (nuvem não montada, pendrive removido).
+
+    A mensagem carrega o caminho. Nada é criado em outro lugar e a
+    configuração não muda: perfil é dado do usuário, e trocar a pasta em
+    silêncio esconderia os perfis reais.
+    """
+
+
+class ProfileLockedError(DomainError):
+    """Perfil em uso por outro PC — a trava ainda está dentro do prazo.
+
+    ``machine`` (nome do PC que travou) e ``since`` (quando) viram atributos
+    para o chamador pedir confirmação ao usuário citando os dois. Trava
+    vencida não chega aqui: é ignorada antes.
+    """
+
+    def __init__(self, machine: str, since: datetime) -> None:
+        self.machine = machine
+        self.since = since
+        super().__init__(f"perfil em uso no PC {machine!r} desde {since:%d/%m/%Y} às {since:%H:%M}")
+
+
+class DuplicateProfileError(DomainError):
+    """Já existe um perfil com esse nome."""
+
+
+class UnknownProfileError(DomainError):
+    """Perfil inexistente na pasta de perfis."""
+
+
+class NoActiveProfileError(DomainError):
+    """Operação que exige perfil ativo, sem nenhum selecionado."""
