@@ -441,6 +441,56 @@ def test_ativo_com_book_cruzado_na_fonte_nao_tem_cotacao(
     assert any("book cruzado" in r.getMessage() for r in caplog.records)
 
 
+# --- avisos desviados para quem chama -----------------------------------------------------------
+
+
+def _avisos_de(valores: Mapping[str, RawValue]) -> list[tuple[str, str, str]]:
+    avisos: list[tuple[str, str, str]] = []
+    to_underlying_quote(
+        "PETR4",
+        valores,
+        True,
+        DataSource.AO_VIVO,
+        FALLBACK,
+        warn=lambda ticker, motivo, mensagem: avisos.append((ticker, motivo, mensagem)),
+    )
+    return avisos
+
+
+def test_aviso_de_campo_ilegivel_vai_para_quem_chama_com_o_motivo_sem_o_valor(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        avisos = _avisos_de(campos_ativo(OVD=texto("abc")))
+    assert avisos == [
+        (
+            "PETR4",
+            "valor ilegível no campo OVD",
+            "valor ilegível no campo OVD: 'abc'; campo tratado como ausente",
+        )
+    ]
+    assert not caplog.records  # quem chama assumiu o aviso: o módulo não loga por conta própria
+
+
+def test_aviso_de_negocios_ou_volume_ilegivel_vai_para_quem_chama() -> None:
+    avisos = _avisos_de(campos_ativo(VOL=texto("abc")))
+    assert avisos == [
+        (
+            "PETR4",
+            "valor ilegível no campo VOL",
+            "valor ilegível no campo VOL: 'abc'; ativo sem cotação",
+        )
+    ]
+
+
+def test_aviso_de_book_cruzado_tem_o_mesmo_motivo_com_qualquer_preco() -> None:
+    um = _avisos_de(campos_ativo(OCP=f(52.60), OVD=f(52.52)))
+    outro = _avisos_de(campos_ativo(OCP=f(53.00), OVD=f(52.00)))
+    assert [(t, m) for t, m, _ in um] == [("PETR4", "book cruzado na fonte")]
+    assert [(t, m) for t, m, _ in outro] == [("PETR4", "book cruzado na fonte")]
+    assert um[0][2] == "book cruzado na fonte (bid=52.6, ask=52.52); ativo sem cotação"
+
+
 # --- montagem da cotação ----------------------------------------------------------------------
 
 

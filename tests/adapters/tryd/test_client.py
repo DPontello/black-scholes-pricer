@@ -13,7 +13,7 @@ from options_engine.adapters.outbound.tryd.board import LiveBoard
 from options_engine.adapters.outbound.tryd.client import BridgeHealth, TrydBridgeClient
 from options_engine.adapters.outbound.tryd.settings import TEMPO_CARGA_S
 from options_ponte.protocolo import Assinar, Cancelar, Encerrar, Ping, Pong, Status, Valor
-from tests.adapters.tryd._ponte_falsa import PonteFalsa, esperar, porta_sem_ninguem
+from tests.adapters.tryd._ponte_falsa import PonteFalsa, entregar, esperar, porta_sem_ninguem
 
 AGORA = "2026-10-28T12:03:00-03:00"
 RECONEXAO_S = 0.05  # o padrão é 2 s; o teste não espera isso
@@ -377,6 +377,89 @@ def test_status_perdido_recente_deixa_a_saude_atrasada(ambiente: Ambiente) -> No
     t[0] = 32.0
     ponte.enviar(Status("conectado", None, 4))
     esperar(lambda: cliente.health() is BridgeHealth.CONECTADA)  # o Tryd voltou
+
+
+def _cliente_de_pe(
+    ambiente: Ambiente, t: list[float]
+) -> tuple[PonteFalsa, LiveBoard, TrydBridgeClient]:
+    """Ponte falsa de pé e cliente conectado, com PETR4 assinado e o relógio em ``t``."""
+    ponte = ambiente.ponte()
+    quadro = LiveBoard()
+    cliente = ambiente.cliente(quadro, ponte.porta, monotonic=lambda: t[0])
+    cliente.ensure_subscribed(frozenset({("PETR4", "NEG")}))
+    cliente.start()
+    esperar(lambda: ponte.conexoes() == 1)
+    return ponte, quadro, cliente
+
+
+def test_status_perdido_repetido_por_mais_de_30_s_deixa_a_saude_desconectada(
+    ambiente: Ambiente,
+) -> None:
+    # A ponte de pé com o Tryd fechado repete o Status "perdido" de tempos em tempos: cada um
+    # renova a idade da última mensagem, mas não o prazo de 30 s contado da entrada no estado.
+    t = [0.0]
+    ponte, quadro, cliente = _cliente_de_pe(ambiente, t)
+    ponte.enviar(Status("perdido", "Heartbeat do servidor RTD falhou", 4))
+    esperar(lambda: cliente.health() is BridgeHealth.ATRASADA)  # entrou em t = 0
+    for instante in (9.0, 19.0, 29.0):
+        entregar(
+            ponte, quadro, t, instante, Status("perdido", "Heartbeat do servidor RTD falhou", 4)
+        )
+        assert cliente.health() is BridgeHealth.ATRASADA
+    t[0] = 29.9
+    assert cliente.health() is BridgeHealth.ATRASADA  # última mensagem há 0,9 s; perdido há 29,9 s
+    t[0] = 30.1
+    assert (
+        cliente.health() is BridgeHealth.DESCONECTADA
+    )  # perdido há 30,1 s, mesmo com a ponte falando
+    entregar(ponte, quadro, t, 31.0, Status("perdido", None, 4))
+    assert cliente.health() is BridgeHealth.DESCONECTADA  # o Status seguinte não zera a contagem
+    entregar(ponte, quadro, t, 32.0, Status("conectado", None, 4))
+    assert cliente.health() is BridgeHealth.CONECTADA  # o Tryd voltou
+
+
+def test_status_iniciando_e_perdido_contam_como_um_estado_so_para_o_prazo(
+    ambiente: Ambiente,
+) -> None:
+    t = [0.0]
+    ponte, quadro, cliente = _cliente_de_pe(ambiente, t)
+    ponte.enviar(Status("iniciando", None, 0))
+    esperar(lambda: cliente.health() is BridgeHealth.ATRASADA)
+    entregar(ponte, quadro, t, 20.0, Status("perdido", "RTD caiu", 0))
+    entregar(ponte, quadro, t, 29.9, Status("perdido", "RTD caiu", 0))
+    assert cliente.health() is BridgeHealth.ATRASADA
+    t[0] = 30.1
+    assert cliente.health() is BridgeHealth.DESCONECTADA  # contado do "iniciando" de t = 0
+
+
+def test_status_conectado_zera_a_contagem_do_prazo_de_30_s(ambiente: Ambiente) -> None:
+    t = [0.0]
+    ponte, quadro, cliente = _cliente_de_pe(ambiente, t)
+    ponte.enviar(Status("perdido", None, 1))
+    esperar(lambda: cliente.health() is BridgeHealth.ATRASADA)
+    entregar(ponte, quadro, t, 25.0, Status("conectado", None, 1))
+    assert cliente.health() is BridgeHealth.CONECTADA
+    entregar(ponte, quadro, t, 26.0, Status("perdido", None, 1))  # recomeça em t = 26
+    entregar(ponte, quadro, t, 55.0, Status("perdido", None, 1))
+    # 29 s desde t = 26; contado de t = 0 (sem o "conectado" no meio) já seria DESCONECTADA
+    assert cliente.health() is BridgeHealth.ATRASADA
+    t[0] = 56.1
+    assert cliente.health() is BridgeHealth.DESCONECTADA
+
+
+def test_status_perdido_de_uma_conexao_anterior_nao_conta_para_o_prazo_da_nova(
+    ambiente: Ambiente,
+) -> None:
+    t = [0.0]
+    ponte, quadro, cliente = _cliente_de_pe(ambiente, t)
+    ponte.enviar(Status("perdido", None, 1))
+    esperar(lambda: cliente.health() is BridgeHealth.ATRASADA)
+    t[0] = 20.0
+    ponte.derrubar_clientes()
+    esperar(lambda: ponte.total_aceitas == 2)  # a ponte pode ser outra: o estado antigo não vale
+    esperar(lambda: ponte.conexoes() == 1)
+    entregar(ponte, quadro, t, 40.0)  # sem Status nenhum nesta conexão: só um Valor
+    assert cliente.health() is BridgeHealth.CONECTADA
 
 
 def test_status_iniciando_deixa_a_saude_atrasada_ate_o_tryd_conectar(ambiente: Ambiente) -> None:

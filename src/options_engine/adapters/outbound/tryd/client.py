@@ -89,6 +89,9 @@ class TrydBridgeClient:
         self._state_lock = threading.Lock()
         self._last_message_at: float | None = None
         self._tryd_state: str | None = None  # `tryd` do último Status desta conexão
+        # Desde quando (relógio monotônico) o Tryd está sem dado (iniciando/perdido) sem nenhum
+        # Status "conectado" no meio; `None` quando conectado ou sem Status nesta conexão.
+        self._tryd_sem_dado_desde: float | None = None
         self._last_status: tuple[str, str | None] | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -141,16 +144,29 @@ class TrydBridgeClient:
         Só ``Status(tryd="conectado")`` (ou nenhum Status ainda nesta conexão, com ``Valor``/
         ``Pong`` chegando) permite CONECTADA: o último Status ``iniciando`` ou ``perdido``
         limita a ATRASADA, porque a ponte está no ar mas o Tryd não entrega dado de verdade.
+
+        Com o Tryd fechado a ponte segue de pé e repete esse Status de tempos em tempos, o que
+        renova a idade da última mensagem: pela idade, a saúde ficaria ATRASADA para sempre e o
+        app nunca recuaria para o fim de dia. Por isso, se o último Status é ``iniciando`` ou
+        ``perdido`` e nenhum ``conectado`` veio depois, a saúde vira DESCONECTADA quando passam
+        ``PONTE_PERDIDA_S`` desde a ENTRADA nesse estado (``iniciando`` e ``perdido`` contam como
+        um estado só; a repetição do Status não reinicia o prazo; um ``conectado`` o zera).
         """
         with self._state_lock:
             last_message_at = self._last_message_at
             tryd_state = self._tryd_state
+            sem_dado_desde = self._tryd_sem_dado_desde
         if last_message_at is None:
             return BridgeHealth.DESCONECTADA
-        age_s = self._monotonic() - last_message_at
+        now = self._monotonic()
+        age_s = now - last_message_at
         if age_s >= PONTE_PERDIDA_S:
             return BridgeHealth.DESCONECTADA
-        if age_s >= PONTE_ATRASADA_S or tryd_state in _TRYD_SEM_DADO:
+        if tryd_state in _TRYD_SEM_DADO:
+            if sem_dado_desde is not None and now - sem_dado_desde >= PONTE_PERDIDA_S:
+                return BridgeHealth.DESCONECTADA
+            return BridgeHealth.ATRASADA
+        if age_s >= PONTE_ATRASADA_S:
             return BridgeHealth.ATRASADA
         return BridgeHealth.CONECTADA
 
@@ -214,6 +230,7 @@ class TrydBridgeClient:
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         with self._state_lock:
             self._tryd_state = None  # a ponte pode ser outra: o Status antigo não vale
+            self._tryd_sem_dado_desde = None
         with self._conn_lock:
             self._sock = sock
             if self._wanted:
@@ -270,6 +287,10 @@ class TrydBridgeClient:
         with self._state_lock:
             self._last_message_at = now
             if isinstance(mensagem, Status):
+                if mensagem.tryd not in _TRYD_SEM_DADO:
+                    self._tryd_sem_dado_desde = None
+                elif self._tryd_state not in _TRYD_SEM_DADO:  # entrou agora no estado sem dado
+                    self._tryd_sem_dado_desde = now
                 self._tryd_state = mensagem.tryd
         if isinstance(mensagem, Valor):
             self._board.apply(mensagem)

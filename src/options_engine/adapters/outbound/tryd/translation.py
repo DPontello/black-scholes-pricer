@@ -26,7 +26,7 @@ a hora de agora seria uma observação inventada.
 
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, tzinfo
 from math import isfinite
 
@@ -36,9 +36,13 @@ from options_engine.domain.model.chain import OptionQuote, RejectedSeries
 from options_engine.domain.model.contracts import OptionContract
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 
-__all__ = ["parse_tryd_timestamp", "to_option_quote", "to_underlying_quote"]
+__all__ = ["WarnFn", "parse_tryd_timestamp", "to_option_quote", "to_underlying_quote"]
 
 _log = logging.getLogger(__name__)
+
+# (ticker, motivo, mensagem): o motivo é a categoria do problema, sem o valor (agrupa o que se
+# repete a cada consulta); a mensagem é o texto completo para o log.
+WarnFn = Callable[[str, str, str], None]
 
 # [0-9], não \d: dígitos de outros alfabetos (fullwidth, árabe-índico) não são do Tryd.
 _NUMERO_PT_BR = re.compile(r"[0-9]+(\.[0-9]{3})*,[0-9]+")
@@ -138,17 +142,23 @@ def _is_crossed(bid: float | None, ask: float | None) -> bool:
     return bid is not None and ask is not None and not (bid <= ask)
 
 
+def _log_warning(ticker: str, motivo: str, mensagem: str) -> None:
+    _log.warning("%s: %s", ticker, mensagem)
+
+
 def to_underlying_quote(
     ticker: str,
     values: Mapping[str, RawValue],
     loaded: bool,
     source: DataSource,
     fallback_time: datetime,
+    warn: WarnFn = _log_warning,
 ) -> UnderlyingQuote | None:
     """Cotação do ativo-objeto; ``None`` se não carregado, sem valores, ou dado incoerente.
 
     Preço ilegível deixa só aquele campo ausente. ``NEG``/``VOL`` ilegíveis e book cruzado na
-    fonte tiram a cotação inteira, com o motivo no log.
+    fonte tiram a cotação inteira, com o motivo no log. Quem consulta em laço (polling) passa
+    ``warn`` para limitar a repetição do mesmo aviso; por padrão cada um vai ao log.
     """
     if not loaded or not values:
         return None
@@ -157,20 +167,24 @@ def to_underlying_quote(
         try:
             prices[campo] = _read_price(campo, values)
         except _ValorIlegivel as erro:
-            _log.warning("%s: %s; campo tratado como ausente", ticker, erro)
+            warn(
+                ticker,
+                f"valor ilegível no campo {erro.campo}",
+                f"{erro}; campo tratado como ausente",
+            )
             prices[campo] = None
     try:
         trades = _read_trades(values)
         volume = _read_volume(values)
     except _ValorIlegivel as erro:
-        _log.warning("%s: %s; ativo sem cotação", ticker, erro)
+        warn(ticker, f"valor ilegível no campo {erro.campo}", f"{erro}; ativo sem cotação")
         return None
     if _is_crossed(prices["OCP"], prices["OVD"]):
-        _log.warning(
-            "%s: book cruzado na fonte (bid=%r, ask=%r); ativo sem cotação",
+        warn(
             ticker,
-            prices["OCP"],
-            prices["OVD"],
+            "book cruzado na fonte",
+            f"book cruzado na fonte (bid={prices['OCP']!r}, ask={prices['OVD']!r}); "
+            "ativo sem cotação",
         )
         return None
     return UnderlyingQuote(

@@ -16,18 +16,23 @@ ROADMAP S3: port desenhado a partir do mock). Por isso:
   compounding explícito (CONVENTIONS §3).
 """
 
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from typing import Protocol, runtime_checkable
 
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.market import MarketSnapshot
 from options_engine.domain.model.profile import Profile, ProfileEntry
+from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 
 __all__ = [
     "Clock",
+    "LiveFeedPort",
     "MarketDataPort",
+    "MarketPort",
     "OptionChainPort",
     "ProfileRepository",
+    "QuoteBoardPort",
     "RandomSource",
     "TradingCalendar",
 ]
@@ -94,6 +99,49 @@ class OptionChainPort(Protocol):
     """
 
     def get_chain(self, underlying_symbol: str) -> OptionChain: ...
+
+
+@runtime_checkable
+class QuoteBoardPort(Protocol):
+    """Painel de cotações dos ativos-objeto, cada uma rotulada pela fonte.
+
+    Contrato semântico:
+
+    1. o resultado traz TODOS os símbolos pedidos: ``UnderlyingQuote`` ou o
+       MOTIVO (``str``) de não haver cotação — ``"ativo desconhecido"`` (ticker
+       fora do cadastro e dos arquivos da B3, em geral digitado errado) ou
+       ``"aguardando dados"`` (conhecido, mas a fonte ainda não entregou); o
+       motivo é texto para a tela;
+    2. nenhuma cotação sai sem ``source``, e ``AO_VIVO``/``ATRASADO`` só com
+       dado que a fonte ao vivo de fato entregou: dado parado nunca se passa
+       por ao vivo;
+    3. lado ausente (``bid``, ``ask``, ``last``, ``previous_close``) é
+       ``None``, NUNCA ``0`` (ADR-0003);
+    4. consulta, não comando: motivo é valor de retorno, nunca exceção.
+    """
+
+    def get_quotes(self, symbols: Sequence[str]) -> Mapping[str, UnderlyingQuote | str]: ...
+
+
+@runtime_checkable
+class LiveFeedPort(Protocol):
+    """Fonte ao vivo: o que acompanhar e em que estado ela está.
+
+    ``watch`` diz à fonte quais ativos e quais cadeias acompanhar (a
+    assinatura é a lista inteira: o que sai dela é cancelado; listas vazias
+    cancelam tudo). ``health`` é o rótulo que o dado dela tem agora:
+    ``AO_VIVO``, ``ATRASADO`` ou ``FIM_DE_DIA`` (sem fonte ao vivo; o app cai
+    para os arquivos da B3).
+    """
+
+    def watch(self, underlyings: Sequence[str], chain_symbols: Sequence[str]) -> None: ...
+
+    def health(self) -> DataSource: ...
+
+
+@runtime_checkable
+class MarketPort(QuoteBoardPort, LiveFeedPort, OptionChainPort, Protocol):
+    """Tudo o que o serviço de mercado consome: cotações, assinatura e cadeia."""
 
 
 @runtime_checkable

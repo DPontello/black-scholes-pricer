@@ -5,11 +5,13 @@ Fala o protocolo de verdade (``options_ponte.protocolo``): guarda o que recebe, 
 """
 
 import contextlib
+import itertools
 import socket
 import threading
 import time
 from collections.abc import Callable
 
+from options_engine.adapters.outbound.tryd.board import LiveBoard
 from options_ponte.protocolo import (
     Assinar,
     Encerrar,
@@ -17,6 +19,7 @@ from options_ponte.protocolo import (
     Mensagem,
     Ping,
     Pong,
+    Status,
     Valor,
     codificar,
     decodificar,
@@ -162,3 +165,30 @@ def _fechar(conexao: socket.socket) -> None:
     with contextlib.suppress(OSError):
         conexao.shutdown(socket.SHUT_RDWR)
     conexao.close()
+
+
+_sentinelas = itertools.count(1)
+
+
+def entregar(
+    ponte: PonteFalsa,
+    quadro: LiveBoard,
+    t: list[float],
+    instante: float,
+    *mensagens: Status | Valor | Pong,
+) -> None:
+    """Move o relógio do cliente (``t``) para ``instante``, manda as mensagens e espera o cliente.
+
+    A mensagem sentinela (um ``NEG`` novo de PETR4, que o teste precisa ter assinado) vai por
+    último: o cliente trata as linhas em ordem, então quando ela aparece no quadro tudo o que
+    veio antes já foi tratado.
+    """
+    t[0] = instante
+    sentinela = next(_sentinelas)
+    ponte.enviar(*mensagens, Valor("PETR4", "NEG", "int", sentinela, "2026-10-28T12:03:00-03:00"))
+    esperar(lambda: _neg_de_petr4(quadro) == sentinela)
+
+
+def _neg_de_petr4(quadro: LiveBoard) -> float | int | str | None:
+    raw = quadro.values("PETR4").get("NEG")
+    return None if raw is None else raw.value
