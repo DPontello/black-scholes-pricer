@@ -28,3 +28,7 @@ htmlcov/
 # Spike Tryd (docs/spikes/tryd-intraday.md): venv com pywin32 e capturas reais
 .venv-tryd/
 captura*.json
+
+# App web: build do frontend servido pelo FastAPI e dependências do npm
+src/options_engine/adapters/inbound/web/static/
+frontend/node_modules/

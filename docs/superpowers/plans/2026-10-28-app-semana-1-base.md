@@ -50,7 +50,7 @@
 - Produces: `ERROR_STATUS: dict[type[Exception], int]` e `error_body(exc: Exception) -> dict[str, object]` em `errors.py`. `DomainError` vira `{"erro": <nome da classe>, "mensagem": str(exc)}`, com status 422 por padrão e `UnknownSymbolError` → 404. Tasks seguintes acrescentam entradas ao dicionário.
 - Contrato novo do import-linter: `forbidden`, nome `"pywin32 só na ponte do Tryd"`, `source_modules = ["options_engine"]`, `forbidden_modules = ["win32com", "pythoncom", "pywintypes", "win32api"]`.
 
-- [ ] **Step 1: Instalar o extra no venv local:** `.venv/bin/pip install -e ".[dev,app]"`. Esperado: termina sem erro.
+- [ ] **Step 1: Editar o `pyproject.toml`** (versão, extra `app`, `httpx` no `dev`, contrato do import-linter) **e instalar** no venv local: `.venv/bin/pip install -e ".[dev,app]"`. Esperado: termina sem erro.
 - [ ] **Step 2: Escrever os testes que falham**
 
 ```python
@@ -252,7 +252,7 @@ def test_trava_de_outro_pc_bloqueia_expira_em_12h_e_cede_ao_forcar(tmp_path: Pat
 **Interfaces:**
 - Consumes: `parse_cotahist` e `load_instruments` (validação completa do conteúdo); `Clock`; `TradingCalendar`.
 - Produces: `B3FileKind(Enum)`: `COTAHIST = "cotahist"`, `CADASTRO = "cadastro"`.
-- Produces: `ImportedFile(kind: B3FileKind, name: str, reference_date: date | None, imported_at: datetime, path: Path)`.
+- Produces: `ImportedFile(kind: B3FileKind, name: str, reference_date: date | None, first_date: date | None, imported_at: datetime, path: Path)`. Em COTAHIST, `first_date` é o menor pregão do arquivo; em CADASTRO, `None`. A Task 12 usa `(menor first_date, maior reference_date)` dos COTAHIST como faixa.
 - Produces: `B3FileRejectedError(Exception)`, erro de arquivo do adapter, fora do catálogo de domínio, como os `SourceFileError`.
 - Produces: `B3FileLibrary(root: Path, clock: Clock)` com:
   - `import_file(name: str, content: bytes) -> ImportedFile`;
@@ -668,7 +668,7 @@ Mais:
   - porta preferida livre → ela mesma; ocupada (socket aberto no teste) → outra;
   - comandos de janela para Windows com Edge, Linux com Chrome flatpak e nenhum navegador → `None`;
   - `platform_config_dir("Linux", {"XDG_CONFIG_HOME": "/x"}, Path("/h")) == Path("/x/painel-opcoes")` e o equivalente do Windows com `APPDATA`;
-  - `main(["app", "--sem-janela", "--sem-ponte"])` sem a pasta `static` → código 2.
+  - `main(["app", "--sem-janela", "--sem-ponte"])` sem a pasta `static` → código 2. A pasta vem de `default_static_dir() -> Path` em `launch.py`, e o teste a substitui com `monkeypatch` por um caminho inexistente, para não depender do build local.
 - [ ] **Step 2: Rodar e ver falhar:** `.venv/bin/python -m pytest tests/web/test_launch.py tests/config -q`.
 - [ ] **Step 3: Implementar.**
 - [ ] **Step 4: Rodar os testes.** Esperado: PASS.

@@ -25,7 +25,7 @@ jobs:
           cache: pip
 
       - name: Instalar pacote + dependências de dev
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install -e ".[dev,app]"
 
       - name: Ruff — lint
         run: ruff check .
