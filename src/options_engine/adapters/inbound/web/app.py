@@ -11,9 +11,16 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from options_engine.adapters.inbound.web.errors import ERROR_STATUS, error_body
+from options_engine.adapters.inbound.web.errors import (
+    ERROR_STATUS,
+    error_body,
+    http_error_body,
+    validation_error_body,
+)
 
 __all__ = ["create_app"]
 
@@ -61,6 +68,18 @@ def create_app(routers: Sequence[APIRouter], static_dir: Path | None = None) -> 
 
     for tipo, status in ERROR_STATUS.items():
         app.add_exception_handler(tipo, _handler_de_erro(status))
+
+    # Mesmo molde ``{"erro", "mensagem"}`` dos erros de domínio: o frontend trata um formato só.
+    @app.exception_handler(RequestValidationError)
+    def requisicao_invalida(_requisicao: Request, exc: RequestValidationError) -> Response:
+        return JSONResponse(validation_error_body(exc), status_code=422)
+
+    @app.exception_handler(StarletteHTTPException)
+    def erro_http(_requisicao: Request, exc: StarletteHTTPException) -> Response:
+        # Os cabeçalhos do erro (ex.: ``Allow`` do 405) seguem na resposta.
+        return JSONResponse(
+            http_error_body(exc.status_code), status_code=exc.status_code, headers=exc.headers
+        )
 
     @app.get("/api/saude")
     def saude() -> dict[str, str]:
