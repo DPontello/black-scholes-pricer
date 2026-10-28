@@ -89,7 +89,9 @@ class Ponte:
 
     Guarda o último ``Valor`` de cada tópico: quem assina um tópico que já estava assinado
     (o app que reconectou, um segundo cliente) recebe esse valor, com o carimbo original,
-    em vez de esperar o tópico mudar. A assinatura repetida não chama ``conectar`` de novo.
+    em vez de esperar o tópico mudar. A assinatura repetida não chama ``conectar`` de novo. O
+    ``inicial`` vai junto: o valor do ``ConnectData`` continua inicial na reemissão até um
+    ``RefreshData`` trazer valor novo.
     """
 
     def __init__(
@@ -168,13 +170,13 @@ class Ponte:
         ]
         for posicao, (id_, (ticker, campo)) in enumerate(novos):
             try:
-                inicial = self._sessao.conectar(id_, topico_rtd(ticker, campo))
+                bruto_inicial = self._sessao.conectar(id_, topico_rtd(ticker, campo))
             except Exception as erro:
                 # o que não conectou não fica registrado: o app pode pedir de novo
                 self._registro.remover(topico for _, topico in novos[posicao:])
                 mensagens.append(self._perdeu(erro))
                 return mensagens
-            mensagens.append(self._guardar_valor(ticker, campo, inicial))
+            mensagens.append(self._guardar_valor(ticker, campo, bruto_inicial, inicial=True))
         if novos:
             self._marcar_conectado()
         return mensagens
@@ -242,10 +244,16 @@ class Ponte:
     def _status(self, motivo: str | None) -> Status:
         return Status(self._estado, motivo, self._registro.total)
 
-    def _guardar_valor(self, ticker: str, campo: str, bruto: object) -> Valor:
-        """O ``Valor`` do bruto recebido, já guardado como o último do tópico."""
+    def _guardar_valor(
+        self, ticker: str, campo: str, bruto: object, *, inicial: bool = False
+    ) -> Valor:
+        """O ``Valor`` do bruto recebido, já guardado como o último do tópico.
+
+        ``inicial`` marca o que veio do ``ConnectData``; o valor de um ``RefreshData`` o
+        substitui, e daí em diante o guardado (e o reemitido na reassinatura) é não inicial.
+        """
         tipo_valor, valor = classificar_valor(bruto)
-        recebido = Valor(ticker, campo, tipo_valor, valor, self._agora_iso())
+        recebido = Valor(ticker, campo, tipo_valor, valor, self._agora_iso(), inicial)
         self._ultimos[(ticker, campo)] = recebido
         return recebido
 

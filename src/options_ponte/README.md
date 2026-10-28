@@ -8,7 +8,7 @@ importa em qualquer sistema.
 
 | Módulo | Papel |
 |---|---|
-| `protocolo.py` | mensagens (`assinar`, `cancelar`, `valor`, `status`, `ping`/`pong`, `encerrar`), `PROGID`, `CLSID` |
+| `protocolo.py` | mensagens (`assinar`, `cancelar`, `valor`, `status`, `ping`/`pong`, `encerrar`), `PROGID`, `CLSID`, porta/limite/campos padrão |
 | `assinaturas.py` | ids dos tópicos assinados (limite de tópicos) |
 | `servidor.py` | `Ponte` (estado, cache do último valor, heartbeat) e `ServidorTcp` |
 | `rtd.py` | `SessaoRtdCom` (cliente RTD via COM), `diagnostico`, `autoteste` |
@@ -16,7 +16,9 @@ importa em qualquer sistema.
 
 A ponte **não interpreta** o valor que o Tryd entrega: repassa com o tipo de origem
 (`tipo_valor`: `float`, `int`, `str`, `none`, `outro`). Os zeros que o RTD manda antes da carga e
-o texto de hora são tratados pelo app.
+o texto de hora são tratados pelo app. A ponte só marca `"inicial": true` no `valor` que veio do
+`ConnectData` (o zero de antes da carga) e que nenhuma atualização substituiu ainda; a chave só
+aparece quando verdadeira.
 
 ## Comandos
 

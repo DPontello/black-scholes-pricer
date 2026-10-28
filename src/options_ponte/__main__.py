@@ -18,6 +18,9 @@ from typing import TextIO
 
 from options_ponte import rtd
 from options_ponte.protocolo import (
+    CAMPOS_ATIVO,
+    LIMITE_TOPICOS,
+    PORTA_PONTE,
     Assinar,
     ErroDeProtocolo,
     Status,
@@ -26,10 +29,6 @@ from options_ponte.protocolo import (
     decodificar,
 )
 from options_ponte.servidor import Ponte, ServidorTcp
-
-PORTA_PADRAO = 8766
-LIMITE_PADRAO = 600
-CAMPOS_PADRAO = ("ULT", "OCP", "OVD", "NEG", "VOL", "FEC", "HOR", "DAT")
 
 _ESPERA_CONEXAO_S = 5.0
 _FATIA_DE_LEITURA_S = 0.2  # a leitura volta ao laço nesse intervalo para ver o fim do prazo
@@ -78,16 +77,18 @@ def montar_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="comando", required=True)
 
     servir = sub.add_parser("servir", help="serve as cotações do Tryd por TCP local (127.0.0.1)")
-    servir.add_argument("--porta", type=_porta, default=PORTA_PADRAO)
-    servir.add_argument("--limite", type=_limite, default=LIMITE_PADRAO, help="tópicos simultâneos")
+    servir.add_argument("--porta", type=_porta, default=PORTA_PONTE)
+    servir.add_argument(
+        "--limite", type=_limite, default=LIMITE_TOPICOS, help="tópicos simultâneos"
+    )
 
     sub.add_parser("diagnostico", help="registro, type library e ambiente (só leitura)")
     sub.add_parser("autoteste", help="cliente RTD contra servidor falso, sem Tryd")
 
     espiar = sub.add_parser("espiar", help="assina ativos na ponte e imprime o que ela devolve")
-    espiar.add_argument("--porta", type=_porta, default=PORTA_PADRAO)
+    espiar.add_argument("--porta", type=_porta, default=PORTA_PONTE)
     espiar.add_argument("--ativos", type=_lista, required=True, help="ex.: PETR4,VALE3")
-    espiar.add_argument("--campos", type=_lista, default=CAMPOS_PADRAO, help="ex.: ULT,OCP,OVD")
+    espiar.add_argument("--campos", type=_lista, default=CAMPOS_ATIVO, help="ex.: ULT,OCP,OVD")
     espiar.add_argument("--segundos", type=_segundos, default=10.0)
 
     falso = sub.add_parser("servidor-falso", help=argparse.SUPPRESS)  # uso interno do autoteste

@@ -10,7 +10,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 
 __all__ = [
+    "CAMPOS_ATIVO",
+    "CAMPOS_OPCAO",
     "CLSID",
+    "LIMITE_TOPICOS",
+    "PORTA_PONTE",
     "PROGID",
     "TRYD_CONECTADO",
     "TRYD_INICIANDO",
@@ -33,6 +37,12 @@ __all__ = [
 PROGID = "RTDTrading.RtdServer"
 CLSID = "{272D2E65-05FB-4500-BD7B-5905D5B0A1B8}"
 
+# Padrões compartilhados pela ponte (CLI) e pelo app (settings do adapter do Tryd).
+PORTA_PONTE = 8766
+LIMITE_TOPICOS = 600
+CAMPOS_ATIVO = ("ULT", "OCP", "OVD", "NEG", "VOL", "FEC", "HOR", "DAT")
+CAMPOS_OPCAO = ("ULT", "OCP", "OVD", "NEG", "VOL", "HOR", "DAT")
+
 TRYD_INICIANDO = "iniciando"
 TRYD_CONECTADO = "conectado"
 TRYD_PERDIDO = "perdido"
@@ -50,13 +60,19 @@ def topico_rtd(ticker: str, campo: str) -> tuple[str, str]:
 
 @dataclass(frozen=True, slots=True)
 class Valor:
-    """Valor de um tópico, como veio do RTD. ``tipo_valor``: float, int, str, none ou outro."""
+    """Valor de um tópico, como veio do RTD. ``tipo_valor``: float, int, str, none ou outro.
+
+    ``inicial``: é o valor que o ``ConnectData`` devolveu ao assinar (no RTD, zero até o Tryd
+    carregar o tópico), ainda sem nenhuma atualização do servidor. Na linha JSON a chave só
+    aparece quando verdadeira; ausente vale falso.
+    """
 
     ticker: str
     campo: str
     tipo_valor: str
     valor: float | int | str | None
     instante: str
+    inicial: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +127,8 @@ def codificar(msg: Mensagem) -> bytes:
     (não é JSON estrito, mas os dois lados são Python e ``decodificar`` os lê de volta).
     """
     carga = {"tipo": _NOMES[type(msg)], **asdict(msg)}
+    if isinstance(msg, Valor) and not msg.inicial:  # a chave só vai quando verdadeira
+        del carga["inicial"]
     return (json.dumps(carga, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
 
 
@@ -187,12 +205,16 @@ def _montar_valor(bruto: Mapping[str, object]) -> Valor:
     valor = bruto["valor"]
     if isinstance(valor, bool) or not (valor is None or isinstance(valor, float | int | str)):
         raise ErroDeProtocolo(f"campo 'valor' deve ser número, texto ou nulo; recebido {valor!r}")
+    inicial = bruto.get("inicial", False)
+    if not isinstance(inicial, bool):
+        raise ErroDeProtocolo(f"campo 'inicial' deve ser booleano; recebido {inicial!r}")
     return Valor(
         _texto(bruto, "ticker"),
         _texto(bruto, "campo"),
         _texto(bruto, "tipo_valor"),
         valor,
         _texto(bruto, "instante"),
+        inicial,
     )
 
 

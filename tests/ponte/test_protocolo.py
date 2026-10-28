@@ -7,7 +7,11 @@ from decimal import Decimal
 import pytest
 
 from options_ponte.protocolo import (
+    CAMPOS_ATIVO,
+    CAMPOS_OPCAO,
     CLSID,
+    LIMITE_TOPICOS,
+    PORTA_PONTE,
     PROGID,
     Assinar,
     Cancelar,
@@ -34,6 +38,8 @@ MENSAGENS: list[tuple[Mensagem, str]] = [
     (Valor("PETR4", "DAT", "str", "28/10/2026", INSTANTE), "valor"),
     (Valor("PETRK500", "OCP", "none", None, INSTANTE), "valor"),
     (Valor("PETRK500", "OVD", "outro", "Decimal('1.5')", INSTANTE), "valor"),
+    (Valor("PETRK500", "OCP", "float", 0.0, INSTANTE, inicial=True), "valor"),
+    (Valor("PETRK500", "OCP", "float", 4.42, INSTANTE, inicial=False), "valor"),
     (Status("iniciando", None, 0), "status"),
     (Status("conectado", None, 12), "status"),
     (Status("perdido", "Heartbeat do servidor RTD falhou", 12), "status"),
@@ -88,6 +94,46 @@ def test_decodificar_devolve_topicos_como_tuplas() -> None:
     assert isinstance(mensagem, Assinar)
     assert isinstance(mensagem.topicos, tuple)
     assert isinstance(mensagem.topicos[0], tuple)
+
+
+def test_valor_nasce_nao_inicial() -> None:
+    assert Valor("PETR4", "ULT", "float", 38.42, INSTANTE).inicial is False
+
+
+def test_inicial_so_vai_na_linha_quando_verdadeiro() -> None:
+    comum = json.loads(codificar(Valor("PETR4", "ULT", "float", 38.42, INSTANTE)))
+    inicial = json.loads(codificar(Valor("PETR4", "ULT", "float", 0.0, INSTANTE, inicial=True)))
+    assert "inicial" not in comum
+    assert inicial["inicial"] is True
+
+
+def test_decodificar_valor_sem_a_chave_inicial_devolve_nao_inicial() -> None:
+    linha = (
+        b'{"tipo":"valor","ticker":"PETR4","campo":"ULT","tipo_valor":"float",'
+        b'"valor":38.42,"instante":"x"}'
+    )
+    volta = decodificar(linha)
+    assert volta == Valor("PETR4", "ULT", "float", 38.42, "x")
+    assert isinstance(volta, Valor)
+    assert volta.inicial is False
+
+
+def test_decodificar_aceita_inicial_falso_explicito() -> None:
+    linha = (
+        b'{"tipo":"valor","ticker":"PETR4","campo":"ULT","tipo_valor":"float",'
+        b'"valor":38.42,"instante":"x","inicial":false}'
+    )
+    assert decodificar(linha) == Valor("PETR4", "ULT", "float", 38.42, "x", inicial=False)
+
+
+@pytest.mark.parametrize("inicial", ["1", "0", '"sim"', '"true"', "null", "[true]"])
+def test_decodificar_recusa_inicial_que_nao_e_booleano(inicial: str) -> None:
+    linha = (
+        b'{"tipo":"valor","ticker":"PETR4","campo":"ULT","tipo_valor":"float",'
+        b'"valor":38.42,"instante":"x","inicial":' + inicial.encode() + b"}"
+    )
+    with pytest.raises(ErroDeProtocolo, match="inicial"):
+        decodificar(linha)
 
 
 def test_valor_nao_finito_sobrevive_a_ida_e_volta() -> None:
@@ -164,3 +210,9 @@ def test_texto_que_nao_vira_utf8_sai_como_outro_e_cabe_na_linha() -> None:
     volta = decodificar(codificar(Valor("PETR4", "HOR", tipo, valor, INSTANTE)))
     assert isinstance(volta, Valor)
     assert volta.valor == valor
+
+
+def test_constantes_da_ponte_sao_a_fonte_unica_dos_padroes() -> None:
+    assert (PORTA_PONTE, LIMITE_TOPICOS) == (8766, 600)
+    assert CAMPOS_ATIVO == ("ULT", "OCP", "OVD", "NEG", "VOL", "FEC", "HOR", "DAT")
+    assert CAMPOS_OPCAO == ("ULT", "OCP", "OVD", "NEG", "VOL", "HOR", "DAT")

@@ -120,7 +120,7 @@ def _status(mensagens: list[Mensagem]) -> list[Status]:
 def test_assinar_conecta_com_o_topico_rtd_e_emite_o_valor_inicial_como_float() -> None:
     ponte, sessao, _ = _ponte()
     mensagens = ponte.tratar(Assinar((PETR4_ULT,)))
-    assert mensagens == [Valor("PETR4", "ULT", "float", 38.42, AGORA)]
+    assert mensagens == [Valor("PETR4", "ULT", "float", 38.42, AGORA, inicial=True)]
     assert [strings for _, strings in sessao.conectados] == [("PETR4_B_0", "ULT")]
 
 
@@ -140,7 +140,7 @@ def test_assinar_classifica_o_tipo_do_valor_inicial(
     ponte, sessao, _ = _ponte()
     sessao.iniciais[("PETR4_B_0", "NEG")] = bruto
     assert ponte.tratar(Assinar((("PETR4", "NEG"),))) == [
-        Valor("PETR4", "NEG", tipo_valor, valor, AGORA)
+        Valor("PETR4", "NEG", tipo_valor, valor, AGORA, inicial=True)
     ]
 
 
@@ -163,9 +163,40 @@ def test_assinar_de_novo_devolve_o_ultimo_valor_atualizado_com_o_carimbo_origina
     ponte.ciclo()
     carimbo[0] = "2026-10-28T12:09:00-03:00"  # a nova assinatura não reescreve o instante
     assert ponte.tratar(Assinar((PETR4_ULT,))) == [
-        Valor("PETR4", "ULT", "float", 38.5, "2026-10-28T12:00:05-03:00")
+        Valor("PETR4", "ULT", "float", 38.5, "2026-10-28T12:00:05-03:00")  # não inicial
     ]
     assert len(sessao.conectados) == 1
+
+
+def test_valor_do_conectar_sai_inicial_e_o_reemitido_sem_atualizar_continua_inicial() -> None:
+    ponte, sessao, _ = _ponte()
+    sessao.iniciais[("PETR4_B_0", "ULT")] = 0.0  # o zero do RTD antes de o Tryd carregar
+    primeiro = _valores(ponte.tratar(Assinar((PETR4_ULT,))))
+    assert primeiro == [Valor("PETR4", "ULT", "float", 0.0, AGORA, inicial=True)]
+    assert _valores(ponte.tratar(Assinar((PETR4_ULT,)))) == primeiro  # ninguém atualizou
+
+
+def test_depois_de_atualizar_o_reemitido_deixa_de_ser_inicial() -> None:
+    ponte, sessao, relogio = _ponte()
+    ponte.tratar(Assinar((PETR4_ULT,)))
+    sessao.avisar((sessao.conectados[0][0], 38.5))
+    relogio.agora = 0.1
+    chegou = _valores(ponte.ciclo())
+    assert chegou == [Valor("PETR4", "ULT", "float", 38.5, AGORA, inicial=False)]  # do atualizar
+    assert _valores(ponte.tratar(Assinar((PETR4_ULT,)))) == chegou  # a reassinatura repete isso
+
+
+def test_a_atualizacao_de_um_topico_nao_tira_o_inicial_dos_outros() -> None:
+    ponte, sessao, relogio = _ponte()
+    ponte.tratar(Assinar((PETR4_ULT, PETR4_OCP)))
+    ids = {strings: id_ for id_, strings in sessao.conectados}
+    sessao.avisar((ids[("PETR4_B_0", "ULT")], 38.5))
+    relogio.agora = 0.1
+    ponte.ciclo()
+    reemitidos = {
+        (v.campo, v.inicial) for v in _valores(ponte.tratar(Assinar((PETR4_ULT, PETR4_OCP))))
+    }
+    assert reemitidos == {("ULT", False), ("OCP", True)}
 
 
 def test_repeticao_no_mesmo_lote_de_topico_ja_assinado_devolve_o_valor_uma_vez() -> None:
@@ -181,7 +212,9 @@ def test_cancelar_descarta_o_valor_guardado_e_assinar_de_novo_reconecta() -> Non
     ponte.tratar(Cancelar((PETR4_ULT,)))
     assert PETR4_ULT not in ponte._ultimos  # sem isso o valor ficaria guardado para sempre
     sessao.iniciais[("PETR4_B_0", "ULT")] = 39.0  # valor novo no servidor
-    assert ponte.tratar(Assinar((PETR4_ULT,))) == [Valor("PETR4", "ULT", "float", 39.0, AGORA)]
+    assert ponte.tratar(Assinar((PETR4_ULT,))) == [
+        Valor("PETR4", "ULT", "float", 39.0, AGORA, inicial=True)  # conectou de novo: inicial
+    ]
     assert len(sessao.conectados) == 2
 
 
@@ -266,7 +299,7 @@ def test_falha_do_servidor_ao_conectar_vira_status_perdido_e_desfaz_o_que_nao_co
     ponte, sessao, _ = _ponte()
     sessao.falha_na_conexao = 2
     mensagens = ponte.tratar(Assinar((PETR4_ULT, PETR4_OCP, VALE3_ULT)))
-    assert _valores(mensagens) == [Valor("PETR4", "ULT", "float", 38.42, AGORA)]
+    assert _valores(mensagens) == [Valor("PETR4", "ULT", "float", 38.42, AGORA, inicial=True)]
     (status,) = _status(mensagens)
     assert status.tryd == "perdido"
     assert status.motivo is not None
@@ -591,6 +624,7 @@ def test_ponta_a_ponta_assinar_devolve_uma_linha_valor(no_ar: PonteNoAr) -> None
         "float",
         38.42,
     )
+    assert valor.inicial  # o que o ConnectData devolveu, antes de qualquer atualização
 
 
 def test_encerrar_pela_rede_faz_rodar_voltar_e_fecha_a_sessao(no_ar: PonteNoAr) -> None:
@@ -616,9 +650,8 @@ def test_valores_iniciais_e_mudancas_vao_para_todos_os_clientes(no_ar: PonteNoAr
     a.sincronizar()
     b.sincronizar()
     a.enviar(Assinar((PETR4_ULT,)))
-    assert (
-        a.receber_ate(Valor) == b.receber_ate(Valor) == Valor("PETR4", "ULT", "float", 38.42, AGORA)
-    )
+    inicial = Valor("PETR4", "ULT", "float", 38.42, AGORA, inicial=True)
+    assert a.receber_ate(Valor) == b.receber_ate(Valor) == inicial
     no_ar.sessao.avisar((no_ar.sessao.conectados[0][0], 38.5))
     esperado = Valor("PETR4", "ULT", "float", 38.5, AGORA)
     assert a.receber_ate(Valor) == b.receber_ate(Valor) == esperado

@@ -242,7 +242,7 @@ def test_espiar_imprime_a_linha_do_jeito_que_veio_da_ponte(no_ar: PonteNoAr) -> 
     cli.espiar(no_ar.porta, ("PETR4",), ("ULT",), 0.3, saida)
     assert (
         '{"tipo":"valor","ticker":"PETR4","campo":"ULT","tipo_valor":"float",'
-        '"valor":38.42,"instante":"2026-10-28T12:03:00-03:00"}'
+        '"valor":38.42,"instante":"2026-10-28T12:03:00-03:00","inicial":true}'
     ) in saida.getvalue().splitlines()
 
 
