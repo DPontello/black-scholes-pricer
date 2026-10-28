@@ -40,9 +40,6 @@ Timestamps: ``datetime(pregão, 18:00, fuso de valoração)`` — marcador de fi
 de pregão; só a data importa.
 """
 
-import itertools
-import math
-import statistics
 from collections.abc import Sequence
 from datetime import date, datetime, time, tzinfo
 from pathlib import Path
@@ -56,9 +53,10 @@ from options_engine.adapters.outbound.cotahist.parser import (
     CotahistRecord,
 )
 from options_engine.adapters.outbound.cotahist.session import SessionData, load_session_data
+from options_engine.adapters.outbound.cotahist.volatility import realized_volatility
 from options_engine.domain.model.chain import OptionChain, OptionQuote, RejectedSeries
 from options_engine.domain.model.contracts import OptionContract, OptionTerms
-from options_engine.domain.model.conventions import DayCountConvention, RiskFreeRate, Volatility
+from options_engine.domain.model.conventions import RiskFreeRate, Volatility
 from options_engine.domain.model.enums import OptionType
 from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
 from options_engine.domain.model.market import MarketSnapshot
@@ -213,22 +211,10 @@ class CotahistOptionChainAdapter:
 
     def _vol_realizada(self, simbolo: str) -> Volatility:
         fechamentos = [valor for _, valor in self._data.closes.get(simbolo, ())]
-        exigidos = self._window + 1
-        if len(fechamentos) < exigidos:
-            raise self._indisponivel(
-                simbolo,
-                f"histórico insuficiente para a vol realizada: {len(fechamentos)} fechamentos "
-                f"até o pregão, mínimo {exigidos} ({self._window} retornos)",
-            )
-        janela = fechamentos[-exigidos:]
-        retornos = [math.log(b / a) for a, b in itertools.pairwise(janela)]
-        desvio = statistics.stdev(retornos)
-        if not desvio > 0.0:
-            raise self._indisponivel(
-                simbolo, f"vol realizada zero nos últimos {self._window} retornos"
-            )
-        base = DayCountConvention.BUSINESS_252
-        return Volatility(desvio * math.sqrt(base.days_per_year), base)
+        vol = realized_volatility(fechamentos, self._window)
+        if isinstance(vol, str):
+            raise self._indisponivel(simbolo, vol)
+        return vol
 
     # ------------------------------------------------------------------
     # Séries

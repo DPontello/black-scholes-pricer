@@ -15,15 +15,26 @@ arquivo real. Nunca se assume EUROPEAN por omissão.
 
 ``UndrlygTckrSymb1`` (opcional): quando preenchido, é o ativo-objeto da série
 e prevalece sobre a regra de raiz do ticker na montagem da cadeia.
+
+``OptnTp``, ``ExrcPric`` e ``XprtnDt`` (opcionais): tipo, strike e vencimento
+da série, para quem monta o universo de séries a partir do cadastro. Leitura
+tolerante: ``OptnTp`` por prefixo, sem distinguir maiúsculas (``CALL*`` ->
+CALL, ``PUT*`` -> PUT); ``ExrcPric`` com ``.`` ou ``,`` decimal, só valores
+finitos e > 0; ``XprtnDt`` em ``AAAA-MM-DD`` ou ``DD/MM/AAAA``. Coluna
+ausente, vazia ou ilegível -> ``None``, nunca um valor presumido. Os nomes
+das colunas e o domínio de ``OptnTp`` são premissas a conferir com um arquivo
+real.
 """
 
 import csv
+import math
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 from typing import Final
 
 from options_engine.adapters.outbound.cotahist.errors import InstrumentsFileError
-from options_engine.domain.model.enums import ExerciseStyle
+from options_engine.domain.model.enums import ExerciseStyle, OptionType
 
 __all__ = ["InstrumentInfo", "load_instruments"]
 
@@ -32,15 +43,26 @@ _DELIMITERS: Final = (";", ",")
 _SYMBOL: Final = "TckrSymb"
 _STYLE: Final = "OptnStyle"
 _UNDERLYING: Final = "UndrlygTckrSymb1"
+_OPTION_TYPE: Final = "OptnTp"
+_STRIKE: Final = "ExrcPric"
+_EXPIRY: Final = "XprtnDt"
+_DATE_FORMATS: Final = ("%Y-%m-%d", "%d/%m/%Y")
 
 
 @dataclass(frozen=True, slots=True)
 class InstrumentInfo:
-    """O que o painel usa do cadastro: estilo (``None`` = desconhecido) e ativo-objeto."""
+    """O que o painel usa do cadastro: estilo (``None`` = desconhecido), ativo-objeto e termos.
+
+    ``option_type``, ``strike`` e ``expiry`` (os termos da série) são ``None``
+    quando a coluna falta ou o valor é ilegível.
+    """
 
     symbol: str
     exercise_style: ExerciseStyle | None
     underlying_symbol: str | None
+    option_type: OptionType | None = None
+    strike: float | None = None
+    expiry: date | None = None
 
 
 def _estilo(bruto: str) -> ExerciseStyle | None:
@@ -50,6 +72,42 @@ def _estilo(bruto: str) -> ExerciseStyle | None:
     if valor.startswith("EURO"):
         return ExerciseStyle.EUROPEAN
     return None
+
+
+def _tipo(bruto: str) -> OptionType | None:
+    valor = bruto.strip().upper()
+    if valor.startswith("CALL"):
+        return OptionType.CALL
+    if valor.startswith("PUT"):
+        return OptionType.PUT
+    return None
+
+
+def _strike(bruto: str) -> float | None:
+    try:
+        valor = float(bruto.strip().replace(",", "."))
+    except ValueError:
+        return None
+    # `not (x > 0)` em vez de `x <= 0`: NaN compara False com tudo e também cai fora.
+    if not math.isfinite(valor) or not valor > 0.0:
+        return None
+    return valor
+
+
+def _vencimento(bruto: str) -> date | None:
+    for formato in _DATE_FORMATS:
+        try:
+            return datetime.strptime(bruto.strip(), formato).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _celula(celulas: list[str], indice: int | None) -> str:
+    """Texto da coluna opcional; vazio quando a coluna não existe ou a linha é curta."""
+    if indice is None or indice >= len(celulas):
+        return ""
+    return celulas[indice]
 
 
 def _decodificar(path: Path) -> str:
@@ -83,13 +141,18 @@ def load_instruments(path: Path) -> dict[str, InstrumentInfo]:
     """Instrumentos do cadastro indexados pelo ticker.
 
     Ticker repetido com estilos divergentes vira estilo desconhecido: entre
-    dois valores contraditórios da fonte, nenhum é escolhido em silêncio.
+    dois valores contraditórios da fonte, nenhum é escolhido em silêncio. O
+    mesmo vale para tipo, strike e vencimento: duplicata contraditória zera
+    todos os campos opcionais.
     """
     linhas = _decodificar(path).splitlines()
     indice, delimitador, colunas = _cabecalho(path, linhas)
     i_simbolo = colunas.index(_SYMBOL)
     i_estilo = colunas.index(_STYLE)
     i_objeto = colunas.index(_UNDERLYING) if _UNDERLYING in colunas else None
+    i_tipo = colunas.index(_OPTION_TYPE) if _OPTION_TYPE in colunas else None
+    i_strike = colunas.index(_STRIKE) if _STRIKE in colunas else None
+    i_vencimento = colunas.index(_EXPIRY) if _EXPIRY in colunas else None
     instrumentos: dict[str, InstrumentInfo] = {}
     for celulas in csv.reader(linhas[indice + 1 :], delimiter=delimitador):
         if len(celulas) <= max(i_simbolo, i_estilo):
@@ -100,7 +163,14 @@ def load_instruments(path: Path) -> dict[str, InstrumentInfo]:
         objeto = None
         if i_objeto is not None and i_objeto < len(celulas):
             objeto = celulas[i_objeto].strip() or None
-        info = InstrumentInfo(simbolo, _estilo(celulas[i_estilo]), objeto)
+        info = InstrumentInfo(
+            simbolo,
+            _estilo(celulas[i_estilo]),
+            objeto,
+            option_type=_tipo(_celula(celulas, i_tipo)),
+            strike=_strike(_celula(celulas, i_strike)),
+            expiry=_vencimento(_celula(celulas, i_vencimento)),
+        )
         anterior = instrumentos.get(simbolo)
         if anterior is not None and anterior != info:
             info = InstrumentInfo(simbolo, None, None)
