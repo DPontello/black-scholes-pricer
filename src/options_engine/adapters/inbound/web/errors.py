@@ -14,6 +14,7 @@ Starlette (rota inexistente, método errado) saem no mesmo molde
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 
+from options_engine.adapters.outbound.b3files.library import B3FileRejectedError
 from options_engine.domain.model.errors import (
     DomainError,
     DuplicateProfileError,
@@ -32,6 +33,7 @@ ERROR_STATUS: dict[type[Exception], int] = {
     ProfileLockedError: 409,
     NoActiveProfileError: 404,
     UnknownProfileError: 404,
+    B3FileRejectedError: 422,
 }
 
 
