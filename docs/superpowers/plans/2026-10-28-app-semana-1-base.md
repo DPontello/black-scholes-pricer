@@ -448,12 +448,15 @@ def test_vol_realizada_confere_com_o_calculo_manual_e_explica_a_falta() -> None:
 - Consumes: `options_ponte.protocolo` (só stdlib; o app importa o protocolo da ponte).
 - Produces:
   - `settings.py`: as constantes das Global Constraints.
-  - `RawValue(kind: str, value: float | int | str | None, received_at: float)`.
+  - `RawValue(kind: str, value: float | int | str | None, received_at: float, initial: bool = False)`. `initial` repete o `Valor.inicial` da ponte: o valor ainda é o do `ConnectData`, que chega zerado enquanto o dado não carrega. Decisão da execução: o protocolo ganhou `Valor.inicial`.
   - `LiveBoard(monotonic: Callable[[], float] = time.monotonic)`, thread-safe, com:
     - `mark_subscribed(tickers: Iterable[str]) -> None`;
     - `apply(valor: Valor) -> None`;
     - `values(ticker: str) -> Mapping[str, RawValue]`;
-    - `is_loaded(ticker: str) -> bool`: verdadeiro se recebeu algum `Valor` depois da assinatura **ou** se passaram `TEMPO_CARGA_S` desde ela.
+    - `is_loaded(ticker: str) -> bool`: verdadeiro se recebeu algum `Valor` **não inicial** depois da assinatura, **ou** se passaram `TEMPO_CARGA_S` desde ela. Decisões da execução:
+      - `apply` descarta `Valor` de ticker não assinado;
+      - `forget(tickers)` reinicia a carga;
+      - o cliente faz `forget` + `mark_subscribed` sozinho em `ensure_subscribed` e a cada reconexão.
   - `BridgeHealth(Enum)`: `CONECTADA`, `ATRASADA`, `DESCONECTADA`.
   - `TrydBridgeClient(board: LiveBoard, host: str = "127.0.0.1", port: int = PORTA_PONTE, monotonic: Callable[[], float] = time.monotonic)` com:
     - `start()`: thread que conecta e reconecta a cada 2 s;
