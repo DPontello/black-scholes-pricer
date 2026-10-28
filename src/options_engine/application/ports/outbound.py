@@ -21,8 +21,16 @@ from typing import Protocol, runtime_checkable
 
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.market import MarketSnapshot
+from options_engine.domain.model.profile import Profile, ProfileEntry
 
-__all__ = ["Clock", "MarketDataPort", "OptionChainPort", "RandomSource", "TradingCalendar"]
+__all__ = [
+    "Clock",
+    "MarketDataPort",
+    "OptionChainPort",
+    "ProfileRepository",
+    "RandomSource",
+    "TradingCalendar",
+]
 
 
 @runtime_checkable
@@ -132,3 +140,45 @@ class RandomSource(Protocol):
     def gaussians(self, n: int) -> tuple[float, ...]: ...
 
     def uniform(self, low: float, high: float) -> float: ...
+
+
+@runtime_checkable
+class ProfileRepository(Protocol):
+    """Perfis do app e a trava de uso entre PCs.
+
+    O perfil mora na pasta que o usuário escolheu (nuvem, pendrive); o nome é
+    só a chave do cadastro da máquina, nunca vira nome de pasta ou arquivo.
+
+    Contrato:
+
+    1. ``create`` numa pasta que já tem um perfil ADOTA o existente: o nome
+       gravado na pasta prevalece sobre o pedido — é assim que o mesmo perfil,
+       na nuvem, aparece em outro PC. Nome já cadastrado (o pedido ou o
+       adotado) → ``DuplicateProfileError``;
+    2. pasta fora do ar (nuvem não montada, pendrive removido) ou erro do SO
+       ao ler/gravar os arquivos do perfil (permissão, arquivo em uso) →
+       ``ProfileFolderUnavailableError`` com o caminho; nada é criado em outro
+       lugar e o cadastro não muda;
+    3. nome não cadastrado em ``load``, ``save``, ``acquire_lock`` ou
+       ``release_lock`` → ``UnknownProfileError``;
+    4. trava de OUTRO PC com idade de até 12 h → ``ProfileLockedError``, a
+       menos que ``force``; mais velha que isso é ignorada. A trava do próprio
+       PC é renovada. ``now`` é tz-aware e é gravado no fuso em que chegou;
+    5. ``release_lock`` só remove a trava do próprio ``machine`` e nunca
+       levanta por trava ausente, pasta fora do ar ou erro do SO: fechar o app
+       precisa funcionar;
+    6. ``load`` devolve um perfil cujo ``name`` é a chave pedida; arquivo com
+       outro nome → ``InvalidDomainValueError`` (a chave do cadastro manda).
+    """
+
+    def list_profiles(self) -> tuple[ProfileEntry, ...]: ...
+
+    def create(self, name: str, folder: str) -> Profile: ...
+
+    def load(self, name: str) -> Profile: ...
+
+    def save(self, name: str, profile: Profile) -> None: ...
+
+    def acquire_lock(self, name: str, machine: str, now: datetime, force: bool) -> None: ...
+
+    def release_lock(self, name: str, machine: str) -> None: ...

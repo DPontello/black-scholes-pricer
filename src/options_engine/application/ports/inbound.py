@@ -25,6 +25,7 @@ from options_engine.domain.income.metrics import IncomeStructure
 from options_engine.domain.income.ranking import IncomeRanking, RankingCriterion
 from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.errors import InvalidDomainValueError
+from options_engine.domain.model.profile import Profile, ProfileEntry
 from options_engine.domain.model.results import PayoffProfile, PricingResult
 from options_engine.domain.model.scenarios import SpotAxis, StressScenario, StressTestReport
 from options_engine.domain.model.strategy import Strategy
@@ -33,6 +34,7 @@ __all__ = [
     "AnalyzeStrategyPayoffUseCase",
     "PriceOptionCommand",
     "PriceOptionUseCase",
+    "ProfileUseCase",
     "RankIncomeCommand",
     "RankIncomeOpportunitiesUseCase",
     "StressTestUseCase",
@@ -154,3 +156,25 @@ class RankIncomeOpportunitiesUseCase(Protocol):
     """Ranking das oportunidades de renda do pregão: venda coberta, put coberta e travas."""
 
     def execute(self, command: RankIncomeCommand) -> IncomeRanking: ...
+
+
+@runtime_checkable
+class ProfileUseCase(Protocol):
+    """Perfis do app: quem está usando, a watchlist dele e a trava entre PCs.
+
+    ``open`` trava o perfil para este PC (outro PC com trava recente →
+    ``ProfileLockedError``, a menos que ``force``); ``close`` solta a trava.
+    ``active`` e ``set_watchlist`` exigem perfil aberto (``NoActiveProfileError``).
+    """
+
+    def list(self) -> tuple[ProfileEntry, ...]: ...
+
+    def create(self, name: str, folder: str) -> Profile: ...
+
+    def open(self, name: str, force: bool = False) -> Profile: ...
+
+    def active(self) -> Profile: ...
+
+    def set_watchlist(self, tickers: Sequence[str]) -> Profile: ...
+
+    def close(self) -> None: ...
