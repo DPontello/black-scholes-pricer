@@ -42,6 +42,9 @@ _log = logging.getLogger(__name__)
 INTERVALO_STATUS_S = 2.0
 # Como o Excel: sem aviso por este tempo, pergunta ao servidor se ele ainda está vivo.
 SILENCIO_ATE_HEARTBEAT_S = 5.0
+# Depois de um RefreshData que falhou, só tenta de novo passado este tempo: o laço volta a cada
+# ~50 ms e, sem isso, um Tryd pendurado receberia ~20 chamadas por segundo.
+ESPACAMENTO_APOS_FALHA_S = 1.0
 
 _PASSO_S = 0.05  # quanto o laço bombeia por volta; limita a demora para atender um comando
 _ESPERA_ACEITE_S = 0.05  # tempo máximo para a thread de aceite notar o fim
@@ -104,6 +107,7 @@ class Ponte:
         self._estado = TRYD_INICIANDO
         self._motivo: str | None = None
         self._avisos_vistos = 0
+        self._retomar_busca_em: float | None = None  # só depois de uma falha de atualizar
         self._ultimo_sinal = relogio()  # último aviso, ou última pergunta de Heartbeat
         self._ultimo_status = self._ultimo_sinal
         self._encerrando = False
@@ -135,7 +139,8 @@ class Ponte:
         mensagens: list[Mensagem] = []
         avisos = self._sessao.avisos()
         if avisos > self._avisos_vistos:
-            mensagens += self._buscar_mudancas(avisos, agora)
+            if self._retomar_busca_em is None or agora >= self._retomar_busca_em:
+                mensagens += self._buscar_mudancas(avisos, agora)
         elif agora - self._ultimo_sinal >= SILENCIO_ATE_HEARTBEAT_S:
             self._ultimo_sinal = agora
             mensagens += self._conferir_servidor()
@@ -188,14 +193,16 @@ class Ponte:
     def _buscar_mudancas(self, avisos: int, agora: float) -> list[Mensagem]:
         """``RefreshData`` do aviso novo. O aviso só conta como atendido se der certo.
 
-        Se falhar, o próximo ``ciclo`` tenta de novo sem esperar outro ``UpdateNotify``: o
-        servidor pode só avisar depois de um ``RefreshData`` bem-sucedido, e o feed ficaria
-        parado com o Heartbeat dizendo que está tudo bem. O ``Status`` perdido sai uma vez, na
-        passagem para perdido; depois quem repete é o status periódico.
+        Se falhar, tenta de novo sem esperar outro ``UpdateNotify``, mas só depois de
+        ``ESPACAMENTO_APOS_FALHA_S``: o servidor pode só avisar depois de um ``RefreshData``
+        bem-sucedido, e o feed ficaria parado com o Heartbeat dizendo que está tudo bem. O
+        ``Status`` perdido sai uma vez, na passagem para perdido; depois quem repete é o status
+        periódico.
         """
         try:
             mudancas = self._sessao.atualizar()
         except Exception as erro:
+            self._retomar_busca_em = agora + ESPACAMENTO_APOS_FALHA_S
             ja_perdido = self._estado == TRYD_PERDIDO
             status = self._perdeu(erro)
             return [] if ja_perdido else [status]

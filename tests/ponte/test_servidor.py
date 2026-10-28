@@ -414,7 +414,10 @@ def test_falha_ao_atualizar_vira_status_perdido_sem_derrubar_o_ciclo() -> None:
     assert status.motivo is not None
     assert "RPC indisponível" in status.motivo
     relogio.agora = 0.2
-    assert ponte.ciclo() == []  # sem repetir o status a cada volta, mas tenta de novo
+    assert ponte.ciclo() == []  # sem repetir o status a cada volta
+    assert sessao.chamadas_atualizar == 1  # e sem insistir antes de 1 s
+    relogio.agora = 1.2
+    assert ponte.ciclo() == []  # passado o espaçamento, tenta de novo (e segue calada)
     assert sessao.chamadas_atualizar == 2
 
 
@@ -429,29 +432,54 @@ def test_falha_ao_atualizar_nao_consome_o_aviso_e_o_proximo_ciclo_entrega_sem_av
     assert perdido.tryd == "perdido"
     sessao.erro_ao_atualizar = None  # o servidor voltou; nenhum UpdateNotify novo
     relogio.agora = 0.2
+    assert ponte.ciclo() == []  # ainda dentro do espaçamento de 1 s
+    relogio.agora = 1.2
     assert ponte.ciclo() == [Valor("PETR4", "ULT", "float", 38.5, AGORA)]
     assert sessao.n_avisos == 1
     relogio.agora = 2.1  # 2 s depois do status perdido de 0,1 s
     assert ponte.ciclo() == [Status("conectado", None, 1)]
 
 
-def test_atualizar_que_segue_falhando_tenta_a_cada_ciclo_sem_repetir_o_status() -> None:
+def test_atualizar_que_segue_falhando_tenta_a_cada_segundo_sem_repetir_o_status() -> None:
     ponte, sessao, relogio = _ponte()
     ponte.tratar(Assinar((PETR4_ULT,)))
     sessao.erro_ao_atualizar = RuntimeError("RPC indisponível")
     sessao.avisar((sessao.conectados[0][0], 38.5))
     relogio.agora = 0.1
     assert len(_status(ponte.ciclo())) == 1
-    for passo in range(2, 8):
+    for passo in range(2, 11):  # 0,2 s a 1,0 s: dentro do espaçamento, não chama o servidor
         relogio.agora = passo * 0.1
         assert ponte.ciclo() == []
-    assert sessao.chamadas_atualizar == 7
-    relogio.agora = 2.1  # o status periódico segue dizendo perdido, com o motivo
+    assert sessao.chamadas_atualizar == 1
+    relogio.agora = 1.2
+    assert ponte.ciclo() == []
+    assert sessao.chamadas_atualizar == 2
+    relogio.agora = 2.0  # 0,8 s depois da segunda tentativa
+    assert ponte.ciclo() == []
+    assert sessao.chamadas_atualizar == 2
+    relogio.agora = 2.3  # o status periódico segue dizendo perdido, com o motivo
     (periodico,) = ponte.ciclo()
     assert isinstance(periodico, Status)
     assert periodico.tryd == "perdido"
     assert periodico.motivo is not None
     assert "RPC indisponível" in periodico.motivo
+    assert sessao.chamadas_atualizar == 3
+
+
+def test_espacamento_so_vale_depois_de_falha_e_acaba_quando_o_atualizar_volta() -> None:
+    ponte, sessao, relogio = _ponte()
+    ponte.tratar(Assinar((PETR4_ULT,)))
+    id_ = sessao.conectados[0][0]
+    sessao.erro_ao_atualizar = RuntimeError("RPC indisponível")
+    sessao.avisar((id_, 38.5))
+    relogio.agora = 0.1
+    ponte.ciclo()
+    sessao.erro_ao_atualizar = None
+    relogio.agora = 1.2
+    assert ponte.ciclo() == [Valor("PETR4", "ULT", "float", 38.5, AGORA)]
+    sessao.avisar((id_, 38.6))
+    relogio.agora = 1.25  # aviso novo logo depois do sucesso: busca na hora
+    assert ponte.ciclo() == [Valor("PETR4", "ULT", "float", 38.6, AGORA)]
 
 
 # --------------------------------------------------------------------------- ServidorTcp
