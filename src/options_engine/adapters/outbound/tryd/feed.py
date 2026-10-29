@@ -25,9 +25,9 @@ dois, todos os strikes. O corte em ``topic_limit`` (``LIMITE_TOPICOS``) mantém 
 primeiro e depois os strikes mais perto do spot, séries inteiras: nunca um campo solto.
 
 Séries de um ativo: as que o cadastro liga a ele (``UndrlygTckrSymb1``) e, quando o cadastro
-não diz o ativo-objeto, as de mesma raiz (4 primeiras letras) — SÓ se nenhum outro ativo à
-vista dos COTAHIST divide a raiz (PETR3 e PETR4). Com a raiz dividida o vínculo é ambíguo: a
-série não é assinada e sai em ``rejected_series`` com o motivo, como no adapter COTAHIST,
+não diz o ativo-objeto, as de mesma raiz (4 primeiras letras) — SÓ se ele é o único ativo à
+vista dos COTAHIST com essa raiz (PETR3 e PETR4 a dividem). Com a raiz dividida o vínculo é
+ambíguo: a série não é assinada e sai em ``rejected_series`` com o motivo, como no adapter COTAHIST,
 em vez de virar, em silêncio, opção do ativo errado. Os vencimentos escolhidos contam as
 séries ambíguas: sem isso, um ativo cujas séries são todas ambíguas teria cadeia vazia e muda.
 Série sem estilo de exercício no cadastro sai em ``rejected_series`` (obrigatório pela mesa,
@@ -113,7 +113,10 @@ class _WarnLimiter:
 
 @dataclass(frozen=True, slots=True)
 class _Row:
-    """Série do cadastro com termos legíveis; ``ambiguity`` é o motivo do vínculo duvidoso."""
+    """Série do cadastro com termos legíveis; ``ambiguity`` é o motivo do vínculo duvidoso.
+
+    ``owner``: sem ativo-objeto no cadastro, o único ativo à vista da raiz nos COTAHIST.
+    """
 
     symbol: str
     option_type: OptionType
@@ -121,6 +124,7 @@ class _Row:
     expiry: date
     style: ExerciseStyle | None
     ambiguity: str | None
+    owner: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +135,8 @@ class _SeriesIndex:
     by_root: Mapping[str, tuple[_Row, ...]]
 
     def rows_of(self, ticker: str) -> tuple[_Row, ...]:
-        return (*self.by_underlying.get(ticker, ()), *self.by_root.get(_root(ticker), ()))
+        da_raiz = (r for r in self.by_root.get(_root(ticker), ()) if r.owner in (None, ticker))
+        return (*self.by_underlying.get(ticker, ()), *da_raiz)
 
 
 def _build_index(loaded: LoadedLibrary) -> _SeriesIndex:
@@ -143,6 +148,7 @@ def _build_index(loaded: LoadedLibrary) -> _SeriesIndex:
     for info in loaded.instruments.values():
         if info.option_type is None or info.strike is None or info.expiry is None:
             continue  # sem os termos da série não há o que assinar nem cotar
+        owner = None
         if info.underlying_symbol is not None:
             alvo, ambiguity = by_underlying.setdefault(info.underlying_symbol, []), None
         else:
@@ -154,6 +160,7 @@ def _build_index(loaded: LoadedLibrary) -> _SeriesIndex:
                 if len(candidatos) > 1
                 else None
             )
+            owner = candidatos[0] if len(candidatos) == 1 else None
             alvo = by_root.setdefault(raiz, [])
         alvo.append(
             _Row(
@@ -163,6 +170,7 @@ def _build_index(loaded: LoadedLibrary) -> _SeriesIndex:
                 info.expiry,
                 info.exercise_style,
                 ambiguity,
+                owner,
             )
         )
 

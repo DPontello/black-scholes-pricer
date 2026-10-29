@@ -177,6 +177,18 @@ def test_watch_nao_assina_serie_cujo_ativo_objeto_e_ambiguo(tmp_path: Path) -> N
     assert len(_series(m.cliente.topicos, "VALE3")) == 10
 
 
+def test_serie_sem_ativo_objeto_e_so_do_unico_ativo_da_raiz_nos_cotahist(tmp_path: Path) -> None:
+    # VALE5 só existe no cadastro: as séries de VALE sem ativo-objeto são de VALE3.
+    linhas = (FIXTURE / INSTRUMENTS_NAME).read_bytes().decode("utf-8-sig").splitlines()
+    linhas.insert(linhas.index("VALE3;VALE;;;;;") + 1, "VALE5;VALE;;;;;")
+    com_vale5 = "\n".join(linhas) + "\n"
+    m = montar(tmp_path, lib=biblioteca(tmp_path / "cru", cadastro=com_vale5.encode("utf-8-sig")))
+    m.feed.watch(["VALE5"], ["VALE5"])
+    assert _series(m.cliente.topicos, "VALE5") == set()
+    m.feed.watch(["VALE3"], ["VALE3"])
+    assert len(_series(m.cliente.topicos, "VALE3")) == 10
+
+
 def test_watch_inclui_o_ativo_dos_simbolos_de_cadeia(tmp_path: Path) -> None:
     m = montar(tmp_path)
     m.feed.watch(["PETR4"], ["VALE3"])
