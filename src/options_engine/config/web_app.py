@@ -32,6 +32,7 @@ from fastapi import FastAPI
 import options_ponte
 from options_engine.adapters.inbound.web.app import Lifespan, create_app
 from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
+from options_engine.adapters.inbound.web.market import router_mercado
 from options_engine.adapters.inbound.web.profiles import router_perfis
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET, StaticHolidayCalendar
 from options_engine.adapters.outbound.b3files import (
@@ -124,10 +125,12 @@ def build_web_app(
             platform.system(), _ponte_src_dir(), Path.home(), PORTA_PONTE
         )
         process = BridgeProcess(command, cwd, client)
-    routers = [router_perfis(profiles), router_arquivos_b3(library)]
-    app = create_app(routers, static_dir, lifespan=_lifespan(profiles, client, process))
-    app.state.market_view = market_view  # a Task 13 liga o router de mercado
-    return app
+    routers = [
+        router_perfis(profiles),
+        router_arquivos_b3(library),
+        router_mercado(market_view, profiles),
+    ]
+    return create_app(routers, static_dir, lifespan=_lifespan(profiles, client, process))
 
 
 def _ponte_src_dir() -> Path:
