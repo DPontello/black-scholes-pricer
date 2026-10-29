@@ -151,29 +151,42 @@ Bugs que o teste achou, já corrigidos no `tryd_poc.py`:
    sem aspas e com argumentos (`EXCEL.EXE /automation`). Ele agora também
    lê os registros por usuário (HKCR em vez de só HKLM).
 
-## Resultados (preencher)
+## Resultados
 
 As respostas das perguntas 1, 16 e 17 vêm do site público do Tryd,
 consultado em 27/10/2026 ([planos](https://www.tryd.com.br/planos) e
-[termos de uso](https://www.tryd.com.br/tryd/acordo_de_uso.html)). Confira
-no seu cadastro.
+[termos de uso](https://www.tryd.com.br/tryd/acordo_de_uso.html)). As demais
+foram medidas em **2026-10-28**, com o Tryd PRO 8.5.6.12 (conta de teste de
+15 dias), em pregão aberto. A máquina foi o **Aurora Linux**: Tryd no Wine
+11.20, dentro do distrobox `tryd`; Python 3.12 do Windows com pywin32 no mesmo
+prefixo. Como montar o ambiente:
+[`scripts/linux/preparar_ponte_wine.sh`](../../scripts/linux/preparar_ponte_wine.sh)
+e [`src/options_ponte/README.md`](../../src/options_ponte/README.md).
+
+**Achado principal: o Tryd atual (Nelogica) usa o servidor RTD do Profit.**
+Isso invalida as premissas de 2017:
+
+- **Servidor e fórmula:** é `RTDTrading.RtdServer`, CLSID
+  `{272D2E65-05FB-4500-BD7B-5905D5B0A1B8}`. O ProgID `tryd.rtdserver` não
+  existe. Fórmula: `=RTD("RTDTrading.RtdServer";;"PETR4_B_0";"ULT")`.
+- **Campos:** são os do Profit, não `Ult`/`PrcCpa`/`PrcVda`.
 
 | # | Pergunta | Resposta |
 |---|---|---|
-| 1 | Versão, plano, opções com book em tempo real? | Pelo site, os dois planos (Trader e Pro) têm **DDE/RTD**, **módulo de opções** e negócios em tempo real; livro de ofertas: Trader "máximo 10", Pro completo. Falta conferir a versão e o plano do seu cadastro |
-| 2 | Excel 32 ou 64 bits | Máquina de desenvolvimento: 64 bits. Conferir na do Tryd, se for outra |
-| 3 | Servidor RTD: DLL/EXE, bits (saída do `diagnostico`); terminal comum ou administrador | |
-| 5 | Campos e formatos de uma opção | |
-| 6 | Volume financeiro: campo | |
-| 7 | Lado vazio chega como | |
-| 8 | LVL2 bate com PrcCpa/PrcVda? | |
-| 9 | Estilo de exercício no Tryd? | |
-| 10 | `Exerc` ajustado por proventos? | |
-| 11 | Cadência e atraso (60 s) | |
-| 12 | 250 tópicos: desempenho | |
-| 13 | Fora do pregão | |
-| 14 | Tryd fechado durante a captura | |
-| 15 | DDE: serviço, tópico, funciona? | |
+| 1 | Versão, plano, opções com book em tempo real? | Tryd PRO 8.5.6.12, conta de teste. Gráfico, monitor e **livro completo** de PETR4 ao vivo. Opções ao vivo pelo RTD: bid, ask, último, negócios, volume e gregas |
+| 2 | Excel 32 ou 64 bits | Não se aplica: o cliente RTD dispensa o Excel. No Wine não há Excel, e uma type library mínima ("shim", `src/options_ponte/rtd_shim.idl`) define `IRtdServer`/`IRTDUpdateEvent` com os IIDs e DISPIDs do Excel |
+| 3 | Servidor RTD: DLL/EXE, bits (saída do `diagnostico`); terminal comum ou administrador | **EXE fora do processo**: `LocalServer32` é o próprio `tryd.exe`. Por isso **não há restrição de bits**; Python de 64 bits funciona. Registro só em `HKCU\Software\Classes`. No Wine, o ProgID não resolve pelo nome (`CO_E_CLASSSTRING`), mas o CLSID com `CLSCTX_LOCAL_SERVER` funciona. A type library do Tryd (`{EFCFBDCA-…}` 1.0, só `win32`) não carrega no Wine, então a ponte usa o shim. Administrador não se aplica no Wine. **Windows 11 nativo (29/10)**: o ProgID resolve pelo nome, a type library do próprio Tryd carrega e o `autoteste` passa; terminal comum, sem administrador |
+| 5 | Campos e formatos de uma opção | Tópico `ATIVO_B_0` + campo. Números chegam como `float` nativo, `NEG` como `int`, `HOR` ("12:02:31"), `DAT` ("28/10/2026") e `DUV` ("16") como texto. Campos úteis: `ULT`, `OCP` (compra), `OVD` (venda), `VOC`/`VOV` (quantidade nas ofertas), `NEG`, `VOL`, `QTT`, `ABE`, `FEC`, `PEX` (strike), `VEN` (vencimento), `EST` (estado do pregão), `DELTA`, `GAMA`, `THETA`, `VEGA`, `RHO`, `IMPVT` (vol implícita), `BLACK`, `VINT`/`VEXT`. São 73 no total (`DDEPreferences` do registro) |
+| 6 | Volume financeiro: campo | **`VOL` é financeiro** e `QTT` é quantidade. Conferido: PETR4 com `VOL` 679.557.741 ÷ `QTT` 12.915.600 = R$ 52,61, o preço médio |
+| 7 | Lado vazio chega como | Parcial. **O valor inicial do `ConnectData` vem `0.0` até o dado carregar (~1 s)**, e um ticker inexistente também devolve zeros. Por isso a ponte marca o valor inicial (`Valor.inicial`) e o app só considera a série carregada depois de uma atualização real ou de 3 s. Falta observar uma opção sem oferta para confirmar que o lado vazio fica `0.0` |
+| 8 | LVL2 bate com PrcCpa/PrcVda? | Não testado (o app usa só o topo do livro, `OCP`/`OVD`) |
+| 9 | Estilo de exercício no Tryd? | **Não há.** `EST` é o estado do pregão ("Aberto"). O Cadastro de Instrumentos da B3 continua obrigatório |
+| 10 | `Exerc` ajustado por proventos? | Provável. `PEX` de PETRK500 = 48,91, um valor quebrado. Conferir contra o `PREEXE`/`ExrcPric` de um arquivo real da B3 |
+| 11 | Cadência e atraso (60 s) | 147 atualizações em 20 s (PETR4 e VALE3, 10 campos); 133 valores em 10 s pela ponte. Atraso aparente: nenhum perceptível contra a tela |
+| 12 | 250 tópicos: desempenho | Não medido. O app limita a 600 tópicos e assina só o que está na tela |
+| 13 | Fora do pregão | Medido às 00:19 de 29/10 (Windows): `ULT`, `OCP`, `OVD`, `NEG`, `FEC`, `HOR` e `EST` chegam como texto vazio; `VOL` traz o financeiro do pregão anterior e `DAT` a data dele. **`DAT` segue o formato regional do Windows**: `10/28/2026` num Windows em inglês |
+| 14 | Tryd fechado durante a captura | Com o servidor fechado ou morto, o Heartbeat detecta a queda em ~7 s. Com o servidor pendurado, **`RefreshData` bloqueia sem prazo** (medido com servidor falso: 6,9 s). A ponte espaça novas tentativas em 1 s após falha; o app trata 30 s de Tryd perdido como desconectado e cai para o fim de dia. Medido no app (29/10, Windows): "Atrasado" 8 s e "Fim de dia" 36 s depois de fechar o Tryd. **Ponte nova com o Tryd fechado abre o `tryd.exe` pelo COM** (logado, em ~12 s), e esse Tryd fecha quando a ponte encerra; o Tryd aberto pelo usuário sobrevive ao `encerrar` da ponte |
+| 15 | DDE: serviço, tópico, funciona? | Não testado (o RTD funcionou) |
 | 16 | Termos de uso | Ver "Leitura dos termos" abaixo. Uso próprio como **cliente não profissional** é o caso previsto; DDE/RTD é recurso documentado do produto. Proibidos: redistribuir dados **ou relatórios gerados** e "flood" na transmissão de dados |
 | 17 | Custo | Trader: R$ 149,90/mês no mensal, a partir de R$ 89,90/mês no anual. Pro: R$ 207,44/mês no mensal, a partir de R$ 129,94/mês no anual. Teste do Pro por 15 dias, sem cartão; corretoras parceiras dão desconto ou isenção |
 

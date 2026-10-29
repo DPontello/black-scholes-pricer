@@ -1,12 +1,16 @@
 """Cadastro de Instrumentos — preâmbulo, delimitador, encoding e mapeamento do OptnStyle."""
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from options_engine.adapters.outbound.cotahist.errors import InstrumentsFileError
 from options_engine.adapters.outbound.cotahist.instruments import InstrumentInfo, load_instruments
-from options_engine.domain.model.enums import ExerciseStyle
+from options_engine.domain.model.enums import ExerciseStyle, OptionType
+from tests.data.cotahist.build_fixture import INSTRUMENTS_NAME
+
+FIXTURE = Path(__file__).resolve().parents[2] / "data" / "cotahist"
 
 
 def _gravar(tmp_path: Path, linhas: list[str], encoding: str = "utf-8-sig") -> Path:
@@ -96,3 +100,63 @@ def test_encoding_irreconhecivel(tmp_path: Path) -> None:
     caminho.write_bytes(b"TckrSymb;OptnStyle\r\n\x81\x8d\x8f\x90\x9d;AMER")
     with pytest.raises(InstrumentsFileError, match="encoding"):
         load_instruments(caminho)
+
+
+def test_cadastro_traz_tipo_strike_e_vencimento() -> None:
+    info = load_instruments(FIXTURE / INSTRUMENTS_NAME)["PETRK280"]
+    assert (info.option_type, info.strike, info.expiry, info.exercise_style) == (
+        OptionType.CALL,
+        28.0,
+        date(2026, 11, 19),
+        ExerciseStyle.AMERICAN,
+    )
+
+
+def test_formatos_alternativos_e_lixo(tmp_path: Path) -> None:
+    caminho = _gravar(
+        tmp_path,
+        [
+            "TckrSymb;OptnStyle;OptnTp;ExrcPric;XprtnDt",
+            "PETRW285;EURO;Put;28,50;19/11/2026",
+            "PETRX999;EURO;???;abc;amanhã",
+        ],
+    )
+    dados = load_instruments(caminho)
+    assert (dados["PETRW285"].option_type, dados["PETRW285"].strike, dados["PETRW285"].expiry) == (
+        OptionType.PUT,
+        28.5,
+        date(2026, 11, 19),
+    )
+    assert (dados["PETRX999"].option_type, dados["PETRX999"].strike, dados["PETRX999"].expiry) == (
+        None,
+        None,
+        None,
+    )
+
+
+def test_colunas_opcionais_ausentes_deixam_os_termos_vazios(tmp_path: Path) -> None:
+    caminho = _gravar(tmp_path, ["TckrSymb;OptnStyle", "PETRK300;AMER"])
+    info = load_instruments(caminho)["PETRK300"]
+    assert (info.option_type, info.strike, info.expiry) == (None, None, None)
+
+
+@pytest.mark.parametrize("bruto", ["", "0", "-1", "nan", "inf"])
+def test_strike_nao_positivo_ou_nao_finito_vira_none(tmp_path: Path, bruto: str) -> None:
+    caminho = _gravar(tmp_path, ["TckrSymb;OptnStyle;ExrcPric", f"PETRK300;AMER;{bruto}"])
+    assert load_instruments(caminho)["PETRK300"].strike is None
+
+
+def test_duplicata_com_termos_divergentes_zera_todos_os_campos_opcionais(
+    tmp_path: Path,
+) -> None:
+    caminho = _gravar(
+        tmp_path,
+        [
+            "TckrSymb;OptnStyle;OptnTp;ExrcPric;XprtnDt;UndrlygTckrSymb1",
+            "PETRK300;AMER;CALL;30.00;2026-11-19;PETR4",
+            "PETRK300;AMER;CALL;31.00;2026-11-19;PETR4",
+        ],
+    )
+    info = load_instruments(caminho)["PETRK300"]
+    assert info == InstrumentInfo("PETRK300", None, None)
+    assert (info.option_type, info.strike, info.expiry) == (None, None, None)

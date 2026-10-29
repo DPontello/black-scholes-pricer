@@ -17,25 +17,39 @@ Emenda de 2026-07-04 ao ARCH §4.2 (painel de design da Sprint 3):
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from math import isfinite
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
+from options_engine.application.ports.outbound import CadastroFreshness
 from options_engine.domain.income.costs import REFERENCE_POSITION_SHARES
 from options_engine.domain.income.metrics import IncomeStructure
 from options_engine.domain.income.ranking import IncomeRanking, RankingCriterion
+from options_engine.domain.model.chain import RejectedSeries
 from options_engine.domain.model.contracts import OptionTerms
+from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import InvalidDomainValueError
+from options_engine.domain.model.profile import Profile, ProfileEntry
+from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 from options_engine.domain.model.results import PayoffProfile, PricingResult
 from options_engine.domain.model.scenarios import SpotAxis, StressScenario, StressTestReport
 from options_engine.domain.model.strategy import Strategy
 
 __all__ = [
+    "DEFAULT_CHAIN_EXPIRIES",
     "AnalyzeStrategyPayoffUseCase",
+    "ChainView",
+    "ExpiryBlock",
+    "MarketStatus",
+    "MarketViewUseCase",
     "PriceOptionCommand",
     "PriceOptionUseCase",
+    "ProfileUseCase",
     "RankIncomeCommand",
     "RankIncomeOpportunitiesUseCase",
+    "SeriesRow",
     "StressTestUseCase",
+    "WatchRow",
 ]
 
 
@@ -154,3 +168,102 @@ class RankIncomeOpportunitiesUseCase(Protocol):
     """Ranking das oportunidades de renda do pregão: venda coberta, put coberta e travas."""
 
     def execute(self, command: RankIncomeCommand) -> IncomeRanking: ...
+
+
+@runtime_checkable
+class ProfileUseCase(Protocol):
+    """Perfis do app: quem está usando, a watchlist dele e a trava entre PCs.
+
+    ``open`` trava o perfil para este PC (outro PC com trava recente →
+    ``ProfileLockedError``, a menos que ``force``); ``close`` solta a trava.
+    ``active`` e ``set_watchlist`` exigem perfil aberto (``NoActiveProfileError``).
+    """
+
+    def list(self) -> tuple[ProfileEntry, ...]: ...
+
+    def create(self, name: str, folder: str) -> Profile: ...
+
+    def open(self, name: str, force: bool = False) -> Profile: ...
+
+    def active(self) -> Profile: ...
+
+    def set_watchlist(self, tickers: Sequence[str]) -> Profile: ...
+
+    def close(self) -> None: ...
+
+
+# Cópia do VENCIMENTOS_PADRAO do Tryd (application não importa adapters); um teste prende as duas.
+DEFAULT_CHAIN_EXPIRIES: Final = 2
+
+
+@dataclass(frozen=True, slots=True)
+class WatchRow:
+    """Exatamente um dos dois: ``quote`` ou ``reason``."""
+
+    symbol: str
+    quote: UnderlyingQuote | None
+    reason: str | None
+
+    def __post_init__(self) -> None:
+        if (self.quote is None) == (self.reason is None):
+            raise InvalidDomainValueError(
+                f"linha de {self.symbol!r} precisa de cotação OU motivo, nunca dos dois ou nenhum"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class SeriesRow:
+    symbol: str
+    option_type: OptionType
+    strike: float
+    exercise_style: ExerciseStyle
+    bid: float | None
+    ask: float | None
+    last: float | None
+    trades: int
+    volume: float
+    implied_vol: float | None
+    delta: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryBlock:
+    expiry: date
+    business_days: int
+    rows: tuple[SeriesRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ChainView:
+    """``timestamp``: a cotação do ativo, que é a data de valoração."""
+
+    symbol: str
+    spot: float
+    source: DataSource
+    timestamp: datetime
+    expiries: tuple[ExpiryBlock, ...]
+    rejected: tuple[RejectedSeries, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketStatus:
+    """Sem ``cadastro``, ``cadastro_reason`` diz por quê."""
+
+    source: DataSource
+    cadastro: CadastroFreshness | None
+    cadastro_reason: str | None
+    cotahist_range: tuple[date, date] | None
+
+
+@runtime_checkable
+class MarketViewUseCase(Protocol):
+    """``chain`` levanta ``UnknownSymbolError`` ou ``UnderlyingUnavailableError``; ``quotes``
+    nunca levanta por ativo: o motivo vai na linha."""
+
+    def follow(self, watchlist: Sequence[str], chain_symbol: str | None) -> None: ...
+
+    def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]: ...
+
+    def chain(self, symbol: str, expiries: int = DEFAULT_CHAIN_EXPIRIES) -> ChainView: ...
+
+    def status(self) -> MarketStatus: ...

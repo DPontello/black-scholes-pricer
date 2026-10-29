@@ -16,13 +16,28 @@ ROADMAP S3: port desenhado a partir do mock). Por isso:
   compounding explícito (CONVENTIONS §3).
 """
 
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol, runtime_checkable
 
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.market import MarketSnapshot
+from options_engine.domain.model.profile import Profile, ProfileEntry
+from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 
-__all__ = ["Clock", "MarketDataPort", "OptionChainPort", "RandomSource", "TradingCalendar"]
+__all__ = [
+    "CadastroFreshness",
+    "Clock",
+    "LiveFeedPort",
+    "MarketDataPort",
+    "MarketPort",
+    "OptionChainPort",
+    "ProfileRepository",
+    "QuoteBoardPort",
+    "RandomSource",
+    "TradingCalendar",
+]
 
 
 @runtime_checkable
@@ -89,6 +104,56 @@ class OptionChainPort(Protocol):
 
 
 @runtime_checkable
+class QuoteBoardPort(Protocol):
+    """Painel de cotações dos ativos-objeto, cada uma rotulada pela fonte.
+
+    Contrato semântico:
+
+    1. o resultado traz TODOS os símbolos pedidos: ``UnderlyingQuote`` ou o
+       MOTIVO (``str``) de não haver cotação — ``"ativo desconhecido"`` (ticker
+       fora do cadastro e dos arquivos da B3, em geral digitado errado) ou
+       ``"aguardando dados"`` (conhecido, mas a fonte ainda não entregou); o
+       motivo é texto para a tela;
+    2. nenhuma cotação sai sem ``source``, e ``AO_VIVO``/``ATRASADO`` só com
+       dado que a fonte ao vivo de fato entregou: dado parado nunca se passa
+       por ao vivo;
+    3. lado ausente (``bid``, ``ask``, ``last``, ``previous_close``) é
+       ``None``, NUNCA ``0`` (ADR-0003);
+    4. consulta, não comando: motivo é valor de retorno, nunca exceção.
+    """
+
+    def get_quotes(self, symbols: Sequence[str]) -> Mapping[str, UnderlyingQuote | str]: ...
+
+
+@runtime_checkable
+class LiveFeedPort(Protocol):
+    """Fonte ao vivo: o que acompanhar e em que estado ela está.
+
+    ``watch`` diz à fonte quais ativos e quais cadeias acompanhar (a
+    assinatura é a lista inteira: o que sai dela é cancelado; listas vazias
+    cancelam tudo). ``health`` é o rótulo que o dado dela tem agora:
+    ``AO_VIVO``, ``ATRASADO`` ou ``FIM_DE_DIA`` (sem fonte ao vivo; o app cai
+    para os arquivos da B3).
+    """
+
+    def watch(self, underlyings: Sequence[str], chain_symbols: Sequence[str]) -> None: ...
+
+    def health(self) -> DataSource: ...
+
+
+@runtime_checkable
+class MarketPort(QuoteBoardPort, LiveFeedPort, OptionChainPort, Protocol):
+    """Tudo o que o serviço de mercado consome: cotações, assinatura e cadeia."""
+
+
+@dataclass(frozen=True, slots=True)
+class CadastroFreshness:
+    reference_date: date
+    business_days: int
+    stale: bool
+
+
+@runtime_checkable
 class Clock(Protocol):
     """Abstrai o "agora" — ``datetime.now()`` espalhado pelo código é o
     assassino nº 1 de testes de pricing: sem ``Clock`` injetado, o
@@ -132,3 +197,45 @@ class RandomSource(Protocol):
     def gaussians(self, n: int) -> tuple[float, ...]: ...
 
     def uniform(self, low: float, high: float) -> float: ...
+
+
+@runtime_checkable
+class ProfileRepository(Protocol):
+    """Perfis do app e a trava de uso entre PCs.
+
+    O perfil mora na pasta que o usuário escolheu (nuvem, pendrive); o nome é
+    só a chave do cadastro da máquina, nunca vira nome de pasta ou arquivo.
+
+    Contrato:
+
+    1. ``create`` numa pasta que já tem um perfil ADOTA o existente: o nome
+       gravado na pasta prevalece sobre o pedido — é assim que o mesmo perfil,
+       na nuvem, aparece em outro PC. Nome já cadastrado (o pedido ou o
+       adotado) → ``DuplicateProfileError``;
+    2. pasta fora do ar (nuvem não montada, pendrive removido) ou erro do SO
+       ao ler/gravar os arquivos do perfil (permissão, arquivo em uso) →
+       ``ProfileFolderUnavailableError`` com o caminho; nada é criado em outro
+       lugar e o cadastro não muda;
+    3. nome não cadastrado em ``load``, ``save``, ``acquire_lock`` ou
+       ``release_lock`` → ``UnknownProfileError``;
+    4. trava de OUTRO PC com idade de até 12 h → ``ProfileLockedError``, a
+       menos que ``force``; mais velha que isso é ignorada. A trava do próprio
+       PC é renovada. ``now`` é tz-aware e é gravado no fuso em que chegou;
+    5. ``release_lock`` só remove a trava do próprio ``machine`` e nunca
+       levanta por trava ausente, pasta fora do ar ou erro do SO: fechar o app
+       precisa funcionar;
+    6. ``load`` devolve um perfil cujo ``name`` é a chave pedida; arquivo com
+       outro nome → ``InvalidDomainValueError`` (a chave do cadastro manda).
+    """
+
+    def list_profiles(self) -> tuple[ProfileEntry, ...]: ...
+
+    def create(self, name: str, folder: str) -> Profile: ...
+
+    def load(self, name: str) -> Profile: ...
+
+    def save(self, name: str, profile: Profile) -> None: ...
+
+    def acquire_lock(self, name: str, machine: str, now: datetime, force: bool) -> None: ...
+
+    def release_lock(self, name: str, machine: str) -> None: ...

@@ -1,6 +1,23 @@
 # Roadmap — Options Analytics Engine
 
-> **Status:** Sprint 5 (Painel de Renda) **concluída em 2026-10-27** (tag `v0.4.0`, PR #3 com CI verde em Python 3.12 e 3.13 e oráculo scipy): volatilidade implícita, `OptionChainPort` + `CotahistOptionChainAdapter` com cadastro de instrumentos e cache sqlite, métricas de renda brutas e líquidas com extremos, smile e preço TEÓRICO, tabela de custos versionada, `RankIncomeOpportunitiesService` e painel HTML via `python -m options_engine painel`. Gates locais: 3485 testes, cobertura 99%, kernel em 100%. Premissas a conferir no primeiro arquivo real da B3: layout do trailer (TOTREG), domínio do `OptnStyle`, conteúdo do ESPECI das opções e strike já ajustado no `PREEXE`. Sprint 3 concluída em 2026-10-25 (tag `v0.3.0`). Próxima: **Sprint 4 (API e Portfólio)**.
+> **Fase atual (2026-10-28): App de opções.** O projeto virou ferramenta
+> pessoal: um app local (FastAPI + React) para o autor e a mãe dele, com
+> cotações ao vivo do Tryd, montador de estruturas, book de recomendações,
+> carteira e alertas. Prazo: **2026-11-30**.
+>
+> - **Documentos:** desenho em
+>   [`superpowers/specs/2026-10-28-app-opcoes-design.md`](superpowers/specs/2026-10-28-app-opcoes-design.md),
+>   plano da semana 1 em
+>   [`superpowers/plans/2026-10-28-app-semana-1-base.md`](superpowers/plans/2026-10-28-app-semana-1-base.md)
+>   e estado para retomar em
+>   [`superpowers/HANDOFF-2026-10-28.md`](superpowers/HANDOFF-2026-10-28.md).
+> - **Semana 1:** tarefas 1 a 10 concluídas e revisadas; a 11 tem a correção
+>   feita e falta a re-revisão; faltam 12 a 18.
+> - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
+>   vitrine (benchmark, ADRs de apresentação) saíram do escopo.
+> - **ADR-0008:** aceita com as correções do spike de 2026-10-28.
+>
+> **Status anterior:** Sprint 5 (Painel de Renda) **concluída em 2026-10-27** (tag `v0.4.0`, PR #3 com CI verde em Python 3.12 e 3.13 e oráculo scipy): volatilidade implícita, `OptionChainPort` + `CotahistOptionChainAdapter` com cadastro de instrumentos e cache sqlite, métricas de renda brutas e líquidas com extremos, smile e preço TEÓRICO, tabela de custos versionada, `RankIncomeOpportunitiesService` e painel HTML via `python -m options_engine painel`. Gates locais: 3485 testes, cobertura 99%, kernel em 100%. Premissas a conferir no primeiro arquivo real da B3: layout do trailer (TOTREG), domínio do `OptnStyle`, conteúdo do ESPECI das opções e strike já ajustado no `PREEXE`. Sprint 3 concluída em 2026-10-25 (tag `v0.3.0`). Próxima: **Sprint 4 (API e Portfólio)**.
 >
 > **Premissas:** Python 3.12+, stdlib-only no core até a Sprint 4, arquitetura hexagonal desde o commit inicial (o layout `domain/ → application/ → adapters/` nasce na Sprint 1, ainda que parcialmente vazio — refatorar layout de pacote depois é custo puro). Esforço relativo: **S** (≤ 3 dias-pessoa), **M** (4–7), **L** (8–12), assumindo 1 dev sênior em dedicação parcial de portfólio.
 >

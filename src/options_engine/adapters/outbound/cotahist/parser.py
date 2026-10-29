@@ -36,6 +36,7 @@ __all__ = [
     "RECORD_LENGTH",
     "CotahistRecord",
     "parse_cotahist",
+    "raw_lines",
 ]
 
 RECORD_LENGTH: Final = 245
@@ -156,6 +157,11 @@ def _linhas(texto: str) -> Iterator[tuple[int, str]]:
         sem_cr = linha.removesuffix("\r")
         if sem_cr:
             yield numero, sem_cr
+
+
+def raw_lines(path: Path) -> tuple[tuple[int, str], ...]:
+    """Linhas numeradas, sem validar o layout (para diagnóstico)."""
+    return tuple(_linhas(_texto(path)))
 
 
 def parse_cotahist(path: Path) -> tuple[CotahistRecord, ...]:

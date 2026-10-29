@@ -21,4 +21,4 @@ pydantic só na borda) continuam a numeração a partir da última existente.
 | [0005](0005-metricas-de-rendimento.md) | Métricas de rendimento, anualização e custos | Aceita | 2026-10-26 |
 | [0006](0006-fontes-de-dados-de-opcoes.md) | COTAHIST como fonte da fase 1; intraday via Necton depois | Aceita | 2026-10-26 |
 | [0007](0007-painel-html-estatico.md) | Painel como relatório HTML estático | Aceita | 2026-10-26 |
-| [0008](0008-intraday-tryd-rtd.md) | Intraday via RTD do Tryd (emenda à decisão 3 da ADR-0006) | Proposta | 2026-10-27 |
+| [0008](0008-intraday-tryd-rtd.md) | Intraday via RTD do Tryd (emenda à decisão 3 da ADR-0006) | Aceita, com correções do spike | 2026-10-28 |

@@ -1,10 +1,35 @@
 # ADR-0008 — Intraday via RTD do Tryd
 
-- **Status:** Proposta — **emenda a decisão 3 da ADR-0006**; depende do
-  roteiro de [`docs/spikes/tryd-intraday.md`](../spikes/tryd-intraday.md).
-  Nada é implementado antes da aceitação.
-- **Data:** 2026-10-27
+- **Status:** **Aceita em 2026-10-28, com as correções do spike** (seção
+  abaixo). **Emenda a decisão 3 da ADR-0006**. Roteiro e resultados em
+  [`docs/spikes/tryd-intraday.md`](../spikes/tryd-intraday.md). O autor
+  decidiu "Tryd ao vivo + B3" no questionário do app
+  ([spec](../superpowers/specs/2026-10-28-app-opcoes-design.md)).
+- **Data:** 2026-10-27 (proposta); 2026-10-28 (aceite)
 - **Decisores:** mesa de operações
+
+## Correções medidas no spike (2026-10-28) — prevalecem sobre o texto abaixo
+
+- **Servidor e tópico:** o servidor RTD é **`RTDTrading.RtdServer`** (o do
+  Profit), CLSID `{272D2E65-05FB-4500-BD7B-5905D5B0A1B8}`. Não é
+  `tryd.rtdserver`. O tópico é `("PETR4_B_0", "ULT")`, não
+  `"COT";ATIVO;CAMPO`.
+- **Campos:** são os do Profit: `ULT`, `OCP`, `OVD`, `NEG`, `VOL`, `QTT`, `HOR`,
+  `DAT`, `PEX`, `VEN`...
+- **Volume financeiro (pergunta 6 resolvida):** **`VOL` é financeiro**, o que
+  o `OptionQuote` exige.
+- **Bits:** o servidor é **EXE fora do processo** (`tryd.exe`), então não há
+  restrição de bits. A opção A (cliente RTD direto) funciona.
+- **Não é "só Windows": funciona no Linux via Wine.** A ponte roda no Python
+  do Windows dentro do Wine, cria o servidor pelo CLSID (o ProgID não resolve
+  no Wine) e usa uma type library mínima (shim) no lugar da do Excel.
+- **Zero de "carregando":** o valor inicial do `ConnectData` vem `0.0` até
+  carregar. A ponte o marca (`Valor.inicial`), e o app não o trata como lado
+  vazio do livro.
+- **Arquitetura implementada:** a ponte é o processo `python -m options_ponte
+  servir` (pacote `src/options_ponte/`). Ela fala JSON por linha via TCP local
+  (porta 8766) com o app, que a lança, adota uma já viva e a relança se cair.
+  Os adapters do app ficam em `src/options_engine/adapters/outbound/tryd/`.
 
 ## Contexto
 

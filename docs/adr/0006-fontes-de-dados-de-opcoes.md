@@ -2,7 +2,9 @@
 
 - **Status:** Aceita — premissas verificadas no spike de 2026-10-26 (strike
   ajustado no `PREEXE` e MT5 na Necton seguem em aberto); obtenção manual
-  dos arquivos e estilo obrigatório decididos pela mesa na mesma data
+  dos arquivos e estilo obrigatório decididos pela mesa na mesma data.
+  **Decisão 3 emendada pela [ADR-0008](0008-intraday-tryd-rtd.md)** (intraday
+  via RTD do Tryd, aceita em 2026-10-28)
 - **Data:** 2026-10-26
 - **Decisores:** mesa de operações
 
