@@ -11,8 +11,8 @@ Painel de Renda (ADR-0007) a partir dos arquivos baixados da B3. Erro de
 arquivo (ausente, fora do layout) ou de domínio vira mensagem clara no
 stderr e código de saída != 0, sem traceback.
 
-``python -m options_engine app [--porta 8765] [--sem-janela] [--sem-ponte]``: o app
-local. O FastAPI só é importado dentro do subcomando.
+``python -m options_engine app [--porta 8765] [--sem-janela] [--sem-ponte] [--sem-downloads]``:
+o app local. O FastAPI só é importado dentro do subcomando.
 
 ``python -m options_engine conferir-b3 --cotahist ARQ --cadastro CSV [--pex T=K]``:
 confere arquivos reais da B3 contra as premissas do app; sai com 1 se alguma falhar.
@@ -293,6 +293,11 @@ def app(args: Sequence[str]) -> int:
     parser.add_argument("--porta", type=int, default=launch.DEFAULT_PORT)
     parser.add_argument("--sem-janela", action="store_true", help="não abre a janela de app")
     parser.add_argument("--sem-ponte", action="store_true", help="não sobe a ponte do Tryd")
+    parser.add_argument(
+        "--sem-downloads",
+        action="store_true",
+        help="não importa sozinho os arquivos da B3 baixados para a pasta Downloads",
+    )
     opcoes = parser.parse_args(args)
 
     static_dir = launch.default_static_dir()
@@ -320,6 +325,9 @@ def app(args: Sequence[str]) -> int:
         static_dir=static_dir,
         bridge=not opcoes.sem_ponte,
         machine_name=platform.node() or "este PC",
+        downloads_dir=None
+        if opcoes.sem_downloads
+        else launch.downloads_dir(sistema, os.environ, Path.home()),
     )
     janela = launch.app_window_command(
         sistema, url, shutil.which, launch.has_flatpak_app, launch.windows_edge_paths(os.environ)

@@ -2,6 +2,8 @@
 
 Só stdlib no topo: o uvicorn (extra ``app``) entra só quando o servidor sobe."""
 
+import os
+import re
 import socket
 import subprocess
 import time
@@ -20,6 +22,7 @@ __all__ = [
     "HOST",
     "app_window_command",
     "default_static_dir",
+    "downloads_dir",
     "find_free_port",
     "has_flatpak_app",
     "open_window",
@@ -44,6 +47,40 @@ def platform_config_dir(system: str, env: Mapping[str, str], home: Path) -> Path
     # XDG relativo é ignorado (especificação XDG).
     base = Path(xdg) if xdg and PurePosixPath(xdg).is_absolute() else home / ".config"
     return base / "painel-opcoes"
+
+
+_ID_DOWNLOADS: Final = "{374DE290-123F-4565-9164-39C4925E467B}"
+_XDG_DOWNLOAD: Final = re.compile(r'^XDG_DOWNLOAD_DIR="(.*)"\s*$', re.M)
+
+
+def _downloads_do_registro() -> str | None:
+    try:
+        import winreg
+
+        chave = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, chave) as k:  # type: ignore[attr-defined,unused-ignore]
+            return str(winreg.QueryValueEx(k, _ID_DOWNLOADS)[0])  # type: ignore[attr-defined,unused-ignore]
+    except (ImportError, OSError):
+        return None
+
+
+def downloads_dir(
+    system: str,
+    env: Mapping[str, str],
+    home: Path,
+    registry: Callable[[], str | None] = _downloads_do_registro,
+) -> Path:
+    """A pasta Downloads do usuário, mesmo movida (Windows) ou traduzida (Linux)."""
+    if system == "Windows":
+        valor = registry()
+        return Path(os.path.expandvars(valor)) if valor else home / "Downloads"
+    config = env.get("XDG_CONFIG_HOME") or str(home / ".config")
+    try:
+        texto = (Path(config) / "user-dirs.dirs").read_text(encoding="utf-8")
+    except OSError:
+        texto = ""
+    achado = _XDG_DOWNLOAD.search(texto)
+    return Path(achado.group(1).replace("$HOME", str(home))) if achado else home / "Downloads"
 
 
 def find_free_port(preferred: int, *, attempts: int = _PORT_ATTEMPTS) -> int:

@@ -14,6 +14,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from options_engine.adapters.outbound.b3files.downloads import DownloadsImporter
 from options_engine.adapters.outbound.b3files.library import B3FileLibrary, ImportedFile
 
 __all__ = ["router_arquivos_b3"]
@@ -27,6 +28,18 @@ class ArquivoB3Out(BaseModel):
 
 class ArquivoB3ListadoOut(ArquivoB3Out):
     importado_em: datetime
+
+
+class EventoAutomaticoOut(BaseModel):
+    nome: str
+    quando: datetime
+    importado: bool
+    detalhe: str
+
+
+class ImportacaoAutomaticaOut(BaseModel):
+    pasta: str | None
+    eventos: list[EventoAutomaticoOut]
 
 
 async def _corpo_cru(requisicao: Request) -> bytes:
@@ -46,7 +59,9 @@ def _listado_out(arquivo: ImportedFile) -> ArquivoB3ListadoOut:
     )
 
 
-def router_arquivos_b3(library: B3FileLibrary) -> APIRouter:
+def router_arquivos_b3(
+    library: B3FileLibrary, importer: DownloadsImporter | None = None
+) -> APIRouter:
     """Rotas ``/api/mercado/arquivos``: importar (POST) e listar (GET)."""
     router = APIRouter(prefix="/api/mercado", tags=["mercado"])
 
@@ -57,5 +72,17 @@ def router_arquivos_b3(library: B3FileLibrary) -> APIRouter:
     @router.get("/arquivos")
     def listar() -> list[ArquivoB3ListadoOut]:
         return [_listado_out(arquivo) for arquivo in library.files()]
+
+    @router.get("/arquivos/automatico")
+    def automatico() -> ImportacaoAutomaticaOut:
+        if importer is None:
+            return ImportacaoAutomaticaOut(pasta=None, eventos=[])
+        eventos = [
+            EventoAutomaticoOut(
+                nome=e.nome, quando=e.quando, importado=e.importado, detalhe=e.detalhe
+            )
+            for e in importer.eventos()
+        ]
+        return ImportacaoAutomaticaOut(pasta=str(importer.folder), eventos=eventos)
 
     return router

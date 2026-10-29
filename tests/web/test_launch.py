@@ -9,12 +9,28 @@ from options_engine.__main__ import main
 from options_engine.adapters.inbound.web import launch
 from options_engine.adapters.inbound.web.launch import (
     app_window_command,
+    downloads_dir,
     find_free_port,
     platform_config_dir,
     windows_edge_paths,
 )
 
 URL = "http://127.0.0.1:8765/"
+
+
+def test_downloads_no_windows_vem_do_registro_mesmo_movida() -> None:
+    movida = downloads_dir("Windows", {}, Path("/h"), lambda: r"D:\Nuvem\Downloads")
+    assert movida == Path(r"D:\Nuvem\Downloads")
+    assert downloads_dir("Windows", {}, Path("/h"), lambda: None) == Path("/h/Downloads")
+
+
+def test_downloads_no_linux_segue_o_user_dirs(tmp_path: Path) -> None:
+    config = tmp_path / ".config"
+    config.mkdir()
+    assert downloads_dir("Linux", {}, tmp_path) == tmp_path / "Downloads"
+    linhas = ['XDG_DESKTOP_DIR="$HOME/Área de trabalho"', 'XDG_DOWNLOAD_DIR="$HOME/Transferências"']
+    (config / "user-dirs.dirs").write_text("\n".join(linhas) + "\n", encoding="utf-8")
+    assert downloads_dir("Linux", {}, tmp_path) == tmp_path / "Transferências"
 
 
 def _which(*disponiveis: str):  # type: ignore[no-untyped-def]  # justificativa: fábrica de teste
