@@ -27,7 +27,8 @@ from tests.adapters._mercado import FIXTURE, biblioteca, relogio
 from tests.adapters.cotahist._layout import arquivo, registro
 from tests.data.cotahist.build_fixture import COTAHIST_NAME, INSTRUMENTS_NAME, REFERENCE_SESSION
 
-_SEM_ARQUIVOS = "sem arquivos da B3 importados"
+_SEM_CADASTRO = "sem Cadastro de Instrumentos importado"
+_SEM_COTAHIST = "sem COTAHIST importado"
 _CDI = 0.15
 _FIM_DO_PREGAO = datetime(2026, 10, 23, 18, 0, tzinfo=B3_UTC_OFFSET)
 
@@ -137,19 +138,28 @@ def test_o_cache_do_pregao_fica_na_raiz_da_biblioteca(tmp_path: Path) -> None:
     assert (tmp_path / "mercado" / "cache.sqlite").is_file()
 
 
-@pytest.mark.parametrize(
-    ("com_cotahist", "com_cadastro"), [(False, False), (True, False), (False, True)]
-)
-def test_sem_arquivos_o_motivo_e_por_simbolo_e_a_cadeia_e_indisponivel(
-    tmp_path: Path, com_cotahist: bool, com_cadastro: bool
+@pytest.mark.parametrize("com_cotahist", [False, True])
+def test_sem_cadastro_o_motivo_e_por_simbolo_e_a_cadeia_e_indisponivel(
+    tmp_path: Path, com_cotahist: bool
 ) -> None:
-    lib = biblioteca(tmp_path / "mercado", com_cotahist=com_cotahist, com_cadastro=com_cadastro)
+    lib = biblioteca(tmp_path / "mercado", com_cotahist=com_cotahist, com_cadastro=False)
     mercado = EndOfDayMarket(lib, lambda: _CDI)
     assert mercado.get_quotes(["PETR4", "XXXX99"]) == {
-        "PETR4": _SEM_ARQUIVOS,
-        "XXXX99": _SEM_ARQUIVOS,
+        "PETR4": _SEM_CADASTRO,
+        "XXXX99": _SEM_CADASTRO,
     }
-    with pytest.raises(UnderlyingUnavailableError, match=_SEM_ARQUIVOS):
+    with pytest.raises(UnderlyingUnavailableError, match=_SEM_CADASTRO):
+        mercado.get_chain("PETR4")
+
+
+def test_sem_cotahist_o_fim_de_dia_diz_por_que_e_ainda_reconhece_o_ticker(tmp_path: Path) -> None:
+    lib = biblioteca(tmp_path / "mercado", com_cotahist=False)
+    mercado = EndOfDayMarket(lib, lambda: _CDI)
+    assert mercado.get_quotes(["PETR4", "XXXX99"]) == {
+        "PETR4": _SEM_COTAHIST,
+        "XXXX99": "ativo desconhecido",
+    }
+    with pytest.raises(UnderlyingUnavailableError, match=_SEM_COTAHIST):
         mercado.get_chain("PETR4")
 
 
@@ -202,7 +212,7 @@ def test_recarrega_quando_a_biblioteca_muda(tmp_path: Path) -> None:
 def test_cadastro_novo_na_biblioteca_passa_a_valer(tmp_path: Path) -> None:
     lib = biblioteca(tmp_path / "mercado", com_cadastro=False)
     mercado = EndOfDayMarket(lib, lambda: _CDI)
-    assert mercado.get_quotes(["PETR4"])["PETR4"] == _SEM_ARQUIVOS
+    assert mercado.get_quotes(["PETR4"])["PETR4"] == _SEM_CADASTRO
     lib.import_file(INSTRUMENTS_NAME, (FIXTURE / INSTRUMENTS_NAME).read_bytes())
     assert isinstance(mercado.get_quotes(["PETR4"])["PETR4"], UnderlyingQuote)
 

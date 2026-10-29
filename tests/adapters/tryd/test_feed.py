@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
+from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET, StaticHolidayCalendar
 from options_engine.adapters.outbound.cotahist import CotahistOptionChainAdapter
 from options_engine.adapters.outbound.cotahist.instruments import InstrumentInfo, load_instruments
 from options_engine.adapters.outbound.tryd.client import BridgeHealth
@@ -26,6 +26,7 @@ from options_engine.domain.model.conventions import Compounding, RiskFreeRate
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
+from options_engine.domain.pricing.smile import SeriesMarket, mid_implied_vol
 from options_ponte.protocolo import Valor
 from tests.adapters._mercado import (
     AGORA,
@@ -47,7 +48,7 @@ from tests.data.cotahist.build_fixture import (
     REFERENCE_SESSION,
 )
 
-_SEM_ARQUIVOS = "sem arquivos da B3 importados"
+_SEM_CADASTRO = "sem Cadastro de Instrumentos importado"
 _INICIAL = "2026-10-28T12:00:00-03:00"
 Topico = tuple[str, str]
 
@@ -451,8 +452,44 @@ def test_cadeia_de_ticker_fora_do_cadastro_e_dos_cotahist_e_desconhecida(tmp_pat
 
 def test_cadeia_sem_arquivos_da_b3_e_indisponivel(tmp_path: Path) -> None:
     lib = biblioteca(tmp_path / "mercado", com_cotahist=False, com_cadastro=False)
-    with pytest.raises(UnderlyingUnavailableError, match=_SEM_ARQUIVOS):
+    with pytest.raises(UnderlyingUnavailableError, match=_SEM_CADASTRO):
         montar(tmp_path, lib=lib).feed.get_chain("PETR4")
+
+
+def _so_cadastro(tmp_path: Path) -> Montagem:
+    lib = biblioteca(tmp_path / "so-cadastro", cadastro=cadastro_com_objetos(), com_cotahist=False)
+    m = montar(tmp_path, lib=lib)
+    m.feed.watch(["PETR4"], ["PETR4"])
+    alimentar(m.board, "PETR4", ULT=30.0, OCP=29.5, OVD=30.5)
+    return m
+
+
+def test_cadeia_sem_cotahist_usa_a_iv_da_serie_mais_perto_do_dinheiro(tmp_path: Path) -> None:
+    m = _so_cadastro(tmp_path)
+    alimentar(m.board, "PETRK300", ULT=1.5, OCP=1.25, OVD=1.75, NEG=10, VOL=2500.0)
+    alimentar(m.board, "PETRK280", ULT=2.5, OCP=2.25, OVD=2.75, NEG=4, VOL=300.0)
+    chain = m.feed.get_chain("PETR4")
+    k300 = next(q for q in chain.quotes if q.contract.symbol == "PETRK300")
+    du = StaticHolidayCalendar.from_packaged_data().business_days_between(
+        AGORA.astimezone(B3_UTC_OFFSET).date(), k300.contract.terms.expiry
+    )
+    mercado = SeriesMarket(30.0, chain.underlying.risk_free_rate.as_continuous(), du / 252)
+    esperado = mid_implied_vol(k300, mercado)
+    assert esperado is not None
+    assert chain.underlying.volatility.value == pytest.approx(esperado, rel=1e-12)
+
+
+def test_cadeia_sem_cotahist_e_sem_serie_com_compra_e_venda_e_indisponivel(tmp_path: Path) -> None:
+    m = _so_cadastro(tmp_path)
+    alimentar(m.board, "PETRK300", ULT=1.5, OCP=1.25, OVD=0.0, NEG=10, VOL=2500.0)
+    with pytest.raises(UnderlyingUnavailableError, match="nenhuma série com compra e venda"):
+        m.feed.get_chain("PETR4")
+
+
+def test_sem_cotahist_o_cadastro_diz_que_a_raiz_e_dividida(tmp_path: Path) -> None:
+    m = montar(tmp_path, lib=biblioteca(tmp_path / "cru", com_cotahist=False))
+    m.feed.watch(["PETR4"], ["PETR4"])
+    assert _series(m.cliente.topicos, "PETR4") == {"PETRK305"}
 
 
 def test_serie_de_vinculo_ambiguo_sai_rejeitada_e_nao_cotada(tmp_path: Path) -> None:

@@ -6,7 +6,7 @@ cadastro de instrumentos mais recente. Aqui mora a regra única de qual é esse 
 quando relê-lo: ``library.files()`` é comparada a cada consulta (a tupla inteira, que muda a
 cada importação) e só então os arquivos são relidos.
 
-Sem cadastro ou sem COTAHIST não há o que consultar, e arquivo que não abre na leitura não
+Sem cadastro não há o que consultar (sem COTAHIST, só o ao vivo). Arquivo que não abre não
 derruba a consulta: ``load`` devolve o MOTIVO (``str``) em vez de levantar. Tanto o sucesso
 quanto a falha ficam guardados até a biblioteca mudar, para um arquivo estragado não ser
 relido a cada consulta.
@@ -29,33 +29,42 @@ from options_engine.adapters.outbound.cotahist.parser import MARKET_SPOT, Cotahi
 from options_engine.adapters.outbound.cotahist.session import SessionData, load_session_data
 from options_engine.domain.model.errors import DomainError
 
-__all__ = ["NO_FILES_REASON", "LibraryLoader", "LoadedLibrary"]
+__all__ = ["NO_CADASTRO_REASON", "NO_COTAHIST_REASON", "LibraryLoader", "LoadedLibrary"]
 
-NO_FILES_REASON: Final = "sem arquivos da B3 importados"
+NO_CADASTRO_REASON: Final = "sem Cadastro de Instrumentos importado"
+NO_COTAHIST_REASON: Final = "sem COTAHIST importado"
 _CACHE_NAME: Final = "cache.sqlite"
 
 
 @dataclass(frozen=True, slots=True)
 class LoadedLibrary:
-    """O que a biblioteca tinha quando foi lida.
-
-    ``files``: a foto de ``library.files()`` que originou a leitura. ``session``: o maior
-    pregão dos COTAHIST. ``cotahist_paths``: do pregão mais antigo ao mais novo, como a
-    biblioteca os ordena. ``data``: os registros desse pregão e os fechamentos até ele.
-    """
+    """O que a biblioteca tinha quando foi lida; sem COTAHIST, ``session`` e ``data`` são None."""
 
     files: tuple[ImportedFile, ...]
-    session: date
+    session: date | None
     cotahist_paths: tuple[Path, ...]
     instruments_path: Path
     cache_path: Path
     instruments: Mapping[str, InstrumentInfo]
-    data: SessionData
+    data: SessionData | None
     spot_records: Mapping[str, CotahistRecord]
 
     def knows(self, symbol: str) -> bool:
-        """Ticker do cadastro ou ticker à vista visto em algum pregão dos COTAHIST."""
-        return symbol in self.instruments or symbol in self.data.known_spot_symbols
+        return symbol in self.instruments or symbol in self.spot_symbols
+
+    def closes(self, symbol: str) -> tuple[tuple[date, float], ...]:
+        return () if self.data is None else self.data.closes.get(symbol, ())
+
+    @property
+    def spot_symbols(self) -> frozenset[str]:
+        if self.data is not None:
+            return self.data.known_spot_symbols
+        # Sem COTAHIST, os ativos à vista do cadastro (tickers terminados em dígito, sem opção).
+        return frozenset(
+            s
+            for s, info in self.instruments.items()
+            if info.option_type is None and s[-1].isdigit()
+        )
 
 
 class LibraryLoader:
@@ -85,12 +94,16 @@ class LibraryLoader:
         ]
         try:
             cadastro = self._library.latest_cadastro()
-            if cadastro is None or not sessions:
-                return NO_FILES_REASON
-            session = max(sessions)
-            paths = self._library.cotahist_paths()
+            if cadastro is None:
+                return NO_CADASTRO_REASON
             cache_path = cadastro.path.parent.parent / _CACHE_NAME
             instruments = load_instruments(cadastro.path)
+            if not sessions:
+                return LoadedLibrary(
+                    files, None, (), cadastro.path, cache_path, instruments, None, {}
+                )
+            session = max(sessions)
+            paths = self._library.cotahist_paths()
             data, _ = load_session_data(paths, session, cache_path)
         except (DomainError, OSError, SourceFileError) as erro:
             return f"arquivos da B3 ilegíveis: {erro}"
