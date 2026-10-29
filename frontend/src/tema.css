@@ -1,0 +1,182 @@
+/* Tema escuro inspirado no home broker. As cores nunca são a única pista: todo estado
+   (compra/venda, alta/baixa, fonte do dado) também vem escrito. */
+:root {
+  --fundo: #0f1115;
+  --painel: #171a21;
+  --borda: #262b36;
+  --texto: #e6e8ee;
+  --texto-secundario: #9aa3b2;
+  --compra: #1e88e5;
+  --venda: #e53935;
+  --alta: #26a69a;
+  --baixa: #ef5350;
+  --atencao: #f9a825;
+
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+}
+
+a {
+  color: var(--compra);
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+}
+
+.barra-superior {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.6rem 1rem;
+  background: var(--painel);
+  border-bottom: 1px solid var(--borda);
+}
+
+.nome-app {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.espaco-status {
+  flex: 1;
+}
+
+.perfil-ativo {
+  color: var(--texto-secundario);
+  text-decoration: none;
+}
+
+.perfil-ativo:hover {
+  color: var(--texto);
+}
+
+.menu-lateral {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem 0;
+  background: var(--painel);
+  border-right: 1px solid var(--borda);
+}
+
+.menu-lateral a {
+  padding: 0.55rem 1rem;
+  color: var(--texto-secundario);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+
+.menu-lateral a:hover {
+  color: var(--texto);
+}
+
+.menu-lateral a.active {
+  color: var(--texto);
+  border-left-color: var(--compra);
+  background: var(--fundo);
+}
+
+.conteudo {
+  padding: 1rem 1.25rem;
+  overflow: auto;
+}
+
+h1 {
+  font-size: 1.3rem;
+  margin: 0 0 0.75rem;
+}
+
+.em-breve p {
+  color: var(--texto-secundario);
+}
+
+/* Números de mercado: alinhados à direita e com algarismos de largura fixa. */
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alta {
+  color: var(--alta);
+}
+
+.baixa {
+  color: var(--baixa);
+}
+
+.compra {
+  color: var(--compra);
+}
+
+.venda {
+  color: var(--venda);
+}
+
+.secundario {
+  color: var(--texto-secundario);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--borda);
+}
+
+th {
+  color: var(--texto-secundario);
+  font-weight: 500;
+  text-align: left;
+}
+
+button {
+  font: inherit;
+  color: var(--texto);
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 4px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--compra);
+}
+
+input {
+  font: inherit;
+  color: var(--texto);
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+}
+
+.aviso {
+  color: var(--atencao);
+}
+
+.erro {
+  color: var(--baixa);
+}
