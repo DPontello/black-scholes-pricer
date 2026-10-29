@@ -2,10 +2,13 @@ import { expect, test } from "vitest";
 
 import {
   formatarData,
+  formatarDelta,
   formatarHora,
+  formatarInstante,
   formatarInteiro,
   formatarPercentual,
   formatarPreco,
+  formatarVol,
   formatarVolume,
 } from "./formatacao";
 
@@ -22,6 +25,9 @@ test("formatação pt-BR", () => {
   expect(formatarVolume(812)).toBe("812");
   expect(formatarInteiro(22704)).toBe("22.704");
   expect(formatarData("2026-11-19")).toBe("19/11/2026");
+  expect(formatarVol(0.312)).toBe("31,2%");
+  expect(formatarDelta(-0.4512)).toBe("-0,45");
+  expect(formatarDelta(null)).toBe("—");
 });
 
 test("hora no fuso da B3, com a data quando não é de hoje", () => {
@@ -29,4 +35,8 @@ test("hora no fuso da B3, com a data quando não é de hoje", () => {
   expect(formatarHora("2026-10-28T13:05:09-03:00", hoje)).toBe("13:05:09");
   expect(formatarHora("2026-10-23T21:00:00+00:00", hoje)).toBe("23/10 18:00:00");
   expect(formatarHora(null, hoje)).toBe("—");
+});
+
+test("instante em UTC vira data e hora de São Paulo (01h UTC de 29/10 ainda é 28/10)", () => {
+  expect(formatarInstante("2026-10-29T01:15:00+00:00")).toBe("28/10/2026 22:15");
 });

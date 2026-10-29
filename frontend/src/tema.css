@@ -181,6 +181,28 @@ input {
   color: var(--baixa);
 }
 
+/* --- barra de status ---------------------------------------------------------------------- */
+
+.barra-status {
+  color: var(--texto-secundario);
+}
+
+.selo-fonte {
+  font-weight: 600;
+}
+
+.fonte-ao-vivo {
+  color: var(--alta);
+}
+
+.fonte-atrasado {
+  color: var(--atencao);
+}
+
+.fonte-fim-de-dia {
+  color: var(--texto-secundario);
+}
+
 /* --- perfis e arquivos ---------------------------------------------------------------------- */
 
 .cartoes {
@@ -248,4 +270,61 @@ input {
 h2 {
   font-size: 1.05rem;
   margin: 1.25rem 0 0.5rem;
+}
+
+/* --- mercado ---------------------------------------------------------------------------------- */
+
+.lista-ativos {
+  margin-bottom: 1.25rem;
+}
+
+.lista-ativos tr.selecionado {
+  background: var(--painel);
+}
+
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--compra);
+  font-weight: 600;
+}
+
+.adicionar-ativo {
+  margin-top: 0.5rem;
+}
+
+.cabecalho-cadeia {
+  margin-bottom: 0.5rem;
+}
+
+.abas {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.abas button[aria-selected="true"] {
+  border-color: var(--compra);
+  background: var(--fundo);
+}
+
+.tabela-cadeia th.lado-call,
+.tabela-cadeia th.lado-put {
+  text-align: center;
+  color: var(--texto);
+}
+
+.tabela-cadeia td.strike {
+  font-weight: 600;
+  background: var(--painel);
+}
+
+.tabela-cadeia tr.no-dinheiro td {
+  background: #1d2430;
+}
+
+.rejeitadas {
+  margin-top: 0.75rem;
+  color: var(--texto-secundario);
 }

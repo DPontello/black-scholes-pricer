@@ -8,7 +8,7 @@ import {
   statusMercado,
   type StatusMercado,
 } from "../api/cliente";
-import { formatarData } from "../formatacao";
+import { formatarData, formatarInstante } from "../formatacao";
 
 // Páginas da B3 de onde os arquivos são baixados À MÃO: os termos proíbem a coleta
 // automática e o download tem CAPTCHA (ADR-0006).
@@ -115,7 +115,7 @@ export function ArquivosB3() {
               <td>{TIPOS[arquivo.tipo]}</td>
               <td>{arquivo.data === null ? "—" : formatarData(arquivo.data)}</td>
               <td className="secundario">
-                {arquivo.importado_em === undefined ? "—" : formatarData(arquivo.importado_em)}
+                {arquivo.importado_em === undefined ? "—" : formatarInstante(arquivo.importado_em)}
               </td>
             </tr>
           ))}

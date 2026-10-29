@@ -19,6 +19,11 @@ const umaCasa = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 1,
 });
 const inteiro = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+const vol = new Intl.NumberFormat("pt-BR", {
+  style: "percent",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
 const relogio = new Intl.DateTimeFormat("pt-BR", {
   timeZone: FUSO_B3,
   hour: "2-digit",
@@ -32,6 +37,15 @@ const diaMes = new Intl.DateTimeFormat("pt-BR", {
   month: "2-digit",
 });
 const diaNaB3 = new Intl.DateTimeFormat("en-CA", { timeZone: FUSO_B3 }); // AAAA-MM-DD
+const instante = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: FUSO_B3,
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 
 /** Preço com duas casas: 1.234,50. */
 export function formatarPreco(v: number | null): string {
@@ -53,6 +67,16 @@ export function formatarVolume(v: number | null): string {
   return inteiro.format(v);
 }
 
+/** Volatilidade (decimal) em percentual sem sinal: 0.312 → "31,2%". */
+export function formatarVol(v: number | null): string {
+  return v === null ? AUSENTE : vol.format(v);
+}
+
+/** Delta com duas casas: 0,55; -0,45. */
+export function formatarDelta(v: number | null): string {
+  return v === null ? AUSENTE : preco.format(v).replace(/−/g, "-");
+}
+
 /** Inteiro com separador de milhar: 22.704. */
 export function formatarInteiro(v: number | null): string {
   return v === null ? AUSENTE : inteiro.format(v);
@@ -62,6 +86,11 @@ export function formatarInteiro(v: number | null): string {
 export function formatarData(iso: string): string {
   const [ano, mes, dia] = iso.slice(0, 10).split("-");
   return `${dia}/${mes}/${ano}`;
+}
+
+/** Instante (ISO com fuso) como data e hora no fuso da B3: "28/10/2026 22:15". */
+export function formatarInstante(iso: string): string {
+  return instante.format(new Date(iso)).replace(",", "");
 }
 
 /** Hora da observação no fuso da B3; com DD/MM na frente quando não é de hoje. */
