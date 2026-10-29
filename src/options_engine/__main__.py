@@ -11,11 +11,19 @@ Painel de Renda (ADR-0007) a partir dos arquivos baixados da B3. Erro de
 arquivo (ausente, fora do layout) ou de domínio vira mensagem clara no
 stderr e código de saída != 0, sem traceback.
 
+``python -m options_engine app [--porta 8765] [--sem-janela] [--sem-ponte]``:
+sobe o app local (Painel de Opções) em ``127.0.0.1`` e o abre numa janela de
+app. Precisa do extra ``app`` e do frontend compilado; sem eles, mensagem e
+código 2. O FastAPI só é importado aqui dentro: o resto do CLI roda sem ele.
+
 Adapter inbound de console: consome os Protocols inbound montados pelo
 composition root; mora fora das camadas porque é quem chama o ``config``.
 """
 
 import argparse
+import os
+import platform
+import shutil
 import sys
 from collections.abc import Sequence
 from datetime import date, datetime
@@ -87,6 +95,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "painel":
         return painel(args[1:])
+    if args and args[0] == "app":
+        return app(args[1:])
     smoke(args)
     return 0
 
@@ -267,6 +277,54 @@ def painel(argv: Sequence[str]) -> int:
         f"painel gravado em {args.saida}: {len(ranking.ranked)} no ranking, "
         f"{len(ranking.references)} referências, {len(ranking.exclusions)} exclusões"
     )
+    return 0
+
+
+def app(args: Sequence[str]) -> int:
+    """Sobe o app local e abre a janela; volta quando o servidor para (Ctrl+C)."""
+    from options_engine.adapters.inbound.web import launch
+
+    parser = argparse.ArgumentParser(
+        prog="python -m options_engine app",
+        description="Painel de Opções: app local com cotações do Tryd e arquivos da B3.",
+    )
+    parser.add_argument("--porta", type=int, default=launch.DEFAULT_PORT)
+    parser.add_argument("--sem-janela", action="store_true", help="não abre a janela de app")
+    parser.add_argument("--sem-ponte", action="store_true", help="não sobe a ponte do Tryd")
+    opcoes = parser.parse_args(args)
+
+    static_dir = launch.default_static_dir()
+    if not (static_dir / "index.html").is_file():
+        print(
+            "erro: o frontend não está compilado; rode `npm --prefix frontend run build`",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        from options_engine.config.web_app import build_web_app
+    except ImportError as erro:
+        print(
+            f'erro: o app precisa do extra "app" (pip install -e ".[app]"): {erro}',
+            file=sys.stderr,
+        )
+        return 2
+
+    sistema = platform.system()
+    config_dir = launch.platform_config_dir(sistema, os.environ, Path.home())
+    porta = launch.find_free_port(opcoes.porta)
+    url = f"http://{launch.HOST}:{porta}/"
+    web = build_web_app(
+        config_dir=config_dir,
+        static_dir=static_dir,
+        bridge=not opcoes.sem_ponte,
+        machine_name=platform.node() or "este PC",
+    )
+    janela = launch.app_window_command(
+        sistema, url, shutil.which, launch.has_flatpak_app, launch.windows_edge_paths(os.environ)
+    )
+    print(f"Painel de Opções em {url} (configuração em {config_dir})")
+    on_ready = None if opcoes.sem_janela else (lambda: launch.open_window(janela, url))
+    launch.serve(web, porta, on_ready)
     return 0
 
 
