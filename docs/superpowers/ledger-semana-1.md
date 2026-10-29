@@ -282,3 +282,39 @@ Pregão fechado (00:17). Ponte no Python 3.14 do `.venv-tryd` (pywin32 312); app
 
 - Ruling: a cadeia ao vivo não exige mais o COTAHIST. A biblioteca carrega só com o cadastro; sem histórico, a vol do snapshot é a IV da série mais perto do dinheiro (a tela não a usa: IV e delta vêm de cada série). Sem cadastro, nada feito (séries e estilo vêm dele). O fim de dia continua exigindo o COTAHIST ("sem COTAHIST importado"). Sem COTAHIST, a raiz dividida (PETR3/PETR4) é detectada pelos ativos à vista do cadastro.
 - Ruling: o app importa sozinho os arquivos da B3 baixados para a pasta Downloads (`DownloadsImporter`, varredura a cada 5 s numa thread do ciclo de vida). Só nomes `COTAHIST*.zip|txt` e `InstrumentsConsolidated*.csv`; importa quando o arquivo para de mudar entre duas passadas; não reimporta o que a biblioteca já tem de depois do download; recusado vira evento com o motivo e não é tentado de novo. A pasta vem do registro no Windows (Downloads movida) e do `user-dirs.dirs` no Linux ("Transferências"). `--sem-downloads` desliga. O download continua manual (termos da B3).
+
+## 2026-10-29 (madrugada): arquivos reais da B3 de 28/10 (branch fix/arquivos-reais-b3)
+
+O autor baixou à mão o anual de 2026 (`COTAHIST_A2026.ZIP`, 89 MB; 823 MB descompactado), o diário de 28/10 e o Cadastro de Instrumentos de 28/10 (`InstrumentsConsolidatedFile_20261028_1.csv`, 19,8 MB, 52 colunas).
+- Bug: o app recusava o anual inteiro. Um registro (FR0T5L, mercado 017, 22/10) traz o nome "FROTA OCEÂNI" em UTF-8 dentro do arquivo cp1252, e a linha fica com 246 caracteres. FIXED: só a linha fora do tamanho é relida como UTF-8, e é aceita se fechar os 245 caracteres. Byte sem caractere no cp1252 e linha que nem em UTF-8 fecha o layout seguem recusados, com o número da linha.
+- Bug (premissa do layout): o TOTREG do trailer NÃO conta header e trailer, ao contrário do que diz o layout da B3 (anual: 3.332.523 para 3.332.525 linhas; diário: 17.616 para 17.618). FIXED no parser, no `conferir-b3` (agora acusa o TOTREG que conta os dois) e na fixture sintética regenerada.
+- Important (desempenho), FIXED: ler o anual real levava 75 s e chegava a 3,8 GB de memória (2 GB retidos), num Ryzen 7 5825U com 16 GB. O app lia o arquivo duas vezes: ao validar na importação e ao montar o fim de dia.
+  - Ruling: parser em fluxo (`iter_cotahist`). Ele lê do ZIP em blocos de 4 MB, sem materializar o texto, e valida toda linha.
+  - A validação rápida é em bytes: três `isdigit` cobrem DATPRE, TPMERC e o trecho contíguo PREULT..FATCOT (109-217), e as datas ficam em cache. Qualquer desvio vai para o caminho lento antigo, que dá a mensagem exata.
+  - Só vira registro o que `keep(pregão, mercado)` pede: a importação usa `cotahist_sessions`, que não guarda nada; o fim de dia guarda só o à vista e o pregão.
+  - Medido no anual real: validar leva 12 s com 53 MB de pico; montar o pregão leva 18 s com 92 MB. O app inteiro, com os três arquivos importados, ficou em 237 MB.
+  - O caminho rápido e o lento deram registros idênticos nas 3.350.139 linhas reais.
+  - Se errado: a validação aceita algo que o caminho lento recusaria (os dois estão presos pela comparação acima e pelos testes de erro do parser).
+- Important, FIXED: o `UndrlygTckrSymb1` vem vazio em todas as 77.970 opções do Cadastro real. Sem ele, com o COTAHIST importado, a raiz PETR tem dois ativos à vista e todas as opções de PETR sairiam rejeitadas como ambíguas na cadeia ao vivo.
+  - O ativo-objeto está no `Asst` da opção (PETRK526 → PETR4, BOVAK170 → BOVA11, B3SA3, BDR M1TA34); no à vista, o `Asst` traz só a raiz.
+  - Ruling: com a coluna própria vazia, vale o `Asst` da opção quando ele é um ticker (`[A-Z0-9]{4}\d{1,2}`). Cobre 68.567 de 68.567 opções sobre ações (PETR: 2.790 de PETR4 e 292 de PETR3).
+  - Se errado: uma opção de índice com `Asst` em forma de ticker ganharia um ativo-objeto.
+- Cadastro real, outros fatos:
+  - `OptnStyle` é EURO/AMER e `OptnTp` é Call/Put; os dois já eram lidos certo.
+  - `ExrcPric` usa vírgula decimal ("51,41") ou vem inteiro ("170"). O `conferir-b3` contava o inteiro como "ponto decimal" e acusava formatos misturados: FIXED.
+  - `AllcnRndLot` é 100 (61.233), 1 (14.878, incluídas as opções de BOVA11) ou 10 (1.859). O lote por série é da semana 2.
+  - `SpcfctnCd` vem vazio nas opções.
+- Strike COTAHIST × Cadastro: 15.143 de 15.219 iguais.
+  - As 183 opções de IBOV (FATCOT 100) trazem o `PREEXE` em pontos, sem o fator: 2.050 contra 205.000 no Cadastro. O app não usa opções de índice; o `conferir-b3` as deixa fora, com nota.
+  - 76 das 98 séries de JHSF estão R$ 0,07 menores no Cadastro. As outras 22, de strike já ajustado antes, estão iguais. O provável é um provento entre o pregão de 28/10 e o Cadastro, que já traz o strike do pregão seguinte; o `PEX` do Tryd no pregão confirma.
+  - Ruling: no `conferir-b3`, uma raiz com 2 ou mais séries deslocadas pelo mesmo valor vira "atenção (provável provento)", não falha; uma série solta diferente segue falha.
+- `conferir-b3` com os arquivos reais: 9 ok, 1 atenção (JHSF), 0 falha, código de saída 0. O `≠` da nota quebrava a saída no console cp1252 do Windows: trocado por texto.
+- O COTAHIST de 28/10 traz 15.402 opções (7.993 calls e 7.409 puts), com `INDOPC` 0 em todas e 57% com `PREOFC` = 0. O anual já contém 28/10: os 16.893 registros repetidos com o diário são iguais e o `build_session_data` os mescla; o `conferir-b3` agora conta cada série uma vez.
+- App ponta a ponta (APPDATA temporário, `--sem-ponte`):
+  - A pasta Downloads importou os três arquivos sozinha.
+  - Status "fim de dia", Cadastro de 28/10 (não velho), COTAHIST de 02/01 a 28/10.
+  - Cotações de PETR4 (52,51), PETR3, VALE3, BOVA11, SMAL11 e B3SA3.
+  - Cadeias de PETR4 e BOVA11 com IV e delta e nenhuma série rejeitada.
+  - A primeira consulta depois da importação leva 22 s (monta o pregão a partir do anual); as seguintes vêm do cache.
+- Note (decisão do autor): PETR4, VALE3, BOVA11 e SMAL11 têm vencimentos semanais (30/10, 06/11, 13/11) antes do mensal de 19/11, que concentra as séries (PETR: 43, 35, 24 e 265). Com `VENCIMENTOS_PADRAO = 2`, a cadeia ao vivo mostra só as duas semanais e esconde o mensal.
+- Os strikes de PETR em 28/10 já vêm ajustados no `PREEXE` (PETRK526 com K = 51,41). Falta a conferência com o `PEX` do Tryd, no pregão: às 2h o Tryd não manda nem o `PEX`. Sugestão: PETRK526=51,41, JHSFX960=9,43 e uma de VALE3.

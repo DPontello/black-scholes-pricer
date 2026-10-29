@@ -72,6 +72,11 @@ Fontes avaliadas para a cadeia de opções:
   <https://b3.com.br/data/files/52/74/1E/14/4BA6D8103152D4C8AC094EA8/Glossario%20InstrumentsConsolidatedFile%202024.pdf>
   O glossário não lista os valores possíveis de `OptnStyle` (provavelmente
   americano/europeu em forma abreviada): conferir no primeiro arquivo real.
+- **No Cadastro real de 28/10/2026** (conferido em 29/10/2026):
+  - `OptnStyle` vem `EURO`/`AMER` e `OptnTp` vem `Call`/`Put`;
+  - `ExrcPric` vem com vírgula decimal ou inteiro;
+  - `UndrlygTckrSymb1` vem vazio em todas as opções. O ativo-objeto está em
+    `Asst` (PETR4, BOVA11), que no à vista traz só a raiz.
 - O ticker **não codifica estilo** (estrutura do código de negociação no
   OC 025/2017-DO, vigência 04/12/2017). O "E" no fim do código identifica o
   instrumento de **exercício**, não "europeia".
@@ -87,12 +92,15 @@ histórico interno do documento), consultado em 26/10/2026:
 <https://www.b3.com.br/data/files/33/67/B9/50/D84057102C784E47AC094EA8/SeriesHistoricas_Layout.pdf>
 
 - Registros de **245 bytes**: **header `00`**, registros de cotação `01` e
-  **trailer `99`**. O trailer traz o total de registros (incluindo header e
-  trailer) nas posições 32–42. O layout descreve só o arquivo anual; o nome
+  **trailer `99`**. O trailer traz o total de registros nas posições 32–42.
+  O layout diz que esse total inclui header e trailer, mas **os arquivos reais
+  não os incluem** (anual de 2026 e diário de 28/10/2026, conferidos em
+  29/10/2026). O layout descreve só o arquivo anual; o nome
   gravado no header do arquivo diário não está documentado e não deve ser
   validado de forma rígida.
 - **Encoding cp1252** ("Windows (ANSI)", segundo a página Cotações
-  Históricas).
+  Históricas). No anual de 2026, uma linha veio com o nome em UTF-8 (FR0T5L,
+  "FROTA OCEÂNI", 246 bytes).
 - Campos principais do registro `01` (posições 1-based, inclusivas):
 
   | Campo | Posições | Tipo | Conteúdo |
