@@ -180,3 +180,72 @@ input {
 .erro {
   color: var(--baixa);
 }
+
+/* --- perfis e arquivos ---------------------------------------------------------------------- */
+
+.cartoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.cartao {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 220px;
+  padding: 0.8rem 1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.confirmacao {
+  margin: 0 0 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--atencao);
+  border-radius: 6px;
+  background: var(--painel);
+}
+
+.novo-perfil {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.novo-perfil label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--texto-secundario);
+}
+
+.area-soltar {
+  margin: 0.5rem 0 1rem;
+  padding: 1.5rem;
+  text-align: center;
+  border: 2px dashed var(--borda);
+  border-radius: 8px;
+  background: var(--painel);
+}
+
+.botao-arquivo {
+  display: inline-block;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--borda);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.botao-arquivo input {
+  display: block;
+  margin: 0.5rem auto 0;
+}
+
+h2 {
+  font-size: 1.05rem;
+  margin: 1.25rem 0 0.5rem;
+}
