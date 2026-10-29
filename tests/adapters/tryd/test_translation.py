@@ -3,7 +3,7 @@
 import logging
 import math
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
@@ -102,6 +102,29 @@ def test_timestamp_usa_o_fuso_recebido() -> None:
     assert parse_tryd_timestamp("01/02/2026", "03:04:05", fuso) == datetime(
         2026, 2, 1, 3, 4, 5, tzinfo=fuso
     )
+
+
+def test_timestamp_em_windows_com_data_mes_dia() -> None:
+    # Visto no Tryd de um Windows em inglês: DAT "10/28/2026".
+    assert parse_tryd_timestamp("10/28/2026", "12:02:31", B3_UTC_OFFSET) == HORA_TRYD
+
+
+@pytest.mark.parametrize(
+    ("hoje", "esperado"),
+    [
+        (date(2026, 11, 6), date(2026, 11, 5)),
+        (date(2026, 5, 12), date(2026, 5, 11)),
+        (date(2026, 5, 6), date(2026, 5, 11)),
+    ],
+)
+def test_data_ambigua_fica_com_a_leitura_mais_perto_de_hoje(hoje: date, esperado: date) -> None:
+    lido = parse_tryd_timestamp("11/05/2026", "12:02:31", B3_UTC_OFFSET, hoje)
+    assert lido is not None and lido.date() == esperado
+
+
+def test_data_ambigua_sem_hoje_e_dia_mes() -> None:
+    lido = parse_tryd_timestamp("11/05/2026", "12:02:31", B3_UTC_OFFSET)
+    assert lido is not None and lido.date() == date(2026, 5, 11)
 
 
 def test_timestamp_tolera_espacos_e_fim_de_linha_do_dde() -> None:

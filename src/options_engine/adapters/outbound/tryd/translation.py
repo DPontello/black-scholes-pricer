@@ -27,7 +27,7 @@ a hora de agora seria uma observação inventada.
 import logging
 import re
 from collections.abc import Callable, Mapping
-from datetime import datetime, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from math import isfinite
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
@@ -61,21 +61,35 @@ class _ValorIlegivel(Exception):
 
 
 def parse_tryd_timestamp(
-    date_text: str | None, time_text: str | None, tz: tzinfo
+    date_text: str | None, time_text: str | None, tz: tzinfo, today: date | None = None
 ) -> datetime | None:
-    """``"28/10/2026"`` + ``"12:02:31"`` no fuso ``tz``; ``None`` se faltar um ou for ilegível."""
+    """``DAT`` + ``HOR`` no fuso ``tz``; ``None`` se faltar um ou for ilegível.
+
+    O Tryd escreve a data no formato regional do Windows (28/10/2026 ou 10/28/2026). Se dia e
+    mês podem ser trocados, vale a leitura mais perto de ``today``; sem ``today``, dia/mês.
+    """
     if date_text is None or time_text is None:
         return None
     data = _DATA.fullmatch(date_text.strip())
     hora = _HORA.fullmatch(time_text.strip())
     if data is None or hora is None:
         return None
-    dia, mes, ano = (int(parte) for parte in data.groups())
+    primeiro, segundo, ano = (int(parte) for parte in data.groups())
     horas, minutos, segundos = (int(parte) for parte in hora.groups())
-    try:
-        return datetime(ano, mes, dia, horas, minutos, segundos, tzinfo=tz)
-    except ValueError:  # data que não existe (31/02), hora fora do relógio (24:00:00)
+    candidatas: list[datetime] = []
+    for dia, mes in ((primeiro, segundo), (segundo, primeiro)):
+        try:
+            candidata = datetime(ano, mes, dia, horas, minutos, segundos, tzinfo=tz)
+        except ValueError:
+            continue
+        if candidata not in candidatas:
+            candidatas.append(candidata)
+    if not candidatas:
         return None
+    if today is None or len(candidatas) == 1:
+        return candidatas[0]
+    amanha = today + timedelta(days=1)
+    return min(candidatas, key=lambda c: (c.date() > amanha, abs((c.date() - today).days)))
 
 
 def _read_number(campo: str, raw: RawValue | None) -> float | None:
@@ -134,7 +148,10 @@ def _text(raw: RawValue | None) -> str | None:
 
 
 def _timestamp(values: Mapping[str, RawValue], fallback_time: datetime) -> datetime:
-    lido = parse_tryd_timestamp(_text(values.get("DAT")), _text(values.get("HOR")), B3_UTC_OFFSET)
+    hoje = fallback_time.astimezone(B3_UTC_OFFSET).date()
+    lido = parse_tryd_timestamp(
+        _text(values.get("DAT")), _text(values.get("HOR")), B3_UTC_OFFSET, hoje
+    )
     return fallback_time if lido is None else lido
 
 
