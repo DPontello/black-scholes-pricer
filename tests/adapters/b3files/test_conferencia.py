@@ -1,5 +1,7 @@
 """Conferência dos arquivos da B3 contra as premissas do app (Task 18), com a fixture."""
 
+import re
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -11,7 +13,9 @@ from options_engine.adapters.outbound.b3files.conferencia import (
     conferir_arquivos_b3,
     formatar_relatorio,
 )
-from tests.data.cotahist.build_fixture import COTAHIST_NAME, INSTRUMENTS_NAME
+from options_engine.adapters.outbound.cotahist.parser import MARKET_CALL
+from tests.adapters.cotahist._layout import arquivo, registro
+from tests.data.cotahist.build_fixture import COTAHIST_NAME, INSTRUMENTS_NAME, REFERENCE_SESSION
 
 FIXTURE = Path(__file__).resolve().parents[2] / "data" / "cotahist"
 COTAHIST = FIXTURE / COTAHIST_NAME
@@ -49,22 +53,82 @@ def test_a_fixture_passa_nas_premissas_de_leitura_e_de_cruzamento() -> None:
     assert not any(p.situacao is Situacao.FALHA for p in premissas)
 
 
+def _cadastro_transformado(tmp_path: Path, padrao: str, troca: str) -> Path:
+    texto = CADASTRO.read_bytes().decode("utf-8-sig")
+    novo = re.sub(padrao, troca, texto, flags=re.M)
+    assert novo != texto
+    destino = tmp_path / INSTRUMENTS_NAME
+    destino.write_bytes(novo.encode("utf-8-sig"))
+    return destino
+
+
 def test_cadastro_sem_ativo_objeto_nas_opcoes_pede_atencao() -> None:
-    premissa = _por_nome(conferir_arquivos_b3([COTAHIST], CADASTRO), "UndrlygTckrSymb1")
+    premissa = _por_nome(conferir_arquivos_b3([COTAHIST], CADASTRO), "Ativo-objeto")
     assert premissa.situacao is Situacao.ATENCAO
     assert "PETR3/PETR4" in premissa.detalhe
 
 
-def test_totreg_que_nao_conta_header_e_trailer_e_falha_explicada(tmp_path: Path) -> None:
+def test_ativo_objeto_pelo_asst_conta_como_preenchido(tmp_path: Path) -> None:
+    """No Cadastro real a coluna própria vem vazia e o ``Asst`` da opção traz o ticker."""
+    cadastro = _cadastro_transformado(tmp_path, r"^(\w+);([A-Z]{4});(\d{4}-)", r"\1;\g<2>4;\3")
+    premissa = _por_nome(conferir_arquivos_b3([COTAHIST], cadastro), "Ativo-objeto")
+    assert premissa.situacao is Situacao.OK
+    assert "pelo Asst" in premissa.detalhe
+
+
+def test_strike_inteiro_nao_conta_como_ponto_decimal(tmp_path: Path) -> None:
+    """No Cadastro real o ExrcPric vem "51,41" ou "170"."""
+    sem_centavos = _cadastro_transformado(tmp_path, r";(\d+)\.00;", r";\1;")
+    texto = sem_centavos.read_bytes().decode("utf-8-sig")
+    sem_centavos.write_bytes(re.sub(r";(\d+)\.(\d\d);", r";\1,\2;", texto).encode("utf-8-sig"))
+    premissa = _por_nome(conferir_arquivos_b3([COTAHIST], sem_centavos), "Formato do ExrcPric")
+    assert premissa.situacao is Situacao.OK
+    assert "ponto decimal: 0" in premissa.detalhe and "inteiros:" in premissa.detalhe
+
+
+def test_strike_deslocado_por_igual_em_toda_a_raiz_e_atencao_de_provento(tmp_path: Path) -> None:
+    def menos_7_centavos(achado: re.Match[str]) -> str:
+        return f"{achado[1]}{float(achado[2]) - 0.07:.2f};"
+
+    texto = CADASTRO.read_bytes().decode("utf-8-sig")
+    novo = re.sub(r"^(VALE\w+;VALE;[\d-]+;)(\d+\.\d\d);", menos_7_centavos, texto, flags=re.M)
+    cadastro = tmp_path / INSTRUMENTS_NAME
+    cadastro.write_bytes(novo.encode("utf-8-sig"))
+    premissa = _por_nome(conferir_arquivos_b3([COTAHIST], cadastro), "PREEXE")
+    assert premissa.situacao is Situacao.ATENCAO
+    assert "VALE" in premissa.detalhe and "-0.07" in premissa.detalhe
+
+
+def test_opcao_de_indice_fica_fora_do_cruzamento_de_strike(tmp_path: Path) -> None:
+    """IBOV real: FATCOT 100 e PREEXE 205000 lido como 2050, contra 205000 no cadastro."""
+    indice = registro(
+        pregao=REFERENCE_SESSION,
+        simbolo="IBOVK181",
+        mercado=MARKET_CALL,
+        strike=1810.0,
+        fator=100,
+        vencimento=date(2026, 11, 18),
+    )
+    cotahist = tmp_path / "COTAHIST_D23102026.TXT"
+    cotahist.write_bytes(arquivo([indice], geracao=REFERENCE_SESSION, ano=2026).encode("cp1252"))
+    texto = CADASTRO.read_bytes().decode("utf-8-sig")
+    cadastro = tmp_path / INSTRUMENTS_NAME
+    linha = "IBOVK181;IBOV;2026-11-18;181000;EURO;CALL;\r\n"
+    cadastro.write_bytes((texto + linha).encode("utf-8-sig"))
+    premissa = _por_nome(conferir_arquivos_b3([COTAHIST, cotahist], cadastro), "PREEXE")
+    assert premissa.situacao is Situacao.OK
+    assert "1 opção(ões) de índice" in premissa.detalhe
+
+
+def test_totreg_que_conta_header_e_trailer_e_falha_explicada(tmp_path: Path) -> None:
     linhas = COTAHIST.read_bytes().decode("cp1252").splitlines()
     trailer = linhas[-1]
-    total = len(linhas)
-    linhas[-1] = trailer[:31] + f"{total - 2:011d}" + trailer[42:]
+    linhas[-1] = trailer[:31] + f"{len(linhas):011d}" + trailer[42:]
     arquivo = tmp_path / COTAHIST_NAME
     arquivo.write_bytes("\r\n".join(linhas).encode("cp1252") + b"\r\n")
     premissa = _por_nome(conferir_arquivos_b3([arquivo], CADASTRO), "TOTREG")
     assert premissa.situacao is Situacao.FALHA
-    assert "NÃO conta header e trailer" in premissa.detalhe
+    assert "conta header e trailer" in premissa.detalhe
 
 
 def test_strike_com_milhar_e_estilo_desconhecido_sao_falhas(tmp_path: Path) -> None:

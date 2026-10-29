@@ -35,6 +35,38 @@ def test_preambulo_e_ponto_e_virgula(tmp_path: Path) -> None:
     assert instrumentos["PETRW300"] == InstrumentInfo("PETRW300", ExerciseStyle.EUROPEAN, "PETR4")
 
 
+def test_ativo_objeto_da_opcao_vem_do_asst_quando_a_coluna_propria_vem_vazia(
+    tmp_path: Path,
+) -> None:
+    """Como no Cadastro real de 28/10/2026: ``UndrlygTckrSymb1`` vazio em todas as opções, e
+    ``Asst`` com o ticker do ativo-objeto na opção e só a raiz no à vista."""
+    caminho = _gravar(
+        tmp_path,
+        [
+            "TckrSymb;Asst;OptnTp;OptnStyle;UndrlygTckrSymb1",
+            "PETR4;PETR;;;",
+            "PETRK526;PETR4;Call;EURO;",
+            "PETRA290;PETR3;Call;AMER;",
+            "BOVAK170;BOVA11;Call;EURO;",
+            "B3SAK130;B3SA3;Call;AMER;",
+            "M1TAK400;M1TA34;Call;AMER;",
+            "IBOVR205;IBOV;Call;EURO;",
+            "VALEK600;VALE3;Call;AMER;VALE5",
+        ],
+    )
+    objetos = {s: i.underlying_symbol for s, i in load_instruments(caminho).items()}
+    assert objetos == {
+        "PETR4": None,
+        "PETRK526": "PETR4",
+        "PETRA290": "PETR3",
+        "BOVAK170": "BOVA11",
+        "B3SAK130": "B3SA3",
+        "M1TAK400": "M1TA34",
+        "IBOVR205": None,
+        "VALEK600": "VALE5",
+    }
+
+
 def test_virgula_sem_preambulo_e_sem_coluna_de_ativo_objeto(tmp_path: Path) -> None:
     caminho = _gravar(tmp_path, ["TckrSymb,OptnStyle", "PETRK300,EURO"])
     assert load_instruments(caminho)["PETRK300"].underlying_symbol is None
