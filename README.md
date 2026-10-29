@@ -216,6 +216,14 @@ configuração fica em `%APPDATA%\PainelOpcoes` (Windows) ou `~/.config/painel-o
 Para desenvolver a tela, `npm --prefix frontend run dev` (proxy para o app na 8765) e
 `npm --prefix frontend run verificar` (TypeScript + Vitest).
 
+Ao baixar os arquivos reais da B3, confira as premissas de leitura do app antes de
+usá-los. O comando só lê e aponta o que não bate (TOTREG, `OptnStyle`, `ExrcPric`,
+ESPECI, strike do COTAHIST × cadastro × `PEX` do Tryd):
+
+```bash
+python -m options_engine conferir-b3 --cotahist COTAHIST_A2026.ZIP --cadastro InstrumentsConsolidatedFile_AAAAMMDD.csv --pex PETRK500=48,91
+```
+
 Fora do MVP (mapeado no roadmap): dividendos discretos, exercício americano exato
 (B3: opções de ações; calls já aceitas como aproximação europeia na Sprint 5), Monte Carlo,
 persistência.
