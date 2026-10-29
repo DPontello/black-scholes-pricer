@@ -265,3 +265,15 @@ Task 11: note: test_ponte_de_pe_com_o_tryd_fechado_recua_para_o_fim_de_dia_apos_
 Task 18: os Steps 1–3 dependem do Tryd ao vivo e dos arquivos reais da B3, baixados à mão (termos da B3 e CAPTCHA); o Step 4, documentação, já tinha saído no commit e302731 e na retomada (README).
 - Ruling: a conferência do Step 3 vira o comando `python -m options_engine conferir-b3` (`adapters/outbound/b3files/conferencia.py`). Ele lê os arquivos com os MESMOS parsers do app (novos `raw_lines` no parser do COTAHIST e `raw_rows` no cadastro, só para diagnóstico) e dá ok/atenção/FALHA por premissa: TOTREG; domínios de `OptnStyle` e `OptnTp`; formato de `ExrcPric` (separador de milhar = falha, minor da T6) e de `XprtnDt`; `UndrlygTckrSymb1` nas opções; ESPECI (informativo); `PREEXE` × `ExrcPric`; `DATVEN` × `XprtnDt`; cadastro do mesmo pregão; `PEX` do Tryd × strike da B3. Sai com 1 se algo falhar — sem isso, conferir o arquivo real seria trabalho manual e sujeito a erro — se errado: um comando a mais no CLI.
 Task 11: minor (deferred) FIXED: série sem ativo-objeto no cadastro passa a ser só do único ativo à vista da raiz nos COTAHIST (`_Row.owner`); VALE5 só no cadastro não recebe mais as séries de VALE3 (test_serie_sem_ativo_objeto_e_so_do_unico_ativo_da_raiz_nos_cotahist, que falhava antes).
+
+## 2026-10-29 (madrugada): Task 18 ao vivo no Windows 11, com o Tryd 8.5.6.12
+
+Pregão fechado (00:17). Ponte no Python 3.14 do `.venv-tryd` (pywin32 312); app com APPDATA e perfil temporários; sem arquivos reais da B3.
+- `diagnostico` e `autoteste` da ponte: OK. No Windows nativo o ProgID resolve pelo nome e a type library do Tryd carrega.
+- `espiar` e app: ULT, OCP, OVD, NEG, FEC, HOR e EST chegam como `""`; VOL traz o financeiro de ontem; DAT veio `10/28/2026` (formato regional do Windows em inglês).
+- Bug: a tradução lia DAT sempre como dia/mês; `11/05/2026` num Windows em inglês viraria 11 de maio em silêncio (data de valoração errada). FIXED: quando dia e mês podem ser trocados, vale a leitura mais perto de hoje.
+- Note (decisão do autor): fora do pregão o app mostra "Ao vivo (Tryd)" sem preço, com "Negócios 0", o volume de ontem e a hora de agora (o `fallback_time` da T10). É o anti-objetivo "dado parado como ao vivo". Opções: recuar para o fim de dia quando nenhum ativo tem preço ao vivo; ou tratar o ativo sem `ULT`/`OCP`/`OVD` como "aguardando dados" e não usar a hora de agora.
+- Tryd fechado com o app aberto: "Atrasado" em 8 s e "Fim de dia" em 36 s (30 s após o Heartbeat detectar).
+- Ponte nova com o Tryd fechado: o COM abriu o `tryd.exe` (já logado) em ~12 s e a sessão entregou dados; esse Tryd fechou quando a ponte encerrou. A ponte antiga seguiu "perdido" e o app no fim de dia: o Important da re-revisão da T11 está confirmado. A correção não pode só relançar a ponte, porque isso reabriria o Tryd que o usuário fechou; ver HANDOFF §6.
+- O Tryd aberto pelo usuário sobrevive ao `encerrar` da ponte.
+- Não testado: cadeia ao vivo e bid/ask contra a tela (pregão fechado e sem cadastro real); `conferir-b3` (sem arquivos reais).
