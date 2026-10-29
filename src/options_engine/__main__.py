@@ -11,10 +11,11 @@ Painel de Renda (ADR-0007) a partir dos arquivos baixados da B3. Erro de
 arquivo (ausente, fora do layout) ou de domínio vira mensagem clara no
 stderr e código de saída != 0, sem traceback.
 
-``python -m options_engine app [--porta 8765] [--sem-janela] [--sem-ponte]``:
-sobe o app local (Painel de Opções) em ``127.0.0.1`` e o abre numa janela de
-app. Precisa do extra ``app`` e do frontend compilado; sem eles, mensagem e
-código 2. O FastAPI só é importado aqui dentro: o resto do CLI roda sem ele.
+``python -m options_engine app [--porta 8765] [--sem-janela] [--sem-ponte]``: o app
+local. O FastAPI só é importado dentro do subcomando.
+
+``python -m options_engine conferir-b3 --cotahist ARQ --cadastro CSV [--pex T=K]``:
+confere arquivos reais da B3 contra as premissas do app; sai com 1 se alguma falhar.
 
 Adapter inbound de console: consome os Protocols inbound montados pelo
 composition root; mora fora das camadas porque é quem chama o ``config``.
@@ -97,6 +98,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return painel(args[1:])
     if args and args[0] == "app":
         return app(args[1:])
+    if args and args[0] == "conferir-b3":
+        return conferir_b3(args[1:])
     smoke(args)
     return 0
 
@@ -281,7 +284,6 @@ def painel(argv: Sequence[str]) -> int:
 
 
 def app(args: Sequence[str]) -> int:
-    """Sobe o app local e abre a janela; volta quando o servidor para (Ctrl+C)."""
     from options_engine.adapters.inbound.web import launch
 
     parser = argparse.ArgumentParser(
@@ -326,6 +328,48 @@ def app(args: Sequence[str]) -> int:
     on_ready = None if opcoes.sem_janela else (lambda: launch.open_window(janela, url))
     launch.serve(web, porta, on_ready)
     return 0
+
+
+def _par_pex(texto: str) -> tuple[str, float]:
+    ticker, separador, valor = texto.partition("=")
+    try:
+        if not separador or not ticker.strip():
+            raise ValueError
+        return ticker.strip().upper(), float(valor.strip().replace(",", "."))
+    except ValueError as erro:
+        raise argparse.ArgumentTypeError(
+            f"use TICKER=STRIKE, ex.: PETRK500=48,91; recebido {texto!r}"
+        ) from erro
+
+
+def conferir_b3(args: Sequence[str]) -> int:
+    from options_engine.adapters.outbound.b3files.conferencia import (
+        Situacao,
+        conferir_arquivos_b3,
+        formatar_relatorio,
+    )
+
+    parser = argparse.ArgumentParser(
+        prog="python -m options_engine conferir-b3",
+        description="Confere o COTAHIST e o cadastro REAIS da B3 contra as premissas do app.",
+    )
+    parser.add_argument("--cotahist", type=Path, nargs="+", required=True, help="ZIP ou TXT")
+    parser.add_argument("--cadastro", type=Path, required=True, help="InstrumentsConsolidatedFile")
+    parser.add_argument(
+        "--pex",
+        type=_par_pex,
+        nargs="*",
+        default=[],
+        help="strike do Tryd (campo PEX) por série, ex.: PETRK500=48,91",
+    )
+    opcoes = parser.parse_args(args)
+    faltando = [p for p in (*opcoes.cotahist, opcoes.cadastro) if not p.is_file()]
+    if faltando:
+        print(f"erro: arquivo não encontrado: {', '.join(map(str, faltando))}", file=sys.stderr)
+        return 2
+    premissas = conferir_arquivos_b3(opcoes.cotahist, opcoes.cadastro, dict(opcoes.pex))
+    print(formatar_relatorio(premissas))
+    return 1 if any(p.situacao is Situacao.FALHA for p in premissas) else 0
 
 
 if __name__ == "__main__":

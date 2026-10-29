@@ -36,7 +36,7 @@ from typing import Final
 from options_engine.adapters.outbound.cotahist.errors import InstrumentsFileError
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 
-__all__ = ["InstrumentInfo", "load_instruments"]
+__all__ = ["InstrumentInfo", "load_instruments", "raw_rows"]
 
 _ENCODINGS: Final = ("utf-8-sig", "cp1252")
 _DELIMITERS: Final = (";", ",")
@@ -135,6 +135,14 @@ def _cabecalho(path: Path, linhas: list[str]) -> tuple[int, str, list[str]]:
     raise InstrumentsFileError(
         path, None, f"cabeçalho com as colunas {_SYMBOL!r} e {_STYLE!r} não encontrado"
     )
+
+
+def raw_rows(path: Path) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
+    """Cabeçalho e células sem interpretação (para diagnóstico)."""
+    linhas = _decodificar(path).splitlines()
+    indice, delimitador, colunas = _cabecalho(path, linhas)
+    corpo = csv.reader(linhas[indice + 1 :], delimiter=delimitador)
+    return tuple(colunas), tuple(tuple(c.strip() for c in celulas) for celulas in corpo if celulas)
 
 
 def load_instruments(path: Path) -> dict[str, InstrumentInfo]:
