@@ -14,7 +14,10 @@ exato do campo não está no glossário da B3 — premissa a conferir com um
 arquivo real. Nunca se assume EUROPEAN por omissão.
 
 ``UndrlygTckrSymb1`` (opcional): quando preenchido, é o ativo-objeto da série
-e prevalece sobre a regra de raiz do ticker na montagem da cadeia.
+e prevalece sobre a regra de raiz do ticker na montagem da cadeia. Vazio numa
+opção, vale o ``Asst`` quando ele é um ticker: no Cadastro real de 28/10/2026 a
+coluna própria vem vazia em todas as opções, e o ``Asst`` traz ``PETR4`` na
+opção e só a raiz ``PETR`` no à vista.
 
 ``OptnTp``, ``ExrcPric`` e ``XprtnDt`` (opcionais): tipo, strike e vencimento
 da série, para quem monta o universo de séries a partir do cadastro. Leitura
@@ -28,6 +31,7 @@ real.
 
 import csv
 import math
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -43,6 +47,8 @@ _DELIMITERS: Final = (";", ",")
 _SYMBOL: Final = "TckrSymb"
 _STYLE: Final = "OptnStyle"
 _UNDERLYING: Final = "UndrlygTckrSymb1"
+_ASSET: Final = "Asst"
+_TICKER: Final = re.compile(r"[A-Z0-9]{4}\d{1,2}")  # B3SA3 e BDR (M1TA34) têm dígito na raiz
 _OPTION_TYPE: Final = "OptnTp"
 _STRIKE: Final = "ExrcPric"
 _EXPIRY: Final = "XprtnDt"
@@ -158,6 +164,7 @@ def load_instruments(path: Path) -> dict[str, InstrumentInfo]:
     i_simbolo = colunas.index(_SYMBOL)
     i_estilo = colunas.index(_STYLE)
     i_objeto = colunas.index(_UNDERLYING) if _UNDERLYING in colunas else None
+    i_ativo = colunas.index(_ASSET) if _ASSET in colunas else None
     i_tipo = colunas.index(_OPTION_TYPE) if _OPTION_TYPE in colunas else None
     i_strike = colunas.index(_STRIKE) if _STRIKE in colunas else None
     i_vencimento = colunas.index(_EXPIRY) if _EXPIRY in colunas else None
@@ -168,14 +175,16 @@ def load_instruments(path: Path) -> dict[str, InstrumentInfo]:
         simbolo = celulas[i_simbolo].strip()
         if not simbolo:
             continue
-        objeto = None
-        if i_objeto is not None and i_objeto < len(celulas):
-            objeto = celulas[i_objeto].strip() or None
+        tipo = _tipo(_celula(celulas, i_tipo))
+        objeto = _celula(celulas, i_objeto).strip() or None
+        if objeto is None and tipo is not None:
+            ativo = _celula(celulas, i_ativo).strip()
+            objeto = ativo if _TICKER.fullmatch(ativo) else None
         info = InstrumentInfo(
             simbolo,
             _estilo(celulas[i_estilo]),
             objeto,
-            option_type=_tipo(_celula(celulas, i_tipo)),
+            option_type=tipo,
             strike=_strike(_celula(celulas, i_strike)),
             expiry=_vencimento(_celula(celulas, i_vencimento)),
         )
