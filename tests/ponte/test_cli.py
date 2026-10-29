@@ -248,16 +248,18 @@ def test_espiar_imprime_a_linha_do_jeito_que_veio_da_ponte(no_ar: PonteNoAr) -> 
 
 def test_espiar_assina_os_topicos_do_rtd_e_os_deixa_assinados(no_ar: PonteNoAr) -> None:
     cli.espiar(no_ar.porta, ("PETR4", "VALE3"), ("ULT", "OCP"), 0.3, io.StringIO())
+    # Ping/Pong ANTES de conferir: a fila de comandos é uma só, então o Pong garante que a
+    # ponte já tratou tudo o que o espiar mandou (sob carga, 0,3 s pode não bastar).
+    outro = socket.create_connection(("127.0.0.1", no_ar.porta), timeout=5)
+    with outro:
+        outro.sendall(codificar(Ping()))
+        assert decodificar(outro.makefile("rb").readline()) == Pong()
     assert [topico for _, topico in no_ar.sessao.conectados] == [
         ("PETR4_B_0", "ULT"),
         ("PETR4_B_0", "OCP"),
         ("VALE3_B_0", "ULT"),
         ("VALE3_B_0", "OCP"),
     ]
-    outro = socket.create_connection(("127.0.0.1", no_ar.porta), timeout=5)
-    with outro:  # Ping/Pong: a ponte já tratou tudo o que o espiar mandou antes de fechar
-        outro.sendall(codificar(Ping()))
-        assert decodificar(outro.makefile("rb").readline()) == Pong()
     assert no_ar.sessao.desconectados == []
 
 

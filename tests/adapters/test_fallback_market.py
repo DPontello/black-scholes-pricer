@@ -214,7 +214,13 @@ def test_ponte_de_pe_com_o_tryd_fechado_recua_para_o_fim_de_dia_apos_30_s(real: 
     cliente.start()
     esperar(lambda: ponte.conexoes() == 1)
     ponte.enviar(Status("conectado", None, 1))
-    esperar(lambda: isinstance(mercado.get_quotes(["PETR4"])["PETR4"], UnderlyingQuote))
+    # A cotação do fim de dia também é UnderlyingQuote: esperar pela FONTE, senão o teste
+    # segue antes de o Status chegar e lê o fim de dia (corrida que aparece sob carga).
+    esperar(
+        lambda: (
+            getattr(mercado.get_quotes(["PETR4"])["PETR4"], "source", None) is DataSource.AO_VIVO
+        )
+    )
     ao_vivo = _cotacao(mercado, "PETR4")
     assert (ao_vivo.source, ao_vivo.last) == (DataSource.AO_VIVO, _ULT_VIVO)
 

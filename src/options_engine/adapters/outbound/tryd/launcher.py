@@ -66,7 +66,9 @@ def default_bridge_command(
         "tryd",
         "--",
         "env",
-        f"WINEPREFIX={home}/.local/share/wineprefixes/tryd",
+        # ``as_posix``: o caminho é do Linux de dentro do distrobox, qualquer que seja o host
+        # que montou o comando (no Windows, ``str(Path)`` sairia com barras invertidas).
+        f"WINEPREFIX={home.as_posix()}/.local/share/wineprefixes/tryd",
         "WINEDEBUG=-all",
         "wine",
         "C:\\Python312\\python.exe",
