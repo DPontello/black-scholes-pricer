@@ -17,27 +17,39 @@ Emenda de 2026-07-04 ao ARCH §4.2 (painel de design da Sprint 3):
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from math import isfinite
-from typing import Protocol, runtime_checkable
+from typing import Final, Protocol, runtime_checkable
 
+from options_engine.application.ports.outbound import CadastroFreshness
 from options_engine.domain.income.costs import REFERENCE_POSITION_SHARES
 from options_engine.domain.income.metrics import IncomeStructure
 from options_engine.domain.income.ranking import IncomeRanking, RankingCriterion
+from options_engine.domain.model.chain import RejectedSeries
 from options_engine.domain.model.contracts import OptionTerms
+from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.profile import Profile, ProfileEntry
+from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 from options_engine.domain.model.results import PayoffProfile, PricingResult
 from options_engine.domain.model.scenarios import SpotAxis, StressScenario, StressTestReport
 from options_engine.domain.model.strategy import Strategy
 
 __all__ = [
+    "DEFAULT_CHAIN_EXPIRIES",
     "AnalyzeStrategyPayoffUseCase",
+    "ChainView",
+    "ExpiryBlock",
+    "MarketStatus",
+    "MarketViewUseCase",
     "PriceOptionCommand",
     "PriceOptionUseCase",
     "ProfileUseCase",
     "RankIncomeCommand",
     "RankIncomeOpportunitiesUseCase",
+    "SeriesRow",
     "StressTestUseCase",
+    "WatchRow",
 ]
 
 
@@ -178,3 +190,111 @@ class ProfileUseCase(Protocol):
     def set_watchlist(self, tickers: Sequence[str]) -> Profile: ...
 
     def close(self) -> None: ...
+
+
+# --- Tela de mercado -------------------------------------------------------------------------
+
+# Vencimentos da cadeia por padrão. É o ``VENCIMENTOS_PADRAO`` que a fonte ao vivo assina
+# (``adapters.outbound.tryd.settings``); ``application`` não importa ``adapters``, então o
+# valor é replicado e um teste prende as duas cópias.
+DEFAULT_CHAIN_EXPIRIES: Final = 2
+
+
+@dataclass(frozen=True, slots=True)
+class WatchRow:
+    """Uma linha da lista de ativos: a cotação, ou o motivo de não haver (texto para a tela).
+
+    Exatamente um dos dois: ``quote`` ou ``reason``.
+    """
+
+    symbol: str
+    quote: UnderlyingQuote | None
+    reason: str | None
+
+    def __post_init__(self) -> None:
+        if (self.quote is None) == (self.reason is None):
+            raise InvalidDomainValueError(
+                f"linha de {self.symbol!r} precisa de cotação OU motivo, nunca dos dois ou nenhum"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class SeriesRow:
+    """Uma série da cadeia como a tela mostra: book, liquidez, vol implícita e delta.
+
+    ``implied_vol`` é a da própria série, pelo mid, e só existe com os dois lados do book
+    (ADR-0004); ``delta`` usa essa vol ou, sem ela, a do smile do vencimento. ``None``
+    quando não há como calcular, nunca zero.
+    """
+
+    symbol: str
+    option_type: OptionType
+    strike: float
+    exercise_style: ExerciseStyle
+    bid: float | None
+    ask: float | None
+    last: float | None
+    trades: int
+    volume: float
+    implied_vol: float | None
+    delta: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryBlock:
+    """As séries de um vencimento, por strike e, no mesmo strike, a call antes da put."""
+
+    expiry: date
+    business_days: int
+    rows: tuple[SeriesRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ChainView:
+    """A cadeia de um ativo para a tela, rotulada pela fonte.
+
+    ``timestamp`` é o da cotação do ativo (a observação que valeu de data de valoração): a
+    tela mostra a data quando ela não é a de hoje, para o último negócio de ontem não se
+    passar pelo de agora.
+    """
+
+    symbol: str
+    spot: float
+    source: DataSource
+    timestamp: datetime
+    expiries: tuple[ExpiryBlock, ...]
+    rejected: tuple[RejectedSeries, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketStatus:
+    """De onde vêm os dados agora e como estão os arquivos da B3.
+
+    ``cadastro`` é a idade do cadastro mais recente; sem ela, ``cadastro_reason`` diz por quê
+    (nenhum cadastro, cadastro sem data, data fora do calendário). ``cotahist_range`` é a
+    faixa de pregões que os COTAHIST importados cobrem.
+    """
+
+    source: DataSource
+    cadastro: CadastroFreshness | None
+    cadastro_reason: str | None
+    cotahist_range: tuple[date, date] | None
+
+
+@runtime_checkable
+class MarketViewUseCase(Protocol):
+    """A tela de mercado: lista de ativos e cadeia de opções, ao vivo ou do fim de dia.
+
+    ``follow`` diz à fonte ao vivo o que acompanhar (a lista do perfil e a cadeia aberta;
+    ``None`` fecha a cadeia). ``chain`` levanta ``UnknownSymbolError`` para ticker que
+    ninguém conhece e ``UnderlyingUnavailableError`` (com o motivo) quando não há como
+    montar a cadeia; ``quotes`` nunca levanta por ativo: o motivo vai na linha.
+    """
+
+    def follow(self, watchlist: Sequence[str], chain_symbol: str | None) -> None: ...
+
+    def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]: ...
+
+    def chain(self, symbol: str, expiries: int = DEFAULT_CHAIN_EXPIRIES) -> ChainView: ...
+
+    def status(self) -> MarketStatus: ...

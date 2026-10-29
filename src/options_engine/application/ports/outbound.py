@@ -17,6 +17,7 @@ ROADMAP S3: port desenhado a partir do mock). Por isso:
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol, runtime_checkable
 
@@ -26,6 +27,7 @@ from options_engine.domain.model.profile import Profile, ProfileEntry
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 
 __all__ = [
+    "CadastroFreshness",
     "Clock",
     "LiveFeedPort",
     "MarketDataPort",
@@ -142,6 +144,20 @@ class LiveFeedPort(Protocol):
 @runtime_checkable
 class MarketPort(QuoteBoardPort, LiveFeedPort, OptionChainPort, Protocol):
     """Tudo o que o serviço de mercado consome: cotações, assinatura e cadeia."""
+
+
+@dataclass(frozen=True, slots=True)
+class CadastroFreshness:
+    """Idade do Cadastro de Instrumentos mais recente: data de referência, dias úteis até
+    hoje e se já passou do prazo de cadastro velho.
+
+    Mora no port porque o serviço de mercado a recebe de quem guarda os arquivos (a
+    biblioteca da B3, um adapter) e a aplicação não importa adapters.
+    """
+
+    reference_date: date
+    business_days: int
+    stale: bool
 
 
 @runtime_checkable

@@ -1,5 +1,7 @@
 """``ProfileService`` — orquestração de perfis com repositório falso e com o JSON real."""
 
+import threading
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -283,3 +285,36 @@ def test_arquivo_com_nome_de_outro_perfil_nao_abre_nem_escreve_na_pasta_do_outro
     assert (pasta_hugo / "perfil.json").read_bytes() == hugo_antes
     assert not (pasta_hugo / "perfil.lock").exists()
     assert not (pasta_mae / "perfil.lock").exists()
+
+
+@dataclass(slots=True)
+class _RepositorioQueSegura(FakeProfileRepository):
+    """Segura o ``save`` até ``liberar`` ser acionado, avisando quando entrou nele."""
+
+    entrou: threading.Event = field(default_factory=threading.Event)
+    liberar: threading.Event = field(default_factory=threading.Event)
+
+    def save(self, name: str, profile: Profile) -> None:
+        self.entrou.set()
+        assert self.liberar.wait(5.0), "o teste esqueceu de liberar o save"
+        FakeProfileRepository.save(self, name, profile)
+
+
+def test_leitura_do_perfil_ativo_espera_a_edicao_em_curso_de_outra_thread() -> None:
+    """Endpoints no threadpool e o WebSocket usam o mesmo serviço: nada de estado pela metade."""
+    repo = _RepositorioQueSegura()
+    service, _ = make_service(repo)
+    service.create("Hugo", "/pastas/hugo")
+    service.open("Hugo")
+    editor = threading.Thread(target=service.set_watchlist, args=(["BOVA11"],))
+    editor.start()
+    assert repo.entrou.wait(5.0)
+    lido: list[Profile] = []
+    leitor = threading.Thread(target=lambda: lido.append(service.active()))
+    leitor.start()
+    leitor.join(0.2)
+    assert leitor.is_alive(), "a leitura não esperou a edição terminar"
+    repo.liberar.set()
+    editor.join(5.0)
+    leitor.join(5.0)
+    assert lido == [Profile("Hugo", ("BOVA11",), 0.15)]

@@ -37,7 +37,7 @@ from options_engine.adapters.outbound.cotahist.errors import SourceFileError
 from options_engine.adapters.outbound.cotahist.instruments import load_instruments
 from options_engine.adapters.outbound.cotahist.parser import parse_cotahist
 from options_engine.adapters.outbound.storage.json_files import write_json_atomic
-from options_engine.application.ports.outbound import Clock, TradingCalendar
+from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
 from options_engine.domain.model.errors import InvalidDomainValueError
 
 __all__ = [
@@ -83,13 +83,6 @@ class ImportedFile:
     first_date: date | None
     imported_at: datetime
     path: Path
-
-
-@dataclass(frozen=True, slots=True)
-class CadastroFreshness:
-    reference_date: date
-    business_days: int
-    stale: bool
 
 
 class B3FileRejectedError(Exception):

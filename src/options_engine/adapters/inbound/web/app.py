@@ -8,6 +8,7 @@ entrada, não esta fábrica.
 
 import importlib.metadata
 from collections.abc import Callable, Sequence
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
@@ -54,8 +55,20 @@ def _registrar_spa(app: FastAPI, static_dir: Path) -> None:
         return FileResponse(indice)
 
 
-def create_app(routers: Sequence[APIRouter], static_dir: Path | None = None) -> FastAPI:
-    """Monta o app: ``GET /api/saude``, os ``routers`` e, com ``static_dir``, o frontend (SPA)."""
+Lifespan = Callable[[FastAPI], AbstractAsyncContextManager[None]]
+
+
+def create_app(
+    routers: Sequence[APIRouter],
+    static_dir: Path | None = None,
+    *,
+    lifespan: Lifespan | None = None,
+) -> FastAPI:
+    """Monta o app: ``GET /api/saude``, os ``routers`` e, com ``static_dir``, o frontend (SPA).
+
+    ``lifespan`` é o que sobe e desce junto com o servidor (a ponte do Tryd, a trava do
+    perfil); quem compõe o app decide o que entra nele.
+    """
     versao = importlib.metadata.version("options-engine")
     # Documentação sob /api: fora dela, /docs e afins sombreariam rotas do frontend.
     app = FastAPI(
@@ -64,6 +77,7 @@ def create_app(routers: Sequence[APIRouter], static_dir: Path | None = None) -> 
         docs_url="/api/docs",
         redoc_url="/api/redoc",
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
 
     for tipo, status in ERROR_STATUS.items():

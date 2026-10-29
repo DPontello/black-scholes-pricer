@@ -4,6 +4,7 @@ Guarda qual perfil está aberto neste PC e mantém a trava de uso. Orquestraçã
 pura: onde o perfil mora e como a trava vira arquivo é do ``ProfileRepository``.
 """
 
+import threading
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import timedelta, timezone, tzinfo
@@ -29,6 +30,10 @@ class ProfileService:
     objeto, então o outro PC lê "desde 09:00" em horário de Brasília e não em
     UTC. Fica no construtor porque é política de instalação, como o fuso de
     valoração dos outros use cases.
+
+    Seguro para várias threads: os endpoints da API rodam no threadpool e o
+    WebSocket consulta o perfil ativo ao mesmo tempo; uma trava serializa as
+    operações (abrir, editar, fechar) e a leitura do perfil ativo.
     """
 
     def __init__(
@@ -46,6 +51,7 @@ class ProfileService:
         # (chave do cadastro usada no `open`, perfil): a chave é quem manda em
         # `save` e `release_lock`, nunca o `nome` que veio dentro do perfil.
         self._active: tuple[str, Profile] | None = None
+        self._lock = threading.RLock()
 
     def list(self) -> tuple[ProfileEntry, ...]:
         return self._repository.list_profiles()
@@ -57,34 +63,38 @@ class ProfileService:
         # Ler antes de travar: perfil desconhecido ou ilegível não deixa trava
         # para trás. E só solta o perfil anterior depois de travar o novo — se a
         # trava negar, o usuário continua no perfil em que estava.
-        profile = self._repository.load(name)
-        now = self._clock.now().astimezone(self._lock_timezone)
-        self._repository.acquire_lock(name, self._machine_name, now, force)
-        previous = self._active
-        self._active = (name, profile)
-        if previous is not None and previous[0] != name:
-            self._repository.release_lock(previous[0], self._machine_name)
-        return profile
+        with self._lock:
+            profile = self._repository.load(name)
+            now = self._clock.now().astimezone(self._lock_timezone)
+            self._repository.acquire_lock(name, self._machine_name, now, force)
+            previous = self._active
+            self._active = (name, profile)
+            if previous is not None and previous[0] != name:
+                self._repository.release_lock(previous[0], self._machine_name)
+            return profile
 
     def active(self) -> Profile:
-        return self._require_active()[1]
+        with self._lock:
+            return self._require_active()[1]
 
     def set_watchlist(self, tickers: Sequence[str]) -> Profile:
-        key, current = self._require_active()
-        # `dict.fromkeys` remove repetidos mantendo a ordem da primeira ocorrência.
-        watchlist = tuple(dict.fromkeys(normalize_ticker(ticker) for ticker in tickers))
-        updated = replace(current, watchlist=watchlist)
-        # Grava antes de trocar o ativo: se a gravação falha, nada mudou em memória.
-        self._repository.save(key, updated)
-        self._active = (key, updated)
-        return updated
+        with self._lock:
+            key, current = self._require_active()
+            # `dict.fromkeys` remove repetidos mantendo a ordem da primeira ocorrência.
+            watchlist = tuple(dict.fromkeys(normalize_ticker(ticker) for ticker in tickers))
+            updated = replace(current, watchlist=watchlist)
+            # Grava antes de trocar o ativo: se a gravação falha, nada mudou em memória.
+            self._repository.save(key, updated)
+            self._active = (key, updated)
+            return updated
 
     def close(self) -> None:
-        if self._active is None:
-            return
-        key = self._active[0]
-        self._active = None
-        self._repository.release_lock(key, self._machine_name)
+        with self._lock:
+            if self._active is None:
+                return
+            key = self._active[0]
+            self._active = None
+            self._repository.release_lock(key, self._machine_name)
 
     def _require_active(self) -> tuple[str, Profile]:
         if self._active is None:
