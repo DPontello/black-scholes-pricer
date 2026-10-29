@@ -97,6 +97,6 @@ def registro(
 
 
 def arquivo(registros: Sequence[str], *, geracao: date, ano: int, fim_de_linha: str = CRLF) -> str:
-    """Header + registros + trailer com o total correto (header e trailer inclusos)."""
-    linhas = [header(geracao, ano), *registros, trailer(geracao, ano, len(registros) + 2)]
+    """Header + registros + trailer com o total correto (só os ``01``, como no arquivo real)."""
+    linhas = [header(geracao, ano), *registros, trailer(geracao, ano, len(registros))]
     return fim_de_linha.join(linhas) + fim_de_linha

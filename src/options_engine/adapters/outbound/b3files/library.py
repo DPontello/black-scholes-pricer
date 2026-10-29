@@ -8,7 +8,7 @@ ignorado, e o arquivo apagado à mão some da biblioteca.
 
 O tipo vem do CONTEÚDO, nunca do nome nem da extensão: o usuário (pouco
 técnico) arrasta o que baixou, e a recusa de arquivo errado tem que ser clara.
-O arquivo é validado por inteiro (``parse_cotahist`` / ``load_instruments``)
+O arquivo é validado por inteiro (``cotahist_sessions`` / ``load_instruments``)
 num diretório temporário ANTES de tocar em ``root``: o que é recusado não
 deixa arquivo, pasta de tipo nem entrada no índice.
 
@@ -35,7 +35,7 @@ from typing import Final
 
 from options_engine.adapters.outbound.cotahist.errors import SourceFileError
 from options_engine.adapters.outbound.cotahist.instruments import load_instruments
-from options_engine.adapters.outbound.cotahist.parser import parse_cotahist
+from options_engine.adapters.outbound.cotahist.parser import cotahist_sessions
 from options_engine.adapters.outbound.storage.json_files import write_json_atomic
 from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
 from options_engine.domain.model.errors import InvalidDomainValueError
@@ -309,13 +309,12 @@ def _detail(erro: Exception, caminho: Path, nome: str) -> str:
 
 
 def _validate_cotahist(caminho: Path, nome: str) -> tuple[date | None, date | None]:
-    registros = parse_cotahist(caminho)
-    if not registros:
+    pregoes = cotahist_sessions(caminho)
+    if not pregoes:
         raise B3FileRejectedError(
             f"O arquivo '{nome}' é um COTAHIST, mas não traz nenhum registro de ação ou de "
             "opção (mercados à vista, de compra e de venda). Nada foi guardado."
         )
-    pregoes = [r.session for r in registros]
     return max(pregoes), min(pregoes)
 
 

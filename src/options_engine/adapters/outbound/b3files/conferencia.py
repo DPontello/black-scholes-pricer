@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import Enum
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from options_engine.adapters.outbound.cotahist.errors import SourceFileError
 from options_engine.adapters.outbound.cotahist.instruments import (
@@ -19,7 +19,7 @@ from options_engine.adapters.outbound.cotahist.parser import (
     MARKET_CALL,
     MARKET_PUT,
     CotahistRecord,
-    parse_cotahist,
+    iter_cotahist,
     raw_lines,
 )
 
@@ -55,12 +55,12 @@ def conferir_arquivos_b3(
     pex: Mapping[str, float] | None = None,
 ) -> tuple[Premissa, ...]:
     premissas: list[Premissa] = []
-    registros: list[CotahistRecord] = []
+    ultimo = _UltimoPregao()
     for path in cotahist_paths:
         totreg = _totreg(path)
         premissas.append(totreg)
         try:
-            registros.extend(parse_cotahist(path))
+            ultimo.ler(path)
         except SourceFileError as erro:
             if totreg.situacao is Situacao.OK:
                 nome = f"Leitura do COTAHIST ({path.name})"
@@ -73,16 +73,13 @@ def conferir_arquivos_b3(
         return tuple(premissas)
 
     opcoes = _linhas_de_opcao(colunas, linhas)
-    sessao = max((r.session for r in registros), default=None)
-    do_pregao = [
-        r for r in registros if r.session == sessao and r.market in (MARKET_CALL, MARKET_PUT)
-    ]
+    sessao, do_pregao = ultimo.pregao, list(ultimo.opcoes.values())
     premissas += [
         _dominio(colunas, opcoes, "OptnStyle", ("AMER", "EURO"), "sem estilo, a série sai do app"),
         _dominio(colunas, opcoes, "OptnTp", ("CALL", "PUT"), "sem tipo, a série não é assinada"),
         _strike_formato(colunas, opcoes),
         _vencimento_formato(colunas, opcoes),
-        _ativo_objeto(colunas, opcoes),
+        _ativo_objeto(colunas, opcoes, cadastro),
         _especi(do_pregao),
         _cruzar(do_pregao, cadastro, "PREEXE (COTAHIST) = ExrcPric (cadastro)", "strike"),
         _cruzar(do_pregao, cadastro, "DATVEN (COTAHIST) = XprtnDt (cadastro)", "expiry"),
@@ -104,26 +101,56 @@ def formatar_relatorio(premissas: Sequence[Premissa]) -> str:
     return "\n".join(linhas)
 
 
+class _UltimoPregao:
+    """Opções do pregão mais recente entre os arquivos, lidas em fluxo, uma por ticker.
+
+    O anual já contém o pregão do diário: sem tirar a repetição, cada série contaria duas vezes.
+    """
+
+    def __init__(self) -> None:
+        self.pregao: date | None = None
+        self.opcoes: dict[str, CotahistRecord] = {}
+
+    def _escolher(self, pregao: date, mercado: int) -> bool:
+        if self.pregao is None or pregao > self.pregao:
+            self.pregao = pregao
+            self.opcoes = {}
+        return pregao == self.pregao and mercado in (MARKET_CALL, MARKET_PUT)
+
+    def ler(self, path: Path) -> None:
+        # Arquivo recusado não contribui com nada, nem com o que leu antes do erro.
+        antes = (self.pregao, self.opcoes)
+        self.opcoes = dict(self.opcoes)
+        try:
+            for registro in iter_cotahist(path, self._escolher):
+                self.opcoes.setdefault(registro.symbol, registro)
+        except SourceFileError:
+            self.pregao, self.opcoes = antes
+            raise
+
+
 def _totreg(path: Path) -> Premissa:
     nome = f"TOTREG do trailer ({path.name})"
+    total, ultima = 0, ""
     try:
-        linhas = raw_lines(path)
+        for _, linha in raw_lines(path):
+            total, ultima = total + 1, linha
     except (SourceFileError, OSError) as erro:
         return Premissa(nome, Situacao.FALHA, f"arquivo ilegível: {erro}")
-    if not linhas or not linhas[-1][1].startswith("99"):
+    if not ultima.startswith("99"):
         return Premissa(nome, Situacao.FALHA, "sem trailer 99 no fim: arquivo truncado?")
-    bruto = linhas[-1][1][31:42]
+    bruto = ultima[31:42]
     if not bruto.strip().isdigit():
         return Premissa(nome, Situacao.FALHA, f"TOTREG ilegível: {bruto!r}")
-    declarado, total = int(bruto), len(linhas)
-    if declarado == total:
-        return Premissa(nome, Situacao.OK, f"{total} registros, contando header e trailer")
+    declarado = int(bruto)
     if declarado == total - 2:
+        return Premissa(nome, Situacao.OK, f"{declarado} registros, sem header e trailer")
+    if declarado == total:
         return Premissa(
             nome,
             Situacao.FALHA,
-            f"TOTREG {declarado} NÃO conta header e trailer ({total} linhas): o app recusa o "
-            "arquivo; corrigir o parser",
+            f"TOTREG {declarado} conta header e trailer, como diz o layout, mas os arquivos "
+            "reais de 28/10/2026 não contam: o app recusa o arquivo",
         )
     return Premissa(nome, Situacao.FALHA, f"TOTREG {declarado} e {total} linhas no arquivo")
 
@@ -197,14 +224,19 @@ def _strike_formato(colunas: Sequence[str], opcoes: Sequence[Sequence[str]]) -> 
     if indice is None:
         return _sem_coluna(nome, "ExrcPric")
     brutos = [_celula(linha, indice) for linha in opcoes]
-    ponto = sum(1 for b in brutos if _DECIMAL_PONTO.match(b))
-    virgula = sum(1 for b in brutos if _DECIMAL_VIRGULA.match(b) and not _DECIMAL_PONTO.match(b))
+    # Inteiro ("170") é lido igual nos dois formatos: não conta para nenhum.
+    inteiros = sum(1 for b in brutos if b.isdigit())
+    ponto = sum(1 for b in brutos if _DECIMAL_PONTO.match(b) and not b.isdigit())
+    virgula = sum(1 for b in brutos if _DECIMAL_VIRGULA.match(b) and not b.isdigit())
     # "1.234" e "1,234" são ambíguos: o app leria 1,234 em vez de 1234.
     ambiguos = {b for b in brutos if _MILHAR.match(b) and not _DECIMAL_PONTO.match(b)}
     ilegiveis = {
         b for b in brutos if b and not (_DECIMAL_PONTO.match(b) or _DECIMAL_VIRGULA.match(b))
     }
-    resumo = f"ponto decimal: {ponto}, vírgula decimal: {virgula}, vazios: {brutos.count('')}"
+    resumo = (
+        f"ponto decimal: {ponto}, vírgula decimal: {virgula}, inteiros: {inteiros}, "
+        f"vazios: {brutos.count('')}"
+    )
     if ambiguos or ilegiveis:
         exemplos = sorted(ambiguos | ilegiveis)
         return Premissa(
@@ -235,26 +267,40 @@ def _vencimento_formato(colunas: Sequence[str], opcoes: Sequence[Sequence[str]])
     return Premissa(nome, Situacao.OK, resumo)
 
 
-def _ativo_objeto(colunas: Sequence[str], opcoes: Sequence[Sequence[str]]) -> Premissa:
-    nome = "UndrlygTckrSymb1 nas opções"
-    indice = _coluna(colunas, "UndrlygTckrSymb1")
-    if indice is None:
-        return Premissa(
-            nome,
-            Situacao.ATENCAO,
-            "coluna ausente: o ao vivo rejeita as séries de raiz dividida (PETR3 e PETR4)",
-        )
-    if not opcoes:
-        return Premissa(nome, Situacao.ATENCAO, "nenhuma opção no cadastro")
-    preenchidas = sum(1 for linha in opcoes if _celula(linha, indice))
-    detalhe = f"{preenchidas} de {len(opcoes)} opções ({preenchidas / len(opcoes):.0%})"
-    if preenchidas == len(opcoes):
+def _ativo_objeto(
+    colunas: Sequence[str],
+    opcoes: Sequence[Sequence[str]],
+    cadastro: Mapping[str, InstrumentInfo],
+) -> Premissa:
+    nome = "Ativo-objeto das opções (UndrlygTckrSymb1 ou Asst)"
+    i_simbolo = _coluna(colunas, "TckrSymb")
+    i_categoria = _coluna(colunas, "SctyCtgyNm")
+    i_proprio = _coluna(colunas, "UndrlygTckrSymb1")
+    # Opção de índice ou de futuro não tem ativo à vista: só as de ações contam.
+    de_acoes = [
+        linha
+        for linha in opcoes
+        if i_categoria is None or _celula(linha, i_categoria) == "OPTION ON EQUITIES"
+    ]
+    if not de_acoes:
+        return Premissa(nome, Situacao.ATENCAO, "nenhuma opção sobre ações no cadastro")
+    com_objeto = [
+        linha
+        for linha in de_acoes
+        if (info := cadastro.get(_celula(linha, i_simbolo))) and info.underlying_symbol
+    ]
+    pela_coluna = sum(1 for linha in com_objeto if _celula(linha, i_proprio))
+    detalhe = (
+        f"{len(com_objeto)} de {len(de_acoes)} opções sobre ações "
+        f"({len(com_objeto) / len(de_acoes):.0%}): {pela_coluna} pela UndrlygTckrSymb1, "
+        f"{len(com_objeto) - pela_coluna} pelo Asst"
+    )
+    if len(com_objeto) == len(de_acoes):
         return Premissa(nome, Situacao.OK, detalhe)
     return Premissa(
         nome,
         Situacao.ATENCAO,
-        f"{detalhe}: as sem ativo-objeto de raiz dividida (PETR3/PETR4) saem rejeitadas no ao "
-        "vivo; se forem muitas, usar a regra do ESPECI do adapter COTAHIST",
+        f"{detalhe}; as sem ativo-objeto de raiz dividida (PETR3/PETR4) saem rejeitadas no ao vivo",
     )
 
 
@@ -269,19 +315,52 @@ def _cruzar(
         for r in opcoes
         if r.symbol in cadastro and getattr(cadastro[r.symbol], campo) is not None
     ]
+    nota = ""
+    if campo == "strike":
+        # Opção de índice (FATCOT 100 no IBOV real) traz o PREEXE em pontos, sem o fator.
+        indice = [p for p in pares if p[0].quote_factor != 1]
+        pares = [p for p in pares if p[0].quote_factor == 1]
+        if indice:
+            nota = (
+                f"; {len(indice)} opção(ões) de índice (FATCOT diferente de 1) fora: "
+                "o app não as usa"
+            )
     if not pares:
         return Premissa(nome, Situacao.ATENCAO, "nenhuma opção do último pregão nos dois arquivos")
     if campo == "strike":
         diferentes = [(r, a, b) for r, a, b in pares if abs(a - b) > _TOLERANCIA_STRIKE]
     else:
         diferentes = [(r, a, b) for r, a, b in pares if a != b]
-    detalhe = f"{len(pares) - len(diferentes)} de {len(pares)} iguais"
+    detalhe = f"{len(pares) - len(diferentes)} de {len(pares)} iguais{nota}"
     if not diferentes:
         return Premissa(nome, Situacao.OK, detalhe)
+    deslocadas = _raizes_deslocadas(diferentes) if campo == "strike" else None
+    if deslocadas:
+        return Premissa(
+            nome,
+            Situacao.ATENCAO,
+            f"{detalhe}; strike deslocado pelo mesmo valor em {deslocadas}: provável ajuste "
+            "por provento entre o pregão do COTAHIST e o cadastro (conferir com o PEX)",
+        )
     exemplos = ", ".join(
         f"{r.symbol}: {_texto(a)} x {_texto(b)}" for r, a, b in diferentes[:_AMOSTRA]
     )
     return Premissa(nome, Situacao.FALHA, f"{detalhe}; diferentes: {exemplos}")
+
+
+def _raizes_deslocadas(diferentes: Sequence[tuple[CotahistRecord, Any, Any]]) -> str | None:
+    """ "JHSF (76 séries, -0.07)" se cada raiz com diferença tem 2+ séries, todas com o mesmo
+    deslocamento. No real de 28/10 só parte das séries de JHSF mudou: as de strike já ajustado
+    antes ficaram iguais."""
+    deslocamentos: dict[str, list[float]] = {}
+    for r, a, b in diferentes:
+        deslocamentos.setdefault(r.symbol[:4], []).append(b - a)
+    partes = []
+    for raiz, valores in sorted(deslocamentos.items()):
+        if len(valores) < 2 or max(valores) - min(valores) > _TOLERANCIA_STRIKE:
+            return None
+        partes.append(f"{raiz} ({len(valores)} séries, {valores[0]:+.2f})")
+    return ", ".join(partes)
 
 
 def _texto(valor: object) -> str:
