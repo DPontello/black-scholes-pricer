@@ -212,3 +212,50 @@ Task 11: minor (deferred): regras duplicadas com o adapter COTAHIST (_END_OF_SES
 Task 11: note (→ T12/T17): AO_VIVO não considera idade de DAT/HOR (mercado fechado mostra último negócio de ontem como ao vivo) — a tela deve mostrar data quando a hora não é de hoje; rótulo da cadeia vs TOCTOU de health() na T12
 Task 11: fix round 1 interrompido por limite de uso (implementer parou antes dos testes de integração do FallbackMarket); retomado após o reset
 Task 11: fix round 1 entregue (ambíguas → rejected_series; health DESCONECTADA após 30 s de perdido/iniciando), foto S11b=751c9fcb6e9bd52cf22d647dbba0544e5ef59986 — RE-REVIEW PENDENTE (pausa a pedido do autor para push e passagem de PC)
+
+## Retomada em 2026-10-29 (Windows 11, outra máquina)
+
+- Ruling: sem subagents nesta máquina (não há o tipo `implementer` nem a skill de SDD); o controlador implementa e revisa inline, tarefa a tarefa, mantendo a regra de não commitar — se errado: cada tarefa teve um revisor só; a revisão final da semana deve ser de outro revisor.
+- Gates no Windows (Python 3.14.5, 1º uso fora do Linux): 1 falha só do Windows — `default_bridge_command` montava o `WINEPREFIX` com `str(Path)` (barras invertidas no Windows). Corrigido com `as_posix()`; 4500 passam.
+Task 11: re-review — Important 1 (raiz dividida sem `UndrlygTckrSymb1`) ADDRESSED: ambíguas em `rejected_series`, os vencimentos contam as ambíguas, `watch` não as assina (test_serie_de_vinculo_ambiguo_sai_rejeitada_e_nao_cotada, test_cadeia_com_todas_as_series_ambiguas_..., test_watch_nao_assina_serie_cujo_ativo_objeto_e_ambiguo). Important 2 (ponte de pé com o Tryd fechado) ADDRESSED: `health()` DESCONECTADA após 30 s de iniciando/perdido sem `conectado` (testes do cliente e test_ponte_de_pe_com_o_tryd_fechado_recua_para_o_fim_de_dia_apos_30_s).
+Task 11: minor (deferred): série sem ativo-objeto no cadastro, de raiz com um só ativo nos COTAHIST, é atribuída a qualquer ticker dessa raiz que o cadastro conheça (PETR3 só no cadastro receberia as séries de PETR4). Com COTAHIST real os dois aparecem e a série vira ambígua; corrigir guardando o dono da raiz em `_Row`.
+Task 11: note (→ T18, Important a medir): Tryd fechado com o app aberto → a ponte marca perdido e segue de pé; ela não recria a sessão RTD, e o lançador só relança ponte que não responde → ao reabrir o Tryd, o app fica no fim de dia até ser reiniciado. A correção depende de medir se `CoCreateInstance` com o Tryd fechado abre o `tryd.exe` na tela de login (nota da T8): se abrir, relançar a ponte reabriria o Tryd sozinho a cada ciclo; se não abrir, a ponte pode recriar a sessão a cada ~10 s enquanto perdida (reassinando o registro), e o quadro esquece os valores na passagem perdido → conectado.
+Task 11: complete (commit b2b9109 + correção do launcher no Windows, re-review clean)
+Task 12: start (base: b2b9109 + working tree da retomada)
+- Ruling: `CadastroFreshness` muda de `adapters/outbound/b3files/library.py` para `application/ports/outbound.py` (a biblioteca importa de lá e reexporta) — `MarketStatus` é da aplicação e a aplicação não importa adapters (import-linter) — se errado: só o lugar do tipo.
+- Ruling: os tipos da tela (`WatchRow`, `SeriesRow`, `ExpiryBlock`, `ChainView`, `MarketStatus`) e `DEFAULT_CHAIN_EXPIRIES` moram em `application/ports/inbound.py`, junto do `MarketViewUseCase` que os devolve (o plano os punha em `market_view.py`; o port não deve importar o use case) — se errado: só imports.
+- Ruling: `freshness` devolve `CadastroFreshness | str` e `MarketStatus` ganha `cadastro_reason` — minors da T5 (frescor None igual a "sem cadastro"; data fora do calendário) — a tela distingue "nenhum cadastro", "cadastro sem data no nome" e "data fora do calendário" — se errado: um campo a mais.
+- Ruling: `ChainView` ganha `timestamp` (hora da cotação do ativo, que é a data de valoração) — nota da T11 (a tela mostra a data quando não é a de hoje) — se errado: um campo a mais.
+- Ruling: `MarketViewService` sem `clock`: a data de valoração vem da cotação do ativo no fuso da B3, como no ranking (preço e tau do mesmo instante) — se errado: no pré-abertura o tau conta do último negócio de ontem, 1 du a mais.
+- Ruling: rótulo da cadeia = a saúde MENOS fresca entre antes e depois do `get_chain` — nota da T11 (TOCTOU de `health()`); a cadeia não diz de onde veio — se errado: um dado ao vivo pode sair como "fim de dia" na virada, nunca o contrário.
+- Ruling: `build_web_app` mora em `config/web_app.py`, não em `config/composition.py` — o `composition` e o CLI do painel não podem importar o FastAPI (extra `app`); um teste prende isso — se errado: só o nome do módulo.
+- Ruling: `ProfileService` ganha `threading.RLock` (minor da T4 → T12) e o desligar do app isola cada passo e solta a trava do perfil mesmo com falha (minor da T3 → T12); a ponte sobe e é conferida numa thread própria, a cada 2 s (nota da T9: chamadas de até 2 s fora do laço de eventos).
+Task 12: complete (inline; 24 testes do serviço, 11 do app montado, 1 da trava do serviço de perfis)
+Task 13: start
+- Ruling: o WebSocket manda `{"tipo": "cadeia", "ativo", "erro", "mensagem"}` quando a cadeia não sai (aguardando dados, desconhecido) e `{"tipo": "erro", "erro": "RequisicaoInvalida", ...}` para mensagem inválida do cliente, sem fechar a conexão; `cotacoes` leva `motivo` (sem perfil aberto: lista vazia e o motivo) — o plano não dizia o formato desses casos — se errado: formato de mensagem.
+- Ruling: `GET /api/mercado/status` traz também `cadastro_motivo`, e a cadeia traz `hora` (mesmas razões da T12).
+Task 13: complete (inline; 14 testes de REST e WebSocket)
+Task 14: start
+- Ruling: `launch.py` (adapter) só tem os auxiliares e o `serve`; quem chama `build_web_app` é o `__main__` (adapter não importa o composition root, pelo import-linter) — se errado: nenhum.
+- Ruling: no Windows o Edge raramente está no `PATH`; `app_window_command` aceita `windows_paths` (Program Files e LOCALAPPDATA) além do `which` — sem isso a janela de app nunca abriria no Windows — se errado: um parâmetro a mais.
+- Ruling: o XDG relativo é ignorado (especificação XDG) e testado como caminho POSIX (o teste também roda no Windows).
+Task 14: smoke real no Windows 11 (APPDATA temporário, `--sem-janela`, ponte ligada, sem Tryd): `/api/saude` 200, status `fim_de_dia` com "nenhum Cadastro de Instrumentos importado", SPA servida, cotações sem perfil 404; a ponte tenta subir a cada ~10 s e sai com "pywin32 indisponível" (o `python` do PATH não tem pywin32) — Review Focus 1 confirmado ao vivo no Windows.
+Task 14: note (→ semana 4): no Windows `default_bridge_command` usa o `python` do PATH; mais simples para a mãe é a ponte rodar no mesmo Python do app (`sys.executable`) com um extra `ponte = ["pywin32; sys_platform == 'win32'"]` — decidir com o instalador.
+Task 14: complete (inline; 9 testes)
+Task 14: note: tests/ponte/test_cli.py::test_espiar_assina_os_topicos_do_rtd_e_os_deixa_assinados falhou 1 vez sob carga (gates completos): conferia os tópicos antes do Ping/Pong que sincroniza com a fila da ponte; a ordem foi invertida.
+Task 13: fix: `variacao_pct` saía em pontos percentuais; passa a decimal (CONVENTIONS: decimal em tudo; a T17 espera -0.0059 → "-0,59%").
+Task 15: start
+- Ruling: `@testing-library/dom` ^10.4 nas devDependencies (par obrigatório do `@testing-library/react` 16) e `src/testes/setup.ts` com `cleanup` e `vi.unstubAllGlobals` (sem os globais do Vitest o Testing Library não desmonta entre testes) — se errado: nenhum.
+- Ruling: formatação ganha `formatarHora` (fuso da B3, com DD/MM quando não é de hoje — nota da T11), `formatarVol`, `formatarDelta` e `formatarInstante` — o plano só listava preço, percentual, volume, inteiro e data — se errado: funções a mais.
+- Note: npm 11 bloqueia scripts de instalação; o `postinstall` do esbuild não rodou e não faz falta (o binário vem do `@esbuild/win32-x64`); build e testes rodam.
+Task 15: complete (tsc estrito + Vitest; build gera `web/static/index.html`; job `frontend` no CI com Node 22)
+Task 16: start
+- Ruling: link do Cadastro de Instrumentos aponta para o Boletim Diário da B3 (página conferida em 2026-10-29; o arquivo fica em "Pesquisa por pregão", num iframe de arquivos.b3.com.br) — o plano não dava o endereço — se errado: um link.
+- Ruling: sem perfil aberto, até `/arquivos` redireciona para `/perfis` (o plano diz "qualquer rota").
+Task 16: complete (cliente da API com `ErroApi`; Perfis com a confirmação da trava; Arquivos B3 com arrastar, aviso de cadastro velho e motivo do status)
+Task 17: start
+- Ruling: o `useAoVivo` mora num componente que só existe com perfil aberto (`ComPerfil`); a cadeia é cancelada ao sair da tela de Mercado (`seguirCadeia(null)`), para não deixar tópicos assinados no Tryd — termos do Tryd ("flood") — se errado: nenhum.
+- Ruling: hora de cada cotação mostra "(fim de dia)" / "(atrasado)" quando não é ao vivo; a cadeia mostra fonte e hora no cabeçalho — anti-objetivo "dado parado mostrado como ao vivo".
+Task 17: complete (30 testes do frontend; build)
+Task 17: ponta a ponta no Windows 11 (app real, `--sem-ponte`, APPDATA temporário, fixture sintética importada pela API): status `fim_de_dia` com cadastro de 3 du; cotações formatadas (-1,48%, 30,0 mi, "23/10 18:00:00 (fim de dia)"); cadeia de PETR4 pelo WebSocket com 2 abas, calls e puts espelhadas, IV ~30% (sigma da fixture), "—" nos lados ausentes e 7 rejeitadas. Bug achado e corrigido: "Importado em" mostrava a data UTC (29/10 às 01h UTC = 28/10 22h em São Paulo) → `formatarInstante`.
+Task 11: note: test_ponte_de_pe_com_o_tryd_fechado_recua_para_o_fim_de_dia_apos_30_s falhava ~1 em 3 no Windows: a espera aceitava qualquer UnderlyingQuote, e a do fim de dia também é uma — o teste seguia antes de o Status "conectado" chegar. A espera passa a exigir a fonte AO_VIVO (10/10 depois). Defeito do teste, não do produto.

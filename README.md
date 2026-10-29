@@ -203,6 +203,19 @@ ordens: você executa no home broker e registra a operação no app.
 - **Ponte do Tryd (RTD → TCP local):** [`src/options_ponte/README.md`](src/options_ponte/README.md).
   No Linux, o ambiente Wine é montado por [`scripts/linux/preparar_ponte_wine.sh`](scripts/linux/preparar_ponte_wine.sh).
 
+Para rodar o app (precisa do extra `app` e do Node 22+ para compilar a tela):
+
+```bash
+npm --prefix frontend ci && npm --prefix frontend run build   # gera a SPA servida pelo FastAPI
+python -m options_engine app                                  # abre a janela; --sem-ponte, --sem-janela, --porta N
+```
+
+Sem o Tryd (ou sem a ponte), o app abre do mesmo jeito e mostra o fim de dia dos
+arquivos da B3 importados em **Arquivos B3**, com o rótulo "Fim de dia (B3)". A
+configuração fica em `%APPDATA%\PainelOpcoes` (Windows) ou `~/.config/painel-opcoes`.
+Para desenvolver a tela, `npm --prefix frontend run dev` (proxy para o app na 8765) e
+`npm --prefix frontend run verificar` (TypeScript + Vitest).
+
 Fora do MVP (mapeado no roadmap): dividendos discretos, exercício americano exato
 (B3: opções de ações; calls já aceitas como aproximação europeia na Sprint 5), Monte Carlo,
 persistência.
