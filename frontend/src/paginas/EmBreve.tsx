@@ -3,7 +3,6 @@ type Props = {
   semana: number;
 };
 
-/** Área que ainda não existe, com a semana do plano em que ela chega. */
 export function EmBreve({ titulo, semana }: Props) {
   return (
     <section className="em-breve">

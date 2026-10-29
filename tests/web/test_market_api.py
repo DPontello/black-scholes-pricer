@@ -142,9 +142,6 @@ def _cliente(
     return TestClient(app)
 
 
-# --- REST ----------------------------------------------------------------------------------------
-
-
 def test_status_traz_a_fonte_o_cadastro_e_a_faixa_dos_cotahist() -> None:
     assert _cliente(_MercadoFalso()).get("/api/mercado/status").json() == {
         "fonte": "ao_vivo",
@@ -207,9 +204,6 @@ def test_cadeia_de_ativo_desconhecido_e_404_e_indisponivel_e_422() -> None:
 def test_cadeia_com_vencimentos_fora_da_faixa_e_requisicao_invalida() -> None:
     resposta = _cliente(_MercadoFalso()).get("/api/mercado/cadeia/PETR4?vencimentos=0")
     assert (resposta.status_code, resposta.json()["erro"]) == (422, "RequisicaoInvalida")
-
-
-# --- WebSocket -----------------------------------------------------------------------------------
 
 
 def test_ao_conectar_manda_status_e_depois_cotacoes_e_assina_a_lista() -> None:

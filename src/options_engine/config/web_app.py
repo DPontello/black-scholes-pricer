@@ -1,21 +1,5 @@
-"""Composition root do app web — perfis, arquivos da B3, mercado com recuo e a ponte do Tryd.
-
-Mesma disciplina do ``composition``: wiring manual, linha a linha. Fica num módulo à parte
-porque importa o FastAPI (extra ``app``): o ``composition`` e o painel de linha de comando
-seguem funcionando sem ele.
-
-O que o app monta:
-
-- perfis em JSON, com a configuração da máquina em ``config_dir/config.json``;
-- a biblioteca de arquivos da B3 em ``config_dir/mercado`` (local: arquivo da B3 não viaja
-  com o perfil);
-- o mercado: Tryd ao vivo pela ponte, com recuo para o fim de dia dos arquivos quando a ponte
-  cai (``FallbackMarket``); o CDI é o do perfil aberto, lido a cada consulta;
-- o ciclo de vida: com ``bridge``, o cliente da ponte sobe com o servidor, e uma thread
-  própria adota ou lança a ponte e a relança quando ela some (as chamadas dela podem
-  bloquear por segundos e não podem rodar no laço de eventos). Ao desligar, a ponte é
-  encerrada e o perfil fechado; a trava do perfil é solta mesmo se o resto falhar.
-"""
+"""Composition root do app web. Fora do ``composition`` para o núcleo e o CLI
+seguirem sem o FastAPI (extra ``app``)."""
 
 import asyncio
 import contextlib
@@ -64,14 +48,10 @@ _log = logging.getLogger(__name__)
 
 MACHINE_CONFIG_NAME: Final = "config.json"
 MARKET_DIR_NAME: Final = "mercado"
-# De quanto em quanto tempo a thread da ponte confere se ela ainda está no ar. O lançador
-# já espaça os relançamentos (10 s); isto só define com que atraso a queda é notada.
 _ENSURE_INTERVAL_S: Final = 2.0
 
 
 class _Bridge(Protocol):
-    """O que o ciclo de vida usa do lançador da ponte (``BridgeProcess``)."""
-
     def start(self) -> None: ...
 
     def ensure_running(self) -> None: ...
@@ -80,8 +60,6 @@ class _Bridge(Protocol):
 
 
 class _Client(Protocol):
-    """O que o ciclo de vida usa do cliente da ponte (``TrydBridgeClient``)."""
-
     def start(self) -> None: ...
 
     def stop(self) -> None: ...
@@ -95,7 +73,6 @@ def build_web_app(
     machine_name: str,
     clock: Clock | None = None,
 ) -> FastAPI:
-    """O app inteiro; ``bridge=False`` não sobe a ponte, e o mercado fica no fim de dia."""
     clock = SystemClock() if clock is None else clock
     calendar = StaticHolidayCalendar.from_packaged_data()
     profiles = ProfileService(
@@ -134,7 +111,6 @@ def build_web_app(
 
 
 def _ponte_src_dir() -> Path:
-    """A pasta que contém o pacote ``options_ponte``: é de lá que a ponte é lançada."""
     return Path(options_ponte.__file__).resolve().parent.parent
 
 
@@ -145,7 +121,6 @@ def _lifespan(
     *,
     ensure_interval_s: float = _ENSURE_INTERVAL_S,
 ) -> Lifespan:
-    """Sobe a ponte (se houver) com o servidor; ao desligar, encerra a ponte e fecha o perfil."""
 
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -170,10 +145,9 @@ def _lifespan(
 
 
 def _supervise(process: _Bridge, stop: threading.Event, interval_s: float) -> None:
-    """Thread da ponte: adota ou lança, e relança quando ela some, até ``stop``."""
     try:
         process.start()
-    except Exception:  # a ponte é opcional: sem ela o app segue no fim de dia
+    except Exception:  # sem ponte o app segue no fim de dia
         _log.exception("não foi possível subir a ponte do Tryd")
     while not stop.wait(interval_s):
         try:
@@ -188,7 +162,7 @@ def _shutdown(
     process: _Bridge | None,
     supervisor: threading.Thread | None,
 ) -> None:
-    """Cada passo isolado: a falha de um não impede os outros, e a trava sai sempre."""
+    # Cada passo isolado: a trava do perfil tem de sair mesmo se o resto falhar.
     if supervisor is not None:
         supervisor.join(timeout=5.0)
     if process is not None:
@@ -199,14 +173,13 @@ def _shutdown(
                 _log.exception("falha ao encerrar a ponte do Tryd")
     try:
         profiles.close()
-    except Exception:  # pasta do perfil fora do ar, config.json ilegível: o app tem de fechar
+    except Exception:
         _log.exception("falha ao soltar a trava do perfil")
 
 
 def _freshness(
     library: B3FileLibrary, calendar: TradingCalendar, clock: Clock
 ) -> CadastroFreshness | str:
-    """Idade do cadastro mais recente, ou o motivo de não haver (texto para a tela)."""
     try:
         latest = library.latest_cadastro()
     except (DomainError, OSError) as erro:
@@ -218,7 +191,7 @@ def _freshness(
     today = clock.now().astimezone(B3_UTC_OFFSET).date()
     try:
         freshness = cadastro_freshness(library, calendar, today)
-    except DomainError as erro:  # data fora da cobertura do calendário de feriados
+    except DomainError as erro:  # data fora do calendário de feriados
         return f"não deu para contar a idade do cadastro: {erro}"
     except OSError as erro:
         return f"biblioteca de arquivos da B3 ilegível: {erro}"
@@ -226,7 +199,6 @@ def _freshness(
 
 
 def _cotahist_range(library: B3FileLibrary) -> tuple[date, date] | None:
-    """Do menor ao maior pregão dos COTAHIST importados; ``None`` sem nenhum."""
     try:
         files = library.files()
     except (DomainError, OSError):

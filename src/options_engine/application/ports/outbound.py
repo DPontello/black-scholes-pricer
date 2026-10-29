@@ -148,13 +148,6 @@ class MarketPort(QuoteBoardPort, LiveFeedPort, OptionChainPort, Protocol):
 
 @dataclass(frozen=True, slots=True)
 class CadastroFreshness:
-    """Idade do Cadastro de Instrumentos mais recente: data de referência, dias úteis até
-    hoje e se já passou do prazo de cadastro velho.
-
-    Mora no port porque o serviço de mercado a recebe de quem guarda os arquivos (a
-    biblioteca da B3, um adapter) e a aplicação não importa adapters.
-    """
-
     reference_date: date
     business_days: int
     stale: bool

@@ -1,5 +1,4 @@
-/* Tema escuro inspirado no home broker. As cores nunca são a única pista: todo estado
-   (compra/venda, alta/baixa, fonte do dado) também vem escrito. */
+/* Tema escuro. Cor nunca é a única pista: todo estado também vem escrito. */
 :root {
   --fundo: #0f1115;
   --painel: #171a21;
@@ -106,7 +105,6 @@ h1 {
   color: var(--texto-secundario);
 }
 
-/* Números de mercado: alinhados à direita e com algarismos de largura fixa. */
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -181,8 +179,6 @@ input {
   color: var(--baixa);
 }
 
-/* --- barra de status ---------------------------------------------------------------------- */
-
 .barra-status {
   color: var(--texto-secundario);
 }
@@ -202,8 +198,6 @@ input {
 .fonte-fim-de-dia {
   color: var(--texto-secundario);
 }
-
-/* --- perfis e arquivos ---------------------------------------------------------------------- */
 
 .cartoes {
   display: flex;
@@ -271,8 +265,6 @@ h2 {
   font-size: 1.05rem;
   margin: 1.25rem 0 0.5rem;
 }
-
-/* --- mercado ---------------------------------------------------------------------------------- */
 
 .lista-ativos {
   margin-bottom: 1.25rem;

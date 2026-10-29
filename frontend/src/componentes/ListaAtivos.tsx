@@ -11,10 +11,8 @@ import {
 
 type Props = {
   cotacoes: Cotacao[];
-  /** Ativo cuja cadeia está aberta. */
   selecionado: string | null;
   onEscolher: (ativo: string) => void;
-  /** Grava a lista nova no perfil (a API normaliza e tira repetidos). */
   onDefinirAtivos: (ativos: string[]) => void;
 };
 
@@ -25,7 +23,6 @@ function classeVariacao(v: number | null): string {
   return v > 0 ? "alta" : "baixa";
 }
 
-/** A lista de ativos do perfil: cotação, variação e liquidez; clique abre a cadeia. */
 export function ListaAtivos({ cotacoes, selecionado, onEscolher, onDefinirAtivos }: Props) {
   const [novo, setNovo] = useState("");
   const ativos = cotacoes.map((c) => c.ativo);

@@ -1,9 +1,4 @@
-"""``MarketViewService`` com um mercado falso em memória (Task 12 da semana 1 do app).
-
-Cadeia sintética de PETR4 (spot 30) com prêmios do kernel em sigma = 0,30 e book de 1
-centavo de cada lado; pregão 2026-10-23 (18h em São Paulo) e vencimentos 2026-11-19 (18 du),
-2026-12-18 e 2027-01-21.
-"""
+"""``MarketViewService`` com mercado falso: PETR4 a 30, sigma 0,30, pregão 2026-10-23."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -191,9 +186,6 @@ def test_padrao_de_vencimentos_e_o_mesmo_que_a_fonte_ao_vivo_assina() -> None:
     assert DEFAULT_CHAIN_EXPIRIES == VENCIMENTOS_PADRAO
 
 
-# --- cadeia --------------------------------------------------------------------------------------
-
-
 def test_blocos_por_vencimento_com_os_dias_uteis_do_calendario() -> None:
     vista = _servico().chain("PETR4")
     assert [b.expiry for b in vista.expiries] == [NOVEMBRO, DEZEMBRO]
@@ -312,7 +304,6 @@ def test_vencimento_que_ja_passou_fica_fora_e_o_de_hoje_entra_com_tau_zero() -> 
 def test_rotulo_da_cadeia_e_a_saude_menos_fresca_entre_antes_e_depois(
     antes: DataSource, depois: DataSource, rotulo: DataSource
 ) -> None:
-    """A fonte pode trocar no meio da consulta: o dado nunca sai mais fresco do que é."""
     assert _servico(_Mercado(healths=[antes, depois])).chain("PETR4").source is rotulo
 
 
@@ -340,9 +331,6 @@ def test_so_aceita_a_convencao_de_dias_uteis() -> None:
         )
 
 
-# --- lista de ativos e assinatura ----------------------------------------------------------------
-
-
 def test_lista_traz_cotacao_ou_motivo_na_ordem_pedida() -> None:
     linhas = _servico().quotes(["PETR4", "PETR44", "VALE3"])
     assert [linha.symbol for linha in linhas] == ["PETR4", "PETR44", "VALE3"]
@@ -364,9 +352,6 @@ def test_follow_assina_a_lista_e_a_cadeia_aberta() -> None:
     servico.follow(["PETR4", "VALE3"], "PETR4")
     servico.follow(["PETR4"], None)
     assert mercado.watched == [(("PETR4", "VALE3"), ("PETR4",)), (("PETR4",), ())]
-
-
-# --- status --------------------------------------------------------------------------------------
 
 
 def test_status_com_cadastro_datado_e_faixa_dos_cotahist() -> None:

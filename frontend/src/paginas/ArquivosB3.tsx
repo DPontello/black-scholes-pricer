@@ -10,8 +10,7 @@ import {
 } from "../api/cliente";
 import { formatarData, formatarInstante } from "../formatacao";
 
-// Páginas da B3 de onde os arquivos são baixados À MÃO: os termos proíbem a coleta
-// automática e o download tem CAPTCHA (ADR-0006).
+// Download à mão: os termos da B3 proíbem coleta automática (ADR-0006).
 const LINK_COTAHIST =
   "https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/historico/mercado-a-vista/cotacoes-historicas/";
 const LINK_BOLETIM =
@@ -22,7 +21,6 @@ const TIPOS: Record<ArquivoB3["tipo"], string> = {
   cadastro: "Cadastro de Instrumentos",
 };
 
-/** Arquivos da B3: arrastar para importar, o que já há na biblioteca e de onde baixar. */
 export function ArquivosB3() {
   const [arquivos, setArquivos] = useState<ArquivoB3[]>([]);
   const [status, setStatus] = useState<StatusMercado | null>(null);

@@ -12,13 +12,11 @@ import {
 import { formatarHora } from "../formatacao";
 
 type Props = {
-  /** Chamado com o perfil depois de aberto (e travado para este PC). */
   onAberto: (perfil: Perfil) => void;
 };
 
 type Confirmacao = { nome: string; trava: Trava };
 
-/** Quem está usando: os perfis deste PC, abrir (com a trava entre PCs) e criar um novo. */
 export function Perfis({ onAberto }: Props) {
   const [perfis, setPerfis] = useState<EntradaPerfil[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);

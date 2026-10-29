@@ -11,12 +11,11 @@ type Props = {
   onPerfil: (perfil: Perfil) => void;
 };
 
-/** Mercado ao vivo: a lista de ativos do perfil e a cadeia do ativo escolhido. */
 export function Mercado({ aoVivo, seguirCadeia, onPerfil }: Props) {
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
-  // A cadeia só fica assinada enquanto a tela está aberta (termos do Tryd: nada de "flood").
+  // Só assina a cadeia com a tela aberta: os termos do Tryd vedam "flood".
   useEffect(() => {
     seguirCadeia(selecionado);
   }, [selecionado, seguirCadeia]);

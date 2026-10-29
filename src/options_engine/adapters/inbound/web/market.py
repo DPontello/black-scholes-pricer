@@ -1,22 +1,4 @@
-"""Router de mercado — status, cotações, cadeia e o WebSocket ao vivo.
-
-Números saem crus, sem formatação: a formatação pt-BR é do frontend (decisão nº 8, conversão
-de exibição só na apresentação). Todo número de mercado sai com a ``fonte``
-(``ao_vivo``, ``atrasado`` ou ``fim_de_dia``) e a hora da observação.
-
-REST:
-
-- ``GET /api/mercado/status``: de onde vêm os dados e como estão os arquivos da B3;
-- ``GET /api/mercado/cotacoes``: a lista de ativos do perfil aberto (sem perfil, 404);
-- ``GET /api/mercado/cadeia/{ativo}?vencimentos=2``: a cadeia, com IV e delta por série.
-
-WebSocket ``/api/ao-vivo``: ao conectar manda ``status`` e ``cotacoes``; a cada intervalo
-(1 s) reenvia só o que mudou. O cliente abre a cadeia de um ativo com
-``{"tipo": "cadeia", "ativo": "PETR4", "vencimentos": 2}`` e a fecha com ``"ativo": null``.
-Cada mudança da lista do perfil ou da cadeia aberta é avisada à fonte ao vivo (``follow``),
-para ela assinar só o que está na tela. O cálculo roda no threadpool: o laço de eventos
-nunca espera o motor.
-"""
+"""Router de mercado: status, cotações, cadeia e o WebSocket ``/api/ao-vivo``."""
 
 import asyncio
 import json
@@ -45,9 +27,6 @@ INTERVALO_AO_VIVO_S: Final = 1.0
 MAX_VENCIMENTOS: Final = 12
 
 
-# --- modelos de saída ----------------------------------------------------------------------------
-
-
 class CadastroOut(BaseModel):
     data: str
     dias_uteis: int
@@ -67,8 +46,7 @@ class StatusOut(BaseModel):
 
 
 class CotacaoOut(BaseModel):
-    """``variacao_pct`` é DECIMAL, como todo ``_pct`` do projeto (CONVENTIONS): 0.02 = +2%."""
-
+    # variacao_pct é decimal (CONVENTIONS): 0.02 = +2%.
     ativo: str
     ultimo: float | None
     compra: float | None
@@ -117,8 +95,6 @@ class CadeiaOut(BaseModel):
 
 
 class _PedidoCadeia(BaseModel):
-    """Mensagem do cliente no WebSocket: abre (``ativo``) ou fecha (``None``) a cadeia."""
-
     tipo: str
     ativo: str | None
     vencimentos: int = Field(default=DEFAULT_CHAIN_EXPIRIES, ge=1, le=MAX_VENCIMENTOS)
@@ -212,16 +188,12 @@ def _cadeia_out(view: ChainView) -> CadeiaOut:
     )
 
 
-# --- router --------------------------------------------------------------------------------------
-
-
 def router_mercado(
     market: MarketViewUseCase,
     profiles: ProfileUseCase,
     *,
     interval_s: float = INTERVALO_AO_VIVO_S,
 ) -> APIRouter:
-    """Rotas ``/api/mercado/...`` e o WebSocket ``/api/ao-vivo``."""
     router = APIRouter(prefix="/api", tags=["mercado"])
 
     @router.get("/mercado/status")
@@ -248,8 +220,6 @@ def router_mercado(
 
 
 class _SessaoAoVivo:
-    """Uma conexão do WebSocket: o que o cliente acompanha e o que já lhe foi mandado."""
-
     def __init__(
         self,
         websocket: WebSocket,
@@ -261,9 +231,9 @@ class _SessaoAoVivo:
         self._market = market
         self._profiles = profiles
         self._interval_s = interval_s
-        self._cadeia: tuple[str, int] | None = None  # (ativo, vencimentos) da cadeia aberta
+        self._cadeia: tuple[str, int] | None = None  # (ativo, vencimentos)
         self._seguindo: tuple[tuple[str, ...], str | None] | None = None
-        self._enviado: dict[str, object] = {}  # último conteúdo mandado de cada tipo
+        self._enviado: dict[str, object] = {}
 
     async def rodar(self) -> None:
         entrada: asyncio.Queue[str | None] = asyncio.Queue()
@@ -280,7 +250,7 @@ class _SessaoAoVivo:
                     proximo += self._interval_s
                     await self._mandar(await run_in_threadpool(self._mudancas))
                     continue
-                if texto is None:  # o cliente desconectou
+                if texto is None:
                     return
                 await self._mandar(await run_in_threadpool(self._pedido, texto))
         except WebSocketDisconnect:
@@ -301,10 +271,7 @@ class _SessaoAoVivo:
                 raise WebSocketDisconnect()
             await self._ws.send_json(mensagem)
 
-    # --- no threadpool ---------------------------------------------------------------------------
-
     def _pedido(self, texto: str) -> list[dict[str, object]]:
-        """Trata uma mensagem do cliente e devolve o que mandar já (sem esperar o intervalo)."""
         try:
             pedido = _PedidoCadeia.model_validate(json.loads(texto))
             if pedido.tipo != "cadeia":
@@ -317,7 +284,6 @@ class _SessaoAoVivo:
         return self._mudancas()
 
     def _mudancas(self) -> list[dict[str, object]]:
-        """Status, cotações e cadeia aberta, só os que mudaram desde o último envio."""
         try:
             lista, motivo = self._profiles.active().watchlist, None
         except NoActiveProfileError as erro:
@@ -343,7 +309,7 @@ class _SessaoAoVivo:
     def _mensagem_da_cadeia(self, ativo: str, vencimentos: int) -> dict[str, object]:
         try:
             view = self._market.chain(ativo, vencimentos)
-        except DomainError as erro:  # desconhecido, aguardando dados, sem histórico...
+        except DomainError as erro:
             return {
                 "tipo": "cadeia",
                 "ativo": ativo,

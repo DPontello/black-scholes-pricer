@@ -11,14 +11,11 @@ export const AREAS: ReadonlyArray<{ caminho: string; nome: string }> = [
 ];
 
 type Props = {
-  /** O que mostrar no espaço do status (a barra de status do mercado), ou nada. */
   status: ReactNode;
-  /** Nome do perfil aberto; sem perfil, o link leva à escolha de perfil. */
   perfil?: string | null;
   children: ReactNode;
 };
 
-/** Moldura do app: barra superior (nome, perfil, status) e menu lateral. */
 export function Shell({ status, perfil = null, children }: Props) {
   return (
     <div className="shell">

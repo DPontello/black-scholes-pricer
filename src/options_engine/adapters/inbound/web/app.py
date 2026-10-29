@@ -64,11 +64,7 @@ def create_app(
     *,
     lifespan: Lifespan | None = None,
 ) -> FastAPI:
-    """Monta o app: ``GET /api/saude``, os ``routers`` e, com ``static_dir``, o frontend (SPA).
-
-    ``lifespan`` é o que sobe e desce junto com o servidor (a ponte do Tryd, a trava do
-    perfil); quem compõe o app decide o que entra nele.
-    """
+    """Monta o app: ``GET /api/saude``, os ``routers`` e, com ``static_dir``, o frontend (SPA)."""
     versao = importlib.metadata.version("options-engine")
     # Documentação sob /api: fora dela, /docs e afins sombreariam rotas do frontend.
     app = FastAPI(

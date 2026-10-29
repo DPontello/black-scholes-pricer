@@ -1,23 +1,4 @@
-"""``MarketViewService`` — implementação do contrato ``MarketViewUseCase``.
-
-A tela de mercado do app: a lista de ativos do perfil e a cadeia de um ativo, com vol
-implícita e delta por série. Orquestração pura sobre o ``MarketPort``: quem decide entre o
-Tryd ao vivo e o fim de dia da B3 é o adapter (``FallbackMarket``); aqui só se monta o que a
-tela mostra.
-
-Regras:
-
-- Data de valoração da cadeia = data da cotação do ativo no fuso de valoração, como no
-  ranking: os preços e o tau precisam ser do mesmo instante, senão a vol implícita sai de
-  um prazo que não é o dos preços. No fim de dia é o pregão do arquivo; ao vivo, o dia do
-  último dado do Tryd.
-- Tau BUS/252 pelo calendário, por vencimento; vol implícita pelo mid só com os dois lados
-  do book, e delta pela vol da série ou, sem ela, pela do smile do vencimento (o mesmo
-  ``series_risk`` do ranking).
-- Rótulo da cadeia: a saúde da fonte é lida antes E depois da consulta, e vale a MENOS
-  fresca das duas. A fonte pode trocar no meio (ponte que cai), e a cadeia não diz de onde
-  veio: no pior caso um dado ao vivo sai como "fim de dia", nunca o contrário.
-"""
+"""``MarketViewService``: a lista de ativos do perfil e a cadeia com IV e delta por série."""
 
 from collections.abc import Callable, Sequence
 from datetime import date, tzinfo
@@ -46,7 +27,6 @@ from options_engine.domain.pricing.smile import SeriesMarket, VolSmile, build_sm
 
 __all__ = ["MarketViewService"]
 
-# Da mais fresca para a menos fresca.
 _FRESHNESS: Final = {DataSource.AO_VIVO: 2, DataSource.ATRASADO: 1, DataSource.FIM_DE_DIA: 0}
 
 
@@ -59,13 +39,6 @@ def _order(row: SeriesRow) -> tuple[float, bool, str]:
 
 
 class MarketViewService:
-    """Monta a lista de ativos e a cadeia da tela de mercado.
-
-    ``freshness`` devolve a idade do cadastro mais recente ou o motivo de não haver;
-    ``cotahist_range`` devolve a faixa de pregões dos COTAHIST importados. Os dois são
-    lidos a cada ``status`` (a biblioteca muda quando o usuário importa um arquivo).
-    """
-
     def __init__(
         self,
         market: MarketPort,
@@ -104,11 +77,14 @@ class MarketViewService:
     def chain(self, symbol: str, expiries: int = DEFAULT_CHAIN_EXPIRIES) -> ChainView:
         if expiries < 1:
             raise InvalidDomainValueError(f"vencimentos deve ser >= 1; recebido {expiries!r}")
+        # A fonte pode trocar no meio da consulta e a cadeia não diz de onde veio: vale a
+        # saúde menos fresca, para um dado parado nunca sair como ao vivo.
         before = self._market.health()
         chain = self._market.get_chain(symbol)
         source = _least_fresh(before, self._market.health())
 
         snapshot = chain.underlying
+        # Data da cotação, como no ranking: preço e tau do mesmo instante.
         valuation_date = snapshot.timestamp.astimezone(self._timezone).date()
         rate = snapshot.risk_free_rate.as_continuous()
         upcoming = sorted(

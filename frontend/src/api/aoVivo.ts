@@ -1,5 +1,4 @@
-// WebSocket /api/ao-vivo: status, cotações e a cadeia aberta, empurrados pelo app.
-// Reconecta sozinho a cada 2 s e, ao reconectar, pede de novo a cadeia que estava aberta.
+// WebSocket /api/ao-vivo. Ao reconectar, pede de novo a cadeia que estava aberta.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -45,7 +44,6 @@ export type Cadeia = {
   rejeitadas: { ticker: string; motivo: string }[];
 };
 
-/** A cadeia que não saiu: o ativo pedido e o motivo (aguardando dados, desconhecido...). */
 export type CadeiaIndisponivel = { ativo: string; erro: string; mensagem: string };
 
 export type EstadoAoVivo = {
@@ -75,7 +73,6 @@ const INICIAL: EstadoAoVivo = {
   cadeiaIndisponivel: null,
 };
 
-/** Aplica uma mensagem do app ao estado (puro, para ser testado sem socket). */
 export function aplicar(estado: EstadoAoVivo, mensagem: Mensagem): EstadoAoVivo {
   switch (mensagem.tipo) {
     case "status": {

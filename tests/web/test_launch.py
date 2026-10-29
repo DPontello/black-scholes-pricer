@@ -25,9 +25,6 @@ def _sem_flatpak(_app_id: str) -> bool:
     return False
 
 
-# --- pasta de configuração -----------------------------------------------------------------------
-
-
 def test_pasta_de_configuracao_no_linux_segue_o_xdg() -> None:
     assert platform_config_dir("Linux", {"XDG_CONFIG_HOME": "/x"}, Path("/h")) == Path(
         "/x/painel-opcoes"
@@ -47,9 +44,6 @@ def test_pasta_de_configuracao_no_windows_fica_no_appdata() -> None:
     assert platform_config_dir("Windows", {}, Path("/h")) == Path("/h/AppData/Roaming/PainelOpcoes")
 
 
-# --- porta ---------------------------------------------------------------------------------------
-
-
 def test_porta_preferida_livre_e_ela_mesma() -> None:
     livre = find_free_port(0)  # o SO escolhe uma livre; ela segue livre logo depois
     assert find_free_port(livre) == livre
@@ -62,9 +56,6 @@ def test_porta_ocupada_vira_outra_livre() -> None:
         porta = ocupada.getsockname()[1]
         outra = find_free_port(porta)
     assert outra != porta
-
-
-# --- janela de app -------------------------------------------------------------------------------
 
 
 def test_janela_no_windows_usa_o_edge_do_path() -> None:
@@ -101,9 +92,6 @@ def test_janela_no_linux_prefere_o_chrome_nativo_e_depois_o_flatpak() -> None:
 def test_sem_navegador_de_janela_de_app_devolve_none() -> None:
     assert app_window_command("Linux", URL, _which(), _sem_flatpak) is None
     assert app_window_command("Windows", URL, _which(), _sem_flatpak) is None
-
-
-# --- comando -------------------------------------------------------------------------------------
 
 
 def test_app_sem_o_frontend_compilado_sai_com_codigo_2_e_mensagem(

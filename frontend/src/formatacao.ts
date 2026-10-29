@@ -1,5 +1,4 @@
-// Formatação de exibição em pt-BR. A API manda números crus; só a tela formata
-// (decisão nº 8: conversão de exibição só na apresentação). Ausente é "—", nunca zero.
+// A API manda números crus; só a tela formata. Ausente é "—", nunca zero.
 
 const AUSENTE = "—";
 const FUSO_B3 = "America/Sao_Paulo";
@@ -47,17 +46,15 @@ const instante = new Intl.DateTimeFormat("pt-BR", {
   hourCycle: "h23",
 });
 
-/** Preço com duas casas: 1.234,50. */
 export function formatarPreco(v: number | null): string {
   return v === null ? AUSENTE : preco.format(v);
 }
 
-/** Fração decimal como percentual com sinal: -0.0059 → "-0,59%". */
+// Recebe fração decimal: -0.0059 → "-0,59%".
 export function formatarPercentual(v: number | null): string {
   return v === null ? AUSENTE : percentual.format(v).replace(/−/g, "-");
 }
 
-/** Volume financeiro curto: 679,6 mi; 1,3 bi; 48,4 mil. */
 export function formatarVolume(v: number | null): string {
   if (v === null) return AUSENTE;
   const absoluto = Math.abs(v);
@@ -67,33 +64,29 @@ export function formatarVolume(v: number | null): string {
   return inteiro.format(v);
 }
 
-/** Volatilidade (decimal) em percentual sem sinal: 0.312 → "31,2%". */
 export function formatarVol(v: number | null): string {
   return v === null ? AUSENTE : vol.format(v);
 }
 
-/** Delta com duas casas: 0,55; -0,45. */
 export function formatarDelta(v: number | null): string {
   return v === null ? AUSENTE : preco.format(v).replace(/−/g, "-");
 }
 
-/** Inteiro com separador de milhar: 22.704. */
 export function formatarInteiro(v: number | null): string {
   return v === null ? AUSENTE : inteiro.format(v);
 }
 
-/** Data ISO (AAAA-MM-DD) como DD/MM/AAAA, sem passar por fuso. */
+// Sem passar por Date: "2026-11-19" não pode virar 18/11 no fuso local.
 export function formatarData(iso: string): string {
   const [ano, mes, dia] = iso.slice(0, 10).split("-");
   return `${dia}/${mes}/${ano}`;
 }
 
-/** Instante (ISO com fuso) como data e hora no fuso da B3: "28/10/2026 22:15". */
 export function formatarInstante(iso: string): string {
   return instante.format(new Date(iso)).replace(",", "");
 }
 
-/** Hora da observação no fuso da B3; com DD/MM na frente quando não é de hoje. */
+// Com DD/MM na frente quando não é de hoje: dado de ontem não se passa pelo de agora.
 export function formatarHora(iso: string | null, agora: Date = new Date()): string {
   if (iso === null) return AUSENTE;
   const quando = new Date(iso);

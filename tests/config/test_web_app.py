@@ -55,9 +55,6 @@ def test_desligar_o_app_solta_a_trava_do_perfil_aberto(tmp_path: Path) -> None:
     assert not (pasta / "perfil.lock").exists()
 
 
-# --- ciclo de vida com a ponte (falsos no lugar do cliente e do lançador) ------------------------
-
-
 @dataclass
 class _Registro:
     chamadas: list[str] = field(default_factory=list)
@@ -96,8 +93,6 @@ class _Cliente:
 
 @dataclass
 class _Perfis:
-    """Só o ``close`` interessa ao ciclo de vida."""
-
     registro: _Registro
 
     def close(self) -> None:
@@ -148,9 +143,6 @@ def test_falhas_ao_encerrar_nao_impedem_soltar_a_trava_do_perfil() -> None:
     assert registro.chamadas[-3:] == ["ponte.stop", "cliente.stop", "perfis.close"]
 
 
-# --- status dos arquivos da B3 -------------------------------------------------------------------
-
-
 def test_idade_do_cadastro_datado_em_dias_uteis(tmp_path: Path) -> None:
     lib = biblioteca(tmp_path)
     # 23/10 (sexta) a 28/10: 23, 26 e 27 contam (intervalo meio-aberto do calendário).
@@ -181,7 +173,6 @@ def test_a_biblioteca_do_app_mora_em_config_dir_mercado(tmp_path: Path) -> None:
 
 
 def test_o_nucleo_e_o_painel_de_linha_de_comando_nao_importam_o_fastapi() -> None:
-    """O app é extra (``app``): sem ele, ``composition`` e o CLI precisam continuar importando."""
     codigo = (
         "import sys, options_engine.config.composition, options_engine.__main__; "
         "print('fastapi' in sys.modules)"

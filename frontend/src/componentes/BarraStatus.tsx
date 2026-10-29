@@ -8,11 +8,9 @@ const ROTULOS: Record<Fonte, { texto: string; classe: string }> = {
 
 type Props = {
   status: StatusMercado | null;
-  /** Falso enquanto o app não responde ao WebSocket. */
   conectado?: boolean;
 };
 
-/** De onde vêm os números agora, sempre visível; e o aviso de cadastro velho. */
 export function BarraStatus({ status, conectado = true }: Props) {
   if (!conectado || status === null) {
     return (

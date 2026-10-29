@@ -1,5 +1,3 @@
-// Cliente da API REST do app (mesma origem: o FastAPI serve a SPA e a API).
-// Todo erro HTTP vira ErroApi com o corpo único da API: {"erro", "mensagem"}.
 
 export type Fonte = "ao_vivo" | "atrasado" | "fim_de_dia";
 
@@ -81,7 +79,6 @@ export function abrirPerfil(nome: string, forcar: boolean): Promise<Perfil> {
   return pedir(`/api/perfis/${encodeURIComponent(nome)}/abrir`, json("POST", { forcar }));
 }
 
-/** O perfil aberto, ou null quando nenhum está aberto (a API responde 404). */
 export async function perfilAtivo(): Promise<Perfil | null> {
   try {
     return await pedir<Perfil>("/api/perfil");
@@ -99,7 +96,7 @@ export function listarArquivos(): Promise<ArquivoB3[]> {
   return pedir("/api/mercado/arquivos");
 }
 
-/** Manda o arquivo como corpo binário, com o nome na query (a API não usa multipart). */
+// Corpo binário com o nome na query: a API não usa multipart.
 export function enviarArquivo(arquivo: File): Promise<ArquivoB3> {
   return pedir(`/api/mercado/arquivos?nome=${encodeURIComponent(arquivo.name)}`, {
     method: "POST",

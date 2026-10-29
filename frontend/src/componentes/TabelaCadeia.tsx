@@ -11,7 +11,6 @@ import {
 } from "../formatacao";
 
 type Props = {
-  /** Ativo pedido; null quando nenhuma cadeia está aberta. */
   ativo: string | null;
   cadeia: Cadeia | null;
   indisponivel: CadeiaIndisponivel | null;
@@ -21,7 +20,6 @@ const FONTES = { ao_vivo: "Ao vivo (Tryd)", atrasado: "Atrasado", fim_de_dia: "F
 
 type Linha = { strike: number; call: Serie | undefined; put: Serie | undefined };
 
-/** Linhas espelhadas por strike: a call à esquerda, a put à direita. */
 function linhas(vencimento: Vencimento): Linha[] {
   const porStrike = new Map<number, { calls: Serie[]; puts: Serie[] }>();
   for (const serie of vencimento.series) {
@@ -69,7 +67,6 @@ function Lado({ serie, espelho }: { serie: Serie | undefined; espelho: boolean }
   return <>{espelho ? celulas.reverse() : celulas}</>;
 }
 
-/** A cadeia do ativo por vencimento, com as calls e as puts espelhadas em torno do strike. */
 export function TabelaCadeia({ ativo, cadeia, indisponivel }: Props) {
   const [aba, setAba] = useState(0);
 

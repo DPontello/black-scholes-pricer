@@ -10,7 +10,6 @@ import { EmBreve } from "./paginas/EmBreve";
 import { Mercado } from "./paginas/Mercado";
 import { Perfis } from "./paginas/Perfis";
 
-/** Rotas do app. Sem perfil aberto, toda rota leva à escolha de perfil. */
 export function App() {
   // undefined: ainda perguntando à API se há perfil aberto; null: nenhum.
   const [perfil, setPerfil] = useState<Perfil | null | undefined>(undefined);
@@ -50,7 +49,6 @@ type ComPerfilProps = {
   onAberto: (perfil: Perfil) => void;
 };
 
-/** O app com um perfil aberto: o WebSocket ao vivo só existe aqui dentro. */
 function ComPerfil({ perfil, onPerfil, onAberto }: ComPerfilProps) {
   const { seguirCadeia, ...aoVivo } = useAoVivo();
   return (

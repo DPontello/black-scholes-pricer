@@ -301,7 +301,6 @@ class _RepositorioQueSegura(FakeProfileRepository):
 
 
 def test_leitura_do_perfil_ativo_espera_a_edicao_em_curso_de_outra_thread() -> None:
-    """Endpoints no threadpool e o WebSocket usam o mesmo serviço: nada de estado pela metade."""
     repo = _RepositorioQueSegura()
     service, _ = make_service(repo)
     service.create("Hugo", "/pastas/hugo")

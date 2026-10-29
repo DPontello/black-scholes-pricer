@@ -192,20 +192,13 @@ class ProfileUseCase(Protocol):
     def close(self) -> None: ...
 
 
-# --- Tela de mercado -------------------------------------------------------------------------
-
-# Vencimentos da cadeia por padrão. É o ``VENCIMENTOS_PADRAO`` que a fonte ao vivo assina
-# (``adapters.outbound.tryd.settings``); ``application`` não importa ``adapters``, então o
-# valor é replicado e um teste prende as duas cópias.
+# Cópia do VENCIMENTOS_PADRAO do Tryd (application não importa adapters); um teste prende as duas.
 DEFAULT_CHAIN_EXPIRIES: Final = 2
 
 
 @dataclass(frozen=True, slots=True)
 class WatchRow:
-    """Uma linha da lista de ativos: a cotação, ou o motivo de não haver (texto para a tela).
-
-    Exatamente um dos dois: ``quote`` ou ``reason``.
-    """
+    """Exatamente um dos dois: ``quote`` ou ``reason``."""
 
     symbol: str
     quote: UnderlyingQuote | None
@@ -220,13 +213,6 @@ class WatchRow:
 
 @dataclass(frozen=True, slots=True)
 class SeriesRow:
-    """Uma série da cadeia como a tela mostra: book, liquidez, vol implícita e delta.
-
-    ``implied_vol`` é a da própria série, pelo mid, e só existe com os dois lados do book
-    (ADR-0004); ``delta`` usa essa vol ou, sem ela, a do smile do vencimento. ``None``
-    quando não há como calcular, nunca zero.
-    """
-
     symbol: str
     option_type: OptionType
     strike: float
@@ -242,8 +228,6 @@ class SeriesRow:
 
 @dataclass(frozen=True, slots=True)
 class ExpiryBlock:
-    """As séries de um vencimento, por strike e, no mesmo strike, a call antes da put."""
-
     expiry: date
     business_days: int
     rows: tuple[SeriesRow, ...]
@@ -251,12 +235,7 @@ class ExpiryBlock:
 
 @dataclass(frozen=True, slots=True)
 class ChainView:
-    """A cadeia de um ativo para a tela, rotulada pela fonte.
-
-    ``timestamp`` é o da cotação do ativo (a observação que valeu de data de valoração): a
-    tela mostra a data quando ela não é a de hoje, para o último negócio de ontem não se
-    passar pelo de agora.
-    """
+    """``timestamp``: a cotação do ativo, que é a data de valoração."""
 
     symbol: str
     spot: float
@@ -268,12 +247,7 @@ class ChainView:
 
 @dataclass(frozen=True, slots=True)
 class MarketStatus:
-    """De onde vêm os dados agora e como estão os arquivos da B3.
-
-    ``cadastro`` é a idade do cadastro mais recente; sem ela, ``cadastro_reason`` diz por quê
-    (nenhum cadastro, cadastro sem data, data fora do calendário). ``cotahist_range`` é a
-    faixa de pregões que os COTAHIST importados cobrem.
-    """
+    """Sem ``cadastro``, ``cadastro_reason`` diz por quê."""
 
     source: DataSource
     cadastro: CadastroFreshness | None
@@ -283,13 +257,8 @@ class MarketStatus:
 
 @runtime_checkable
 class MarketViewUseCase(Protocol):
-    """A tela de mercado: lista de ativos e cadeia de opções, ao vivo ou do fim de dia.
-
-    ``follow`` diz à fonte ao vivo o que acompanhar (a lista do perfil e a cadeia aberta;
-    ``None`` fecha a cadeia). ``chain`` levanta ``UnknownSymbolError`` para ticker que
-    ninguém conhece e ``UnderlyingUnavailableError`` (com o motivo) quando não há como
-    montar a cadeia; ``quotes`` nunca levanta por ativo: o motivo vai na linha.
-    """
+    """``chain`` levanta ``UnknownSymbolError`` ou ``UnderlyingUnavailableError``; ``quotes``
+    nunca levanta por ativo: o motivo vai na linha."""
 
     def follow(self, watchlist: Sequence[str], chain_symbol: str | None) -> None: ...
 
