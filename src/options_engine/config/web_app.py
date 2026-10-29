@@ -6,7 +6,7 @@ import contextlib
 import logging
 import platform
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from datetime import date
 from pathlib import Path
 from typing import Final, Protocol
@@ -23,6 +23,10 @@ from options_engine.adapters.outbound.b3files import (
     B3FileKind,
     B3FileLibrary,
     cadastro_freshness,
+)
+from options_engine.adapters.outbound.b3files.downloads import (
+    DownloadsImporter,
+    ImportacaoAutomatica,
 )
 from options_engine.adapters.outbound.b3files.end_of_day import EndOfDayMarket
 from options_engine.adapters.outbound.clock import SystemClock
@@ -49,6 +53,7 @@ _log = logging.getLogger(__name__)
 MACHINE_CONFIG_NAME: Final = "config.json"
 MARKET_DIR_NAME: Final = "mercado"
 _ENSURE_INTERVAL_S: Final = 2.0
+_SCAN_INTERVAL_S: Final = 5.0
 
 
 class _Bridge(Protocol):
@@ -57,6 +62,10 @@ class _Bridge(Protocol):
     def ensure_running(self) -> None: ...
 
     def stop(self) -> None: ...
+
+
+class _Scanner(Protocol):
+    def scan(self) -> Sequence[ImportacaoAutomatica]: ...
 
 
 class _Client(Protocol):
@@ -72,6 +81,7 @@ def build_web_app(
     bridge: bool,
     machine_name: str,
     clock: Clock | None = None,
+    downloads_dir: Path | None = None,
 ) -> FastAPI:
     clock = SystemClock() if clock is None else clock
     calendar = StaticHolidayCalendar.from_packaged_data()
@@ -102,12 +112,14 @@ def build_web_app(
             platform.system(), _ponte_src_dir(), Path.home(), PORTA_PONTE
         )
         process = BridgeProcess(command, cwd, client)
+    importer = None if downloads_dir is None else DownloadsImporter(library, downloads_dir, clock)
     routers = [
         router_perfis(profiles),
-        router_arquivos_b3(library),
+        router_arquivos_b3(library, importer),
         router_mercado(market_view, profiles),
     ]
-    return create_app(routers, static_dir, lifespan=_lifespan(profiles, client, process))
+    lifespan = _lifespan(profiles, client, process, importer)
+    return create_app(routers, static_dir, lifespan=lifespan)
 
 
 def _ponte_src_dir() -> Path:
@@ -118,8 +130,10 @@ def _lifespan(
     profiles: ProfileUseCase,
     client: _Client,
     process: _Bridge | None,
+    importer: _Scanner | None = None,
     *,
     ensure_interval_s: float = _ENSURE_INTERVAL_S,
+    scan_interval_s: float = _SCAN_INTERVAL_S,
 ) -> Lifespan:
 
     @contextlib.asynccontextmanager
@@ -135,11 +149,20 @@ def _lifespan(
                 daemon=True,
             )
             supervisor.start()
+        varredor = None
+        if importer is not None:
+            varredor = threading.Thread(
+                target=_varrer,
+                args=(importer, stop, scan_interval_s),
+                name="b3-downloads",
+                daemon=True,
+            )
+            varredor.start()
         try:
             yield
         finally:
             stop.set()
-            await asyncio.to_thread(_shutdown, profiles, client, process, supervisor)
+            await asyncio.to_thread(_shutdown, profiles, client, process, supervisor, varredor)
 
     return lifespan
 
@@ -156,15 +179,28 @@ def _supervise(process: _Bridge, stop: threading.Event, interval_s: float) -> No
             _log.exception("falha ao conferir a ponte do Tryd")
 
 
+def _varrer(importer: _Scanner, stop: threading.Event, interval_s: float) -> None:
+    while True:
+        try:
+            for evento in importer.scan():
+                _log.info("Downloads: %s %s", evento.nome, evento.detalhe)
+        except Exception:
+            _log.exception("falha ao ler a pasta Downloads")
+        if stop.wait(interval_s):
+            return
+
+
 def _shutdown(
     profiles: ProfileUseCase,
     client: _Client,
     process: _Bridge | None,
     supervisor: threading.Thread | None,
+    varredor: threading.Thread | None = None,
 ) -> None:
     # Cada passo isolado: a trava do perfil tem de sair mesmo se o resto falhar.
-    if supervisor is not None:
-        supervisor.join(timeout=5.0)
+    for thread in (supervisor, varredor):
+        if thread is not None:
+            thread.join(timeout=5.0)
     if process is not None:
         for passo in (process.stop, client.stop):
             try:

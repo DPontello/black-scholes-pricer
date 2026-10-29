@@ -4,6 +4,8 @@ import {
   type ArquivoB3,
   enviarArquivo,
   ErroApi,
+  importacaoAutomatica,
+  type ImportacaoAutomatica,
   listarArquivos,
   statusMercado,
   type StatusMercado,
@@ -26,6 +28,7 @@ export function ArquivosB3() {
   const [status, setStatus] = useState<StatusMercado | null>(null);
   const [mensagem, setMensagem] = useState<{ texto: string; erro: boolean } | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [automatico, setAutomatico] = useState<ImportacaoAutomatica | null>(null);
 
   const carregar = useCallback(() => {
     listarArquivos()
@@ -34,9 +37,16 @@ export function ArquivosB3() {
     statusMercado()
       .then(setStatus)
       .catch(() => setStatus(null));
+    importacaoAutomatica()
+      .then(setAutomatico)
+      .catch(() => setAutomatico(null));
   }, []);
 
-  useEffect(carregar, [carregar]);
+  useEffect(() => {
+    carregar();
+    const intervalo = setInterval(carregar, 10_000);
+    return () => clearInterval(intervalo);
+  }, [carregar]);
 
   async function enviar(lista: FileList | null) {
     if (lista === null || lista.length === 0) return;
@@ -69,6 +79,26 @@ export function ArquivosB3() {
   return (
     <section className="pagina-arquivos">
       <h1>Arquivos da B3</h1>
+      <p className="secundario">
+        A cadeia de opções precisa do Cadastro de Instrumentos (séries e estilo de exercício). O
+        COTAHIST é opcional: serve para o fim de dia, quando o Tryd está fechado, e para o
+        histórico.
+      </p>
+      {automatico?.pasta && (
+        <p className="secundario">
+          Os arquivos da B3 que você baixar para <strong>{automatico.pasta}</strong> entram sozinhos.
+        </p>
+      )}
+      {automatico !== null && automatico.eventos.length > 0 && (
+        <ul className="eventos-automaticos">
+          {automatico.eventos.slice(0, 5).map((evento) => (
+            <li key={`${evento.nome}-${evento.quando}`} className={evento.importado ? "" : "erro"}>
+              {formatarInstante(evento.quando)} {evento.nome}:{" "}
+              {evento.importado ? `importado (${evento.detalhe})` : evento.detalhe}
+            </li>
+          ))}
+        </ul>
+      )}
       {cadastro?.velho === true && (
         <p className="aviso" role="status">
           Cadastro com {cadastro.dias_uteis} dias úteis: séries novas podem estar faltando

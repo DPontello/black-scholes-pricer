@@ -181,3 +181,43 @@ def test_o_nucleo_e_o_painel_de_linha_de_comando_nao_importam_o_fastapi() -> Non
         [sys.executable, "-c", codigo], capture_output=True, text=True, check=True
     ).stdout.strip()
     assert saida == "False"
+
+
+@dataclass
+class _Varredor:
+    passadas: int = 0
+
+    def scan(self) -> tuple[()]:
+        self.passadas += 1
+        return ()
+
+
+def test_ciclo_de_vida_varre_a_pasta_downloads_de_tempos_em_tempos() -> None:
+    varredor = _Varredor()
+    registro = _Registro()
+    ciclo = _lifespan(
+        _Perfis(registro),  # type: ignore[arg-type]  # justificativa: só close é usado
+        _Cliente(registro),
+        None,
+        varredor,
+        scan_interval_s=0.01,
+    )
+    with TestClient(create_app([], lifespan=ciclo)):
+        _esperar(lambda: varredor.passadas >= 3)
+    assert registro.chamadas == ["perfis.close"]
+
+
+def test_app_com_downloads_expoe_a_importacao_automatica(tmp_path: Path) -> None:
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    app = build_web_app(
+        config_dir=tmp_path / "config",
+        static_dir=None,
+        bridge=False,
+        machine_name="PC-TESTE",
+        clock=relogio(),
+        downloads_dir=downloads,
+    )
+    with TestClient(app) as cliente:
+        corpo = cliente.get("/api/mercado/arquivos/automatico").json()
+    assert corpo == {"pasta": str(downloads), "eventos": []}

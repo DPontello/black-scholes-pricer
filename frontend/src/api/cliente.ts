@@ -21,6 +21,11 @@ export type StatusMercado = {
 
 export type Trava = { pc: string; desde: string };
 
+export type ImportacaoAutomatica = {
+  pasta: string | null;
+  eventos: { nome: string; quando: string; importado: boolean; detalhe: string }[];
+};
+
 export class ErroApi extends Error {
   readonly status: number;
   readonly erro: string;
@@ -106,4 +111,8 @@ export function enviarArquivo(arquivo: File): Promise<ArquivoB3> {
 
 export function statusMercado(): Promise<StatusMercado> {
   return pedir("/api/mercado/status");
+}
+
+export function importacaoAutomatica(): Promise<ImportacaoAutomatica> {
+  return pedir("/api/mercado/arquivos/automatico");
 }

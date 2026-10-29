@@ -133,8 +133,8 @@ def test_sem_arquivos_da_b3_e_ponte_desconectada_o_motivo_chega_por_simbolo(
     lib = biblioteca(tmp_path / "vazia", com_cotahist=False, com_cadastro=False)
     m = montar(tmp_path, lib=lib, saude=BridgeHealth.DESCONECTADA)
     mercado = FallbackMarket(m.feed, EndOfDayMarket(lib, lambda: CDI))
-    assert mercado.get_quotes(["PETR4"]) == {"PETR4": "sem arquivos da B3 importados"}
-    with pytest.raises(UnderlyingUnavailableError, match="sem arquivos da B3 importados"):
+    assert mercado.get_quotes(["PETR4"]) == {"PETR4": "sem Cadastro de Instrumentos importado"}
+    with pytest.raises(UnderlyingUnavailableError, match="sem Cadastro de Instrumentos"):
         mercado.get_chain("PETR4")
 
 

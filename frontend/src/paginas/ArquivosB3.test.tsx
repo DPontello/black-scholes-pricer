@@ -62,3 +62,26 @@ test("upload recusado mostra a mensagem do 422", async () => {
   });
   expect(await screen.findByText(mensagem)).toBeTruthy();
 });
+
+test("mostra a pasta Downloads vigiada e o que entrou sozinho", async () => {
+  apiComArquivos((url) =>
+    url === "/api/mercado/arquivos/automatico"
+      ? {
+          corpo: {
+            pasta: "C:\Users\Hugo\Downloads",
+            eventos: [
+              {
+                nome: "InstrumentsConsolidatedFile_20261028_1.csv",
+                quando: "2026-10-28T13:00:00+00:00",
+                importado: true,
+                detalhe: "Cadastro de Instrumentos, pregão de 28/10/2026",
+              },
+            ],
+          },
+        }
+      : undefined,
+  );
+  render(<ArquivosB3 />);
+  expect(await screen.findByText("C:\Users\Hugo\Downloads")).toBeTruthy();
+  expect(screen.getByText(/importado \(Cadastro de Instrumentos, pregão de 28\/10\/2026\)/)).toBeTruthy();
+});

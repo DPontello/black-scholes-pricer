@@ -20,11 +20,15 @@ perfil na hora da consulta.
 
 import threading
 from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, time, tzinfo
+from datetime import date, datetime, time, tzinfo
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
 from options_engine.adapters.outbound.b3files.library import B3FileLibrary, ImportedFile
-from options_engine.adapters.outbound.b3files.loaded import LibraryLoader, LoadedLibrary
+from options_engine.adapters.outbound.b3files.loaded import (
+    NO_COTAHIST_REASON,
+    LibraryLoader,
+    LoadedLibrary,
+)
 from options_engine.adapters.outbound.cotahist import CotahistOptionChainAdapter
 from options_engine.adapters.outbound.cotahist.errors import SourceFileError
 from options_engine.adapters.outbound.fixed_rate import FixedRateAdapter
@@ -84,18 +88,24 @@ class EndOfDayMarket:
         loaded = self._loader.load()
         if isinstance(loaded, str):
             raise UnderlyingUnavailableError(f"{underlying_symbol}: {loaded}")
-        return self._adapter_for(loaded, underlying_symbol).get_chain(underlying_symbol)
+        if loaded.session is None:
+            raise UnderlyingUnavailableError(f"{underlying_symbol}: {NO_COTAHIST_REASON}")
+        return self._adapter_for(loaded, loaded.session, underlying_symbol).get_chain(
+            underlying_symbol
+        )
 
     # --- internos -------------------------------------------------------------------------------
 
-    def _adapter_for(self, loaded: LoadedLibrary, symbol: str) -> CotahistOptionChainAdapter:
+    def _adapter_for(
+        self, loaded: LoadedLibrary, session: date, symbol: str
+    ) -> CotahistOptionChainAdapter:
         cdi = self._cdi_annual()
         key = (loaded.files, cdi)
         with self._lock:
             if self._built is None or self._built[0] != key:
                 try:
                     adapter = CotahistOptionChainAdapter(
-                        session_date=loaded.session,
+                        session_date=session,
                         cotahist_paths=loaded.cotahist_paths,
                         instruments_path=loaded.instruments_path,
                         risk_free_rate=FixedRateAdapter.from_cdi_annual(cdi).current_rate(),
@@ -112,7 +122,10 @@ class EndOfDayMarket:
     def _quote(self, loaded: LoadedLibrary, symbol: str) -> UnderlyingQuote | str:
         if not loaded.knows(symbol):
             return "ativo desconhecido"
-        pregao = loaded.session.isoformat()
+        if loaded.session is None or loaded.data is None:
+            return NO_COTAHIST_REASON
+        sessao = loaded.session
+        pregao = sessao.isoformat()
         if symbol in loaded.data.divergent_symbols:
             return f"registros divergentes do ativo no pregão de {pregao}"
         registro = loaded.spot_records.get(symbol)
@@ -121,7 +134,7 @@ class EndOfDayMarket:
         bid, ask = _ou_none(registro.best_bid), _ou_none(registro.best_ask)
         if bid is not None and ask is not None and not (bid <= ask):
             bid = ask = None  # book cruzado na fonte: oferta não observada, não lado do book
-        anteriores = [c for dia, c in loaded.data.closes.get(symbol, ()) if dia < loaded.session]
+        anteriores = [c for dia, c in loaded.closes(symbol) if dia < sessao]
         return UnderlyingQuote(
             symbol=symbol,
             last=registro.last,
@@ -130,6 +143,6 @@ class EndOfDayMarket:
             previous_close=anteriores[-1] if anteriores else None,
             trades=registro.trades,
             volume=registro.volume,
-            timestamp=datetime.combine(loaded.session, _END_OF_SESSION, tzinfo=self._tz),
+            timestamp=datetime.combine(sessao, _END_OF_SESSION, tzinfo=self._tz),
             source=DataSource.FIM_DE_DIA,
         )

@@ -277,3 +277,8 @@ Pregão fechado (00:17). Ponte no Python 3.14 do `.venv-tryd` (pywin32 312); app
 - Ponte nova com o Tryd fechado: o COM abriu o `tryd.exe` (já logado) em ~12 s e a sessão entregou dados; esse Tryd fechou quando a ponte encerrou. A ponte antiga seguiu "perdido" e o app no fim de dia: o Important da re-revisão da T11 está confirmado. A correção não pode só relançar a ponte, porque isso reabriria o Tryd que o usuário fechou; ver HANDOFF §6.
 - O Tryd aberto pelo usuário sobrevive ao `encerrar` da ponte.
 - Não testado: cadeia ao vivo e bid/ask contra a tela (pregão fechado e sem cadastro real); `conferir-b3` (sem arquivos reais).
+
+## 2026-10-29: COTAHIST opcional e importação da pasta Downloads (branch feat/cotahist-opcional-e-downloads)
+
+- Ruling: a cadeia ao vivo não exige mais o COTAHIST. A biblioteca carrega só com o cadastro; sem histórico, a vol do snapshot é a IV da série mais perto do dinheiro (a tela não a usa: IV e delta vêm de cada série). Sem cadastro, nada feito (séries e estilo vêm dele). O fim de dia continua exigindo o COTAHIST ("sem COTAHIST importado"). Sem COTAHIST, a raiz dividida (PETR3/PETR4) é detectada pelos ativos à vista do cadastro.
+- Ruling: o app importa sozinho os arquivos da B3 baixados para a pasta Downloads (`DownloadsImporter`, varredura a cada 5 s numa thread do ciclo de vida). Só nomes `COTAHIST*.zip|txt` e `InstrumentsConsolidated*.csv`; importa quando o arquivo para de mudar entre duas passadas; não reimporta o que a biblioteca já tem de depois do download; recusado vira evento com o motivo e não é tentado de novo. A pasta vem do registro no Windows (Downloads movida) e do `user-dirs.dirs` no Linux ("Transferências"). `--sem-downloads` desliga. O download continua manual (termos da B3).

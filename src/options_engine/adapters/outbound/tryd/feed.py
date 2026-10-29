@@ -35,7 +35,8 @@ nunca EUROPEAN por omissão).
 
 Cadeia: spot = ``ULT``; bid/ask do ativo = ``OCP``/``OVD`` e, sem os dois, spot nos três
 lados com ``underlying_book_available = False`` (ADR-0004); vol realizada pelos fechamentos
-do COTAHIST da biblioteca; taxa pelo CDI do perfil.
+do COTAHIST da biblioteca ou, sem histórico, a IV da série mais perto do dinheiro; taxa pelo
+CDI do perfil.
 
 Os avisos que a tradução emite a cada consulta (book cruzado, campo ilegível) são limitados a
 um por minuto para cada (ticker, motivo): o polling repetiria o mesmo a cada segundo.
@@ -67,10 +68,12 @@ from options_engine.adapters.outbound.tryd.translation import to_option_quote, t
 from options_engine.application.ports.outbound import Clock, TradingCalendar
 from options_engine.domain.model.chain import OptionChain, OptionQuote, RejectedSeries
 from options_engine.domain.model.contracts import OptionContract, OptionTerms
+from options_engine.domain.model.conventions import DayCountConvention, Volatility
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
 from options_engine.domain.model.market import MarketSnapshot
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
+from options_engine.domain.pricing.smile import SeriesMarket, mid_implied_vol
 
 __all__ = ["TrydMarketFeed"]
 
@@ -141,7 +144,7 @@ class _SeriesIndex:
 
 def _build_index(loaded: LoadedLibrary) -> _SeriesIndex:
     spots_by_root: dict[str, list[str]] = {}
-    for symbol in sorted(loaded.data.known_spot_symbols):
+    for symbol in sorted(loaded.spot_symbols):
         spots_by_root.setdefault(_root(symbol), []).append(symbol)
     by_underlying: dict[str, list[_Row]] = {}
     by_root: dict[str, list[_Row]] = {}
@@ -194,8 +197,8 @@ class TrydMarketFeed:
 
     ``client`` e ``board`` são os da composição (o cliente alimenta o quadro). ``cdi_annual``
     devolve o CDI do perfil, lido a cada consulta; ``tz`` é o fuso de valoração. ``calendar``
-    faz parte da assinatura contratada para a Task 12 e ainda não é usado aqui. ``topic_limit``
-    e ``monotonic`` (relógio dos avisos limitados) existem para os testes.
+    conta os dias úteis da IV de referência. ``topic_limit`` e ``monotonic`` (relógio dos avisos
+    limitados) existem para os testes.
     """
 
     def __init__(
@@ -214,6 +217,7 @@ class TrydMarketFeed:
         self._client = client
         self._board = board
         self._loader = LibraryLoader(library)
+        self._calendar = calendar
         self._clock = clock
         self._cdi_annual = cdi_annual
         self._tz = tz
@@ -274,11 +278,6 @@ class TrydMarketFeed:
             raise UnderlyingUnavailableError(f"{underlying_symbol}: aguardando dados do Tryd")
         if quote.last is None:
             raise UnderlyingUnavailableError(f"{underlying_symbol}: sem último preço (ULT) no Tryd")
-        closes = [valor for _, valor in loaded.data.closes.get(underlying_symbol, ())]
-        volatility = realized_volatility(closes, _VOL_WINDOW)
-        if isinstance(volatility, str):
-            raise UnderlyingUnavailableError(f"{underlying_symbol}: {volatility}")
-
         spot = quote.last
         bid, ask = quote.bid, quote.ask
         if bid is not None and ask is not None:
@@ -286,18 +285,45 @@ class TrydMarketFeed:
         else:  # bid/ask não observados nunca se passam por book real (ADR-0004)
             bid = ask = mid = spot
             book_available = False
+        rate = FixedRateAdapter.from_cdi_annual(self._cdi_annual()).current_rate()
+        quotes, rejected = self._series(loaded, underlying_symbol, spot, now)
+        volatility = realized_volatility(
+            [valor for _, valor in loaded.closes(underlying_symbol)], _VOL_WINDOW
+        )
+        if isinstance(volatility, str):
+            atm = self._atm_implied_vol(quotes, spot, rate.as_continuous(), now.date())
+            if atm is None:
+                raise UnderlyingUnavailableError(
+                    f"{underlying_symbol}: {volatility}; e nenhuma série com compra e venda "
+                    "para estimar a vol"
+                )
+            volatility = atm
         snapshot = MarketSnapshot(
             underlying_symbol=underlying_symbol,
             spot=spot,
             bid=bid,
             ask=ask,
             mid=mid,
-            risk_free_rate=FixedRateAdapter.from_cdi_annual(self._cdi_annual()).current_rate(),
+            risk_free_rate=rate,
             volatility=volatility,
             timestamp=quote.timestamp,
         )
-        quotes, rejected = self._series(loaded, underlying_symbol, spot, now)
         return OptionChain(snapshot, quotes, rejected, underlying_book_available=book_available)
+
+    def _atm_implied_vol(
+        self, quotes: Sequence[OptionQuote], spot: float, rate: float, today: date
+    ) -> Volatility | None:
+        base = DayCountConvention.BUSINESS_252
+        candidatas: list[tuple[float, date, float]] = []
+        for quote in quotes:
+            termos = quote.contract.terms
+            if quote.bid is None or quote.ask is None or termos.expiry <= today:
+                continue
+            tau = self._calendar.business_days_between(today, termos.expiry) / base.days_per_year
+            sigma = mid_implied_vol(quote, SeriesMarket(spot, rate, tau))
+            if sigma is not None:
+                candidatas.append((abs(termos.strike - spot), termos.expiry, sigma))
+        return Volatility(min(candidatas)[2], base) if candidatas else None
 
     # --- séries -----------------------------------------------------------------------------------
 
@@ -361,7 +387,7 @@ class TrydMarketFeed:
         quote = self._quote(ticker, DataSource.ATRASADO, now)
         if quote is not None and quote.last is not None:
             return quote.last
-        closes = loaded.data.closes.get(ticker)
+        closes = loaded.closes(ticker)
         return closes[-1][1] if closes else None
 
     def _within_limit(self, units: Sequence[tuple[Topic, ...]]) -> frozenset[Topic]:

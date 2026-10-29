@@ -1,5 +1,6 @@
 """API dos arquivos da B3 — upload pelo conteúdo cru e listagem, com a biblioteca real."""
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
+from options_engine.adapters.outbound.b3files.downloads import DownloadsImporter
 from options_engine.adapters.outbound.b3files.library import B3FileLibrary
 from options_engine.adapters.outbound.clock import FixedClock
 from tests.data.cotahist.build_fixture import COTAHIST_NAME, INSTRUMENTS_NAME
@@ -92,3 +94,31 @@ def test_get_lista_os_arquivos_importados_com_a_data_de_importacao(tmp_path: Pat
             "importado_em": "2026-10-28T15:00:00Z",
         }
     ]
+
+
+def test_importacao_automatica_mostra_a_pasta_e_o_que_entrou(tmp_path: Path) -> None:
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    biblioteca = B3FileLibrary(tmp_path / "mercado", FixedClock(AGORA))
+    importador = DownloadsImporter(biblioteca, downloads, FixedClock(AGORA))
+    cliente = TestClient(create_app([router_arquivos_b3(biblioteca, importador)]))
+    assert cliente.get("/api/mercado/arquivos/automatico").json() == {
+        "pasta": str(downloads),
+        "eventos": [],
+    }
+    arquivo = downloads / INSTRUMENTS_NAME
+    arquivo.write_bytes((FIXTURE / INSTRUMENTS_NAME).read_bytes())
+    depois = AGORA.timestamp() + 3600
+    os.utime(arquivo, (depois, depois))
+    importador.scan()
+    importador.scan()
+    (evento,) = cliente.get("/api/mercado/arquivos/automatico").json()["eventos"]
+    assert (evento["nome"], evento["importado"]) == (INSTRUMENTS_NAME, True)
+    assert [a["nome"] for a in cliente.get("/api/mercado/arquivos").json()] == [INSTRUMENTS_NAME]
+
+
+def test_sem_importador_a_importacao_automatica_esta_desligada(tmp_path: Path) -> None:
+    assert _cliente(tmp_path / "mercado").get("/api/mercado/arquivos/automatico").json() == {
+        "pasta": None,
+        "eventos": [],
+    }
