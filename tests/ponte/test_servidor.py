@@ -22,7 +22,16 @@ from options_ponte.protocolo import (
     codificar,
     decodificar,
 )
-from options_ponte.servidor import Ponte, ServidorTcp
+from options_ponte.servidor import (
+    ESPACAMENTO_APOS_FALHA_AO_ABRIR_S,
+    ESPERA_APOS_TRYD_LANCADO_S,
+    ESPERA_TRYD_ABRIR_S,
+    INTERVALO_PROCESSOS_S,
+    MOTIVO_TRYD_ABRINDO,
+    MOTIVO_TRYD_FECHADO,
+    Ponte,
+    ServidorTcp,
+)
 
 AGORA = "2026-10-28T12:03:00-03:00"
 PETR4_ULT = ("PETR4", "ULT")
@@ -103,7 +112,7 @@ class RelogioFalso:
 def _ponte(limite: int = 10) -> tuple[Ponte, SessaoFalsa, RelogioFalso]:
     sessao = SessaoFalsa()
     relogio = RelogioFalso()
-    return Ponte(sessao, relogio, lambda: AGORA, limite), sessao, relogio
+    return Ponte(lambda: sessao, relogio, lambda: AGORA, limite), sessao, relogio
 
 
 def _valores(mensagens: list[Mensagem]) -> list[Valor]:
@@ -155,7 +164,7 @@ def test_assinar_de_novo_devolve_o_ultimo_valor_atualizado_com_o_carimbo_origina
     sessao = SessaoFalsa()
     relogio = RelogioFalso()
     carimbo = ["2026-10-28T12:00:00-03:00"]
-    ponte = Ponte(sessao, relogio, lambda: carimbo[0], 10)
+    ponte = Ponte(lambda: sessao, relogio, lambda: carimbo[0], 10)
     ponte.tratar(Assinar((PETR4_ULT,)))
     carimbo[0] = "2026-10-28T12:00:05-03:00"
     sessao.avisar((sessao.conectados[0][0], 38.5))
@@ -515,6 +524,239 @@ def test_espacamento_so_vale_depois_de_falha_e_acaba_quando_o_atualizar_volta() 
     assert ponte.ciclo() == [Valor("PETR4", "ULT", "float", 38.6, AGORA)]
 
 
+# --------------------------------------------------------------------------- Ponte e o Tryd
+
+
+class TrydFalso:
+    """Os ``tryd.exe`` rodando e o ``CoCreateInstance``: cada ``abrir`` cria uma sessão nova."""
+
+    def __init__(self, *pids: int) -> None:
+        self.pids = set(pids)
+        self.sessoes: list[SessaoFalsa] = []
+        self.aberturas = 0
+        self.listagens = 0
+        self.erro_ao_abrir: Exception | None = None
+        self.erro_ao_listar: Exception | None = None
+        self.lanca_ao_abrir: int | None = None  # PID do tryd.exe que o COM lança ao abrir
+        self.falha_na_conexao: int | None = None  # vale para as sessões que abrir criar
+
+    def processos(self) -> frozenset[int]:
+        self.listagens += 1
+        if self.erro_ao_listar is not None:
+            raise self.erro_ao_listar
+        return frozenset(self.pids)
+
+    def abrir(self) -> SessaoFalsa:
+        self.aberturas += 1
+        if self.erro_ao_abrir is not None:
+            raise self.erro_ao_abrir
+        if self.lanca_ao_abrir is not None:
+            self.pids.add(self.lanca_ao_abrir)
+        sessao = SessaoFalsa()
+        sessao.falha_na_conexao = self.falha_na_conexao
+        self.sessoes.append(sessao)
+        return sessao
+
+
+def _ponte_com_tryd(*pids: int) -> tuple[Ponte, TrydFalso, RelogioFalso]:
+    tryd = TrydFalso(*pids)
+    relogio = RelogioFalso()
+    ponte = Ponte(tryd.abrir, relogio, lambda: AGORA, 10, processos_tryd=tryd.processos)
+    return ponte, tryd, relogio
+
+
+def _ciclos(ponte: Ponte, relogio: RelogioFalso, inicio: float, fim: float) -> list[Mensagem]:
+    """Um ciclo a cada conferência de processos, de ``inicio`` até antes de ``fim``."""
+    mensagens: list[Mensagem] = []
+    relogio.agora = inicio
+    while relogio.agora < fim:
+        mensagens += ponte.ciclo()
+        relogio.agora += INTERVALO_PROCESSOS_S
+    return mensagens
+
+
+def _inicial(ticker: str, campo: str) -> Valor:
+    return Valor(ticker, campo, "float", 38.42, AGORA, inicial=True)
+
+
+def test_com_o_tryd_fechado_nunca_abre_a_sessao_e_o_status_diz_por_que() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd()
+    assert ponte.tratar(Assinar((PETR4_ULT,))) == []  # fica registrado para quando abrir
+    mensagens = _ciclos(ponte, relogio, 0.0, 600.0)
+    assert tryd.aberturas == 0
+    assert set(_status(mensagens)) == {Status("iniciando", MOTIVO_TRYD_FECHADO, 1)}
+
+
+def test_tryd_ja_aberto_ao_subir_abre_na_hora_e_o_conectado_vem_antes_dos_valores() -> None:
+    ponte, tryd, _ = _ponte_com_tryd(100)
+    ponte.tratar(Assinar((PETR4_ULT, PETR4_OCP)))
+    assert ponte.ciclo() == [
+        Status("conectado", None, 2),
+        _inicial("PETR4", "ULT"),
+        _inicial("PETR4", "OCP"),
+    ]
+    (sessao,) = tryd.sessoes
+    assert sessao.conectados == [(1, ("PETR4_B_0", "ULT")), (2, ("PETR4_B_0", "OCP"))]
+    assert ponte.tratar(Assinar((VALE3_ULT,))) == [_inicial("VALE3", "ULT")]  # já com sessão
+
+
+def test_tryd_aberto_depois_espera_a_carencia_e_assina_os_topicos_registrados() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd()
+    ponte.tratar(Assinar((PETR4_ULT,)))
+    _ciclos(ponte, relogio, 0.0, 4.0)
+    tryd.pids.add(100)  # o usuário abriu o Tryd em t = 4
+    na_carencia = _ciclos(ponte, relogio, 4.0, 4.0 + ESPERA_TRYD_ABRIR_S)
+    assert tryd.aberturas == 0
+    assert Status("iniciando", MOTIVO_TRYD_ABRINDO, 1) in na_carencia
+    relogio.agora = 4.0 + ESPERA_TRYD_ABRIR_S
+    assert ponte.ciclo() == [Status("conectado", None, 1), _inicial("PETR4", "ULT")]
+    assert tryd.sessoes[0].conectados == [(1, ("PETR4_B_0", "ULT"))]
+
+
+def test_tryd_que_fecha_durante_a_carencia_recomeca_a_espera() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd()
+    _ciclos(ponte, relogio, 0.0, 2.0)
+    tryd.pids.add(100)
+    _ciclos(ponte, relogio, 2.0, 4.0)
+    tryd.pids.clear()
+    _ciclos(ponte, relogio, 4.0, 6.0)
+    tryd.pids.add(200)  # visto de novo em t = 6: a carência conta daqui
+    _ciclos(ponte, relogio, 6.0, 6.0 + ESPERA_TRYD_ABRIR_S)
+    assert tryd.aberturas == 0
+    relogio.agora = 6.0 + ESPERA_TRYD_ABRIR_S
+    ponte.ciclo()
+    assert tryd.aberturas == 1
+
+
+def test_cancelar_sem_sessao_so_tira_do_registro() -> None:
+    ponte, tryd, _ = _ponte_com_tryd()
+    ponte.tratar(Assinar((PETR4_ULT, VALE3_ULT)))
+    assert ponte.tratar(Cancelar((VALE3_ULT,))) == []
+    tryd.pids.add(100)
+    assert _status(ponte.ciclo()) == [Status("conectado", None, 1)]
+    assert tryd.sessoes[0].conectados == [(1, ("PETR4_B_0", "ULT"))]
+    assert tryd.sessoes[0].desconectados == []
+
+
+def test_tryd_lancado_pelo_com_ao_abrir_fecha_a_sessao_na_hora_e_so_tenta_bem_depois() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd(100)
+    tryd.lanca_ao_abrir = 200  # o Tryd do usuário ainda não registrou o servidor RTD
+    ponte.tratar(Assinar((PETR4_ULT,)))
+    assert ponte.ciclo() == []
+    (lancou,) = tryd.sessoes
+    assert lancou.encerramentos == 1
+    tryd.lanca_ao_abrir = None
+    tryd.pids.discard(200)  # o Tryd lançado fecha junto com a sessão
+    esperando = _status(_ciclos(ponte, relogio, 2.0, ESPERA_APOS_TRYD_LANCADO_S))
+    assert tryd.aberturas == 1
+    assert {s.tryd for s in esperando} == {"iniciando"}
+    assert all("outro Tryd (PID [200])" in (s.motivo or "") for s in esperando)
+    relogio.agora = ESPERA_APOS_TRYD_LANCADO_S
+    assert _status(ponte.ciclo()) == [Status("conectado", None, 1)]
+    assert tryd.aberturas == 2
+
+
+def test_tryd_que_fecha_larga_a_sessao_e_o_cache_e_volta_ao_vivo_quando_reabre() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd(100)
+    ponte.tratar(Assinar((PETR4_ULT,)))
+    ponte.ciclo()
+    (antiga,) = tryd.sessoes
+    antiga.avisar((1, 38.5))
+    relogio.agora = 0.1
+    assert _valores(ponte.ciclo()) == [Valor("PETR4", "ULT", "float", 38.5, AGORA)]
+
+    tryd.pids.clear()  # o usuário fechou o Tryd
+    relogio.agora = 2.0
+    assert ponte.ciclo() == [Status("iniciando", MOTIVO_TRYD_FECHADO, 1)]
+    assert antiga.encerramentos == 1
+    assert ponte.tratar(Assinar((PETR4_ULT,))) == []  # o 38,5 do Tryd que fechou não volta
+
+    tryd.pids.add(300)  # e o reabriu
+    _ciclos(ponte, relogio, 4.0, 4.0 + ESPERA_TRYD_ABRIR_S)
+    assert len(tryd.sessoes) == 1
+    relogio.agora = 4.0 + ESPERA_TRYD_ABRIR_S
+    assert ponte.ciclo() == [Status("conectado", None, 1), _inicial("PETR4", "ULT")]
+    nova = tryd.sessoes[1]
+    assert nova.conectados == [(1, ("PETR4_B_0", "ULT"))]  # o id de antes
+    nova.avisar((1, 38.6))  # os avisos da sessão nova contam do zero
+    relogio.agora += 0.1
+    assert _valores(ponte.ciclo()) == [Valor("PETR4", "ULT", "float", 38.6, AGORA)]
+
+
+def test_lista_os_processos_no_maximo_a_cada_dois_segundos() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd(100)
+    ponte.ciclo()
+    assert tryd.listagens == 2  # antes e logo depois de abrir
+    for volta in range(1, 40):
+        relogio.agora = volta * 0.05
+        ponte.ciclo()
+    assert tryd.listagens == 2
+    relogio.agora = INTERVALO_PROCESSOS_S
+    ponte.ciclo()
+    assert tryd.listagens == 3
+
+
+def test_falha_ao_abrir_a_sessao_tenta_de_novo_depois_do_espacamento() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd(100)
+    tryd.erro_ao_abrir = RuntimeError("CoCreateInstance falhou")
+    esperando = _status(_ciclos(ponte, relogio, 0.0, ESPACAMENTO_APOS_FALHA_AO_ABRIR_S))
+    assert tryd.aberturas == 1
+    assert {s.tryd for s in esperando} == {"iniciando"}
+    assert all("CoCreateInstance falhou" in (s.motivo or "") for s in esperando)
+    tryd.erro_ao_abrir = None
+    relogio.agora = ESPACAMENTO_APOS_FALHA_AO_ABRIR_S
+    assert _status(ponte.ciclo()) == [Status("conectado", None, 0)]
+    assert tryd.aberturas == 2
+
+
+def test_falha_ao_assinar_de_novo_ao_abrir_fecha_a_sessao_e_tenta_depois_com_todos() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd(100)
+    ponte.tratar(Assinar((PETR4_ULT, PETR4_OCP)))
+    tryd.falha_na_conexao = 2
+    assert ponte.ciclo() == []
+    assert tryd.sessoes[0].encerramentos == 1
+    assert ponte.tratar(Assinar((PETR4_ULT,))) == []  # o ULT da sessão que falhou não fica
+    tryd.falha_na_conexao = None
+    _ciclos(ponte, relogio, 2.0, ESPACAMENTO_APOS_FALHA_AO_ABRIR_S)
+    relogio.agora = ESPACAMENTO_APOS_FALHA_AO_ABRIR_S
+    assert ponte.ciclo() == [
+        Status("conectado", None, 2),
+        _inicial("PETR4", "ULT"),
+        _inicial("PETR4", "OCP"),
+    ]
+
+
+def test_heartbeat_que_falha_com_o_tryd_rodando_so_marca_perdido_e_a_sessao_fica() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd(100)
+    ponte.ciclo()
+    (sessao,) = tryd.sessoes
+    sessao.esta_vivo = False
+    relogio.agora = 5.0
+    assert [s.tryd for s in _status(ponte.ciclo())] == ["perdido"]
+    sessao.esta_vivo = True
+    relogio.agora = 10.0
+    assert ponte.ciclo() == [Status("conectado", None, 0)]
+    assert (len(tryd.sessoes), sessao.encerramentos) == (1, 0)
+
+
+def test_falha_ao_listar_os_processos_nao_larga_a_sessao() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd(100)
+    ponte.ciclo()
+    tryd.erro_ao_listar = OSError("Toolhelp32 falhou")
+    mensagens = _ciclos(ponte, relogio, 2.0, 10.0)
+    assert tryd.sessoes[0].encerramentos == 0
+    assert {s.tryd for s in _status(mensagens)} == {"conectado"}
+
+
+def test_encerrar_fecha_a_sessao_aberta_e_nao_abre_outra() -> None:
+    ponte, tryd, relogio = _ponte_com_tryd(100)
+    ponte.ciclo()
+    ponte.encerrar()
+    ponte.encerrar()
+    _ciclos(ponte, relogio, 2.0, 60.0)
+    assert [s.encerramentos for s in tryd.sessoes] == [1]
+
+
 # --------------------------------------------------------------------------- ServidorTcp
 
 
@@ -565,7 +807,7 @@ class PonteNoAr:
     def __init__(self) -> None:
         self.sessao = SessaoFalsa()
         self.relogio = RelogioFalso()
-        ponte = Ponte(self.sessao, self.relogio, lambda: AGORA, limite=10)
+        ponte = Ponte(lambda: self.sessao, self.relogio, lambda: AGORA, limite=10)
         self.servidor = ServidorTcp(ponte, 0, self._bombear)
         self.parar = threading.Event()
         self.thread = threading.Thread(target=self._laco, daemon=True)

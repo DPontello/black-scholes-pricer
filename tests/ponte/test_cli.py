@@ -10,7 +10,18 @@ import pytest
 
 from options_ponte import __main__ as cli
 from options_ponte import rtd
-from options_ponte.protocolo import Assinar, Ping, Pong, Status, Valor, codificar, decodificar
+from options_ponte.protocolo import (
+    Assinar,
+    Encerrar,
+    ErroDeProtocolo,
+    Mensagem,
+    Ping,
+    Pong,
+    Status,
+    Valor,
+    codificar,
+    decodificar,
+)
 from options_ponte.servidor import Ponte, ServidorTcp
 
 AGORA = "2026-10-28T12:03:00-03:00"
@@ -50,7 +61,7 @@ class PonteNoAr:
     def __init__(self) -> None:
         self.sessao = SessaoMinima()
         self._segundos = 0.0
-        ponte = Ponte(self.sessao, self._relogio, lambda: AGORA, limite=20)
+        ponte = Ponte(lambda: self.sessao, self._relogio, lambda: AGORA, limite=20)
         self.servidor = ServidorTcp(ponte, 0, lambda _passo: time.sleep(0.002))
         self.parar = threading.Event()
         self.thread = threading.Thread(target=self.servidor.rodar, args=(self.parar,), daemon=True)
@@ -169,10 +180,10 @@ def test_main_despacha_servidor_falso_com_os_segundos(monkeypatch: pytest.Monkey
 def test_servir_sem_pywin32_sai_com_erro_claro_sem_abrir_a_porta(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def sem_servidor_rtd() -> object:
+    def sem_pywin32() -> object:
         raise rtd.ErroRtd("pywin32 não instalado: use o Python do Windows (ou do Wine)")
 
-    monkeypatch.setattr(rtd, "SessaoRtdCom", sem_servidor_rtd)
+    monkeypatch.setattr(rtd, "carregar_tipos", sem_pywin32)
     porta = _porta_sem_ninguem()
     assert cli.main(["servir", "--porta", str(porta)]) == 1
     assert "pywin32" in capsys.readouterr().err
@@ -183,14 +194,99 @@ def test_servir_sem_pywin32_sai_com_erro_claro_sem_abrir_a_porta(
 def test_servir_com_a_porta_ocupada_falha_antes_de_tocar_no_servidor_rtd(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def nao_deveria_criar() -> object:
-        pytest.fail("a sessão RTD não pode ser criada se a porta já está ocupada")
+    def nao_deveria_tocar() -> object:
+        pytest.fail("o pywin32 não pode ser tocado se a porta já está ocupada")
 
-    monkeypatch.setattr(rtd, "SessaoRtdCom", nao_deveria_criar)
+    monkeypatch.setattr(rtd, "carregar_tipos", nao_deveria_tocar)
+    monkeypatch.setattr(rtd, "SessaoRtdCom", nao_deveria_tocar)
     with socket.create_server(("127.0.0.1", 0)) as ocupada:
         porta = int(ocupada.getsockname()[1])
         assert cli.main(["servir", "--porta", str(porta)]) == 1
     assert f"127.0.0.1:{porta}" in capsys.readouterr().err
+
+
+class ServirComTrydFalso:
+    """``servir`` de verdade numa thread, com pywin32, COM e processos do Tryd falsos."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, pids_tryd: frozenset[int]) -> None:
+        self.sessoes: list[SessaoMinima] = []
+        self.codigo: list[int] = []
+        self.porta = _porta_sem_ninguem()
+        monkeypatch.setattr(rtd, "carregar_tipos", lambda: None)
+        monkeypatch.setattr(rtd, "SessaoRtdCom", self._abrir)
+        monkeypatch.setattr(rtd, "processos_tryd", lambda: pids_tryd)
+        monkeypatch.setattr(rtd, "bombear", lambda _passo: time.sleep(0.002))
+        self.thread = threading.Thread(target=self._servir, daemon=True)
+        self.thread.start()
+
+    def _servir(self) -> None:
+        self.codigo.append(cli.main(["servir", "--porta", str(self.porta)]))
+
+    def _abrir(self) -> SessaoMinima:
+        sessao = SessaoMinima()
+        self.sessoes.append(sessao)
+        return sessao
+
+    def conectar(self) -> socket.socket:
+        """Conexão que a ponte já atendeu (Ping/Pong)."""
+        limite = time.monotonic() + 3
+        while True:
+            try:
+                conexao = socket.create_connection(("127.0.0.1", self.porta), timeout=5)
+            except OSError:
+                conexao = None
+            if conexao is not None:
+                try:
+                    conexao.sendall(codificar(Ping()))
+                    _receber_ate(conexao, Pong)
+                    return conexao
+                except (OSError, ErroDeProtocolo):  # era a checagem da porta, que já fechou
+                    conexao.close()
+            assert time.monotonic() < limite, "servir não atendeu"
+            time.sleep(0.01)
+
+    def encerrar(self, conexao: socket.socket) -> None:
+        with conexao:
+            conexao.sendall(codificar(Encerrar()))
+        self.thread.join(timeout=5)
+        assert not self.thread.is_alive(), "servir não voltou"
+
+
+def _receber_ate[T: Mensagem](conexao: socket.socket, tipo: type[T]) -> T:
+    resto = b""
+    while True:
+        dados = conexao.recv(65536)
+        if not dados:
+            raise ErroDeProtocolo("a ponte fechou a conexão")
+        *linhas, resto = (resto + dados).split(b"\n")
+        for linha in linhas:
+            mensagem = decodificar(linha)
+            if isinstance(mensagem, tipo):
+                return mensagem
+
+
+def test_servir_com_o_tryd_fechado_atende_sem_criar_a_sessao_rtd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    servir = ServirComTrydFalso(monkeypatch, frozenset())
+    conexao = servir.conectar()
+    conexao.sendall(codificar(Assinar((("PETR4", "ULT"),))) + codificar(Ping()))
+    _receber_ate(conexao, Pong)
+    servir.encerrar(conexao)
+    assert servir.codigo == [0]
+    assert servir.sessoes == []  # com o Tryd fechado, criar a sessão abriria o Tryd
+
+
+def test_servir_com_o_tryd_aberto_abre_a_sessao_pelo_sessao_rtd_com(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    servir = ServirComTrydFalso(monkeypatch, frozenset({4242}))
+    conexao = servir.conectar()
+    conexao.sendall(codificar(Assinar((("PETR4", "ULT"),))))
+    valor = _receber_ate(conexao, Valor)
+    servir.encerrar(conexao)
+    assert (valor.ticker, valor.campo, valor.inicial) == ("PETR4", "ULT", True)
+    assert [s.conectados for s in servir.sessoes] == [[(1, ("PETR4_B_0", "ULT"))]]
 
 
 # --------------------------------------------------------------------------- espiar
@@ -251,9 +347,10 @@ def test_espiar_assina_os_topicos_do_rtd_e_os_deixa_assinados(no_ar: PonteNoAr) 
     # Ping/Pong ANTES de conferir: a fila de comandos é uma só, então o Pong garante que a
     # ponte já tratou tudo o que o espiar mandou (sob carga, 0,3 s pode não bastar).
     outro = socket.create_connection(("127.0.0.1", no_ar.porta), timeout=5)
-    with outro:
+    with outro, outro.makefile("rb") as linhas:
         outro.sendall(codificar(Ping()))
-        assert decodificar(outro.makefile("rb").readline()) == Pong()
+        while decodificar(linhas.readline()) != Pong():  # o status periódico pode vir antes
+            pass
     assert [topico for _, topico in no_ar.sessao.conectados] == [
         ("PETR4_B_0", "ULT"),
         ("PETR4_B_0", "OCP"),

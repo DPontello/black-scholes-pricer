@@ -2,8 +2,8 @@
 
 Os imports do pywin32 ficam dentro das funções, via ``importlib``: o pacote precisa importar
 no Linux, onde só o ``espiar`` e os testes rodam. Aqui moram o cliente RTD (``SessaoRtdCom``,
-que faz o papel do Excel diante do servidor RTD do Tryd), o ``diagnostico`` e o ``autoteste``
-(um servidor RTD falso, no mesmo processo e em outro).
+que faz o papel do Excel diante do servidor RTD do Tryd), ``processos_tryd``, o ``diagnostico``
+e o ``autoteste`` (um servidor RTD falso, no mesmo processo e em outro).
 
 O cliente vem do spike (``tools/tryd_spike/tryd_poc.py``), com duas diferenças: os ids dos
 tópicos são os da ``Ponte`` (não um contador próprio) e as interfaces ``IRtdServer`` e
@@ -49,6 +49,7 @@ __all__ = [
     "comando_servidor_falso",
     "criar_servidor",
     "diagnostico",
+    "processos_tryd",
     "servir_falso",
 ]
 
@@ -70,6 +71,8 @@ _VIDA_DO_SERVIDOR_FALSO_S = 2.0
 _LIMITE_ENTRE_PROCESSOS_S = 10.0  # cobre os 5 s de silêncio até o Heartbeat perceber a queda
 _PASSO_DO_AUTOTESTE_S = 0.05
 _TOPICO_AUTOTESTE = ("PETRK300", "ULT")
+_TH32CS_SNAPPROCESS = 0x2
+_EXECUTAVEL_TRYD = "tryd.exe"  # o LocalServer32 do servidor RTD do Tryd
 
 
 class ErroRtd(Exception):
@@ -300,6 +303,57 @@ def bombear(
         dormir(min(restante, _FATIA_S))
 
 
+def processos_tryd() -> frozenset[int]:
+    """PIDs dos ``tryd.exe`` rodando (Toolhelp32: Windows e Wine). Fora do Windows, vazio."""
+    if sys.platform != "win32":
+        return frozenset()
+    import ctypes
+    from ctypes import wintypes
+
+    class Entrada(ctypes.Structure):  # PROCESSENTRY32W
+        _fields_ = (
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", ctypes.c_wchar * 260),
+        )
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    criar_foto = kernel32.CreateToolhelp32Snapshot
+    criar_foto.argtypes = (wintypes.DWORD, wintypes.DWORD)
+    criar_foto.restype = wintypes.HANDLE
+    primeiro, proximo = kernel32.Process32FirstW, kernel32.Process32NextW
+    for funcao in (primeiro, proximo):
+        funcao.argtypes = (wintypes.HANDLE, ctypes.POINTER(Entrada))
+        funcao.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+    foto = criar_foto(_TH32CS_SNAPPROCESS, 0)
+    if foto is None or foto == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        entrada = Entrada()
+        entrada.dwSize = ctypes.sizeof(Entrada)
+        # lista vazia não existe (este processo está nela): falha aqui não pode virar "Tryd fechado"
+        if not primeiro(foto, ctypes.byref(entrada)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        pids: set[int] = set()
+        while True:
+            # o Wine antigo põe o caminho inteiro no szExeFile
+            if ntpath.basename(entrada.szExeFile).lower() == _EXECUTAVEL_TRYD:
+                pids.add(int(entrada.th32ProcessID))
+            if not proximo(foto, ctypes.byref(entrada)):
+                return frozenset(pids)
+    finally:
+        kernel32.CloseHandle(foto)
+
+
 # ---------------------------------------------------------------------------
 # Diagnóstico (só leitura)
 # ---------------------------------------------------------------------------
@@ -416,13 +470,14 @@ def _diagnosticar_tipos() -> int:
 
 def _diagnosticar_processo() -> None:
     try:
-        tarefas = subprocess.run(
-            ["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, check=False
-        ).stdout.lower()
-    except OSError:
-        print("[aviso] não foi possível listar os processos (tasklist indisponível)")
+        pids = processos_tryd()
+    except OSError as erro:
+        print(f"[aviso] não foi possível listar os processos: {erro}")
         return
-    print(f"[{'ok' if 'tryd' in tarefas else 'falta'}] processo do Tryd rodando")
+    if pids:
+        print(f"[ok] Tryd rodando (tryd.exe, PID {', '.join(map(str, sorted(pids)))})")
+    else:
+        print("[falta] Tryd fechado (nenhum tryd.exe): a ponte espera o usuário abri-lo")
 
 
 def diagnostico() -> int:
@@ -587,7 +642,7 @@ def _autoteste_entre_processos() -> bool:
             return False
         bruto = pythoncom.GetActiveObject(_CLSID_AUTOTESTE)
         sessao = SessaoRtdCom(servidor=bruto.QueryInterface(pythoncom.IID_IDispatch))
-        ponte = Ponte(sessao, time.monotonic, lambda: "autoteste", limite=10)
+        ponte = Ponte(lambda: sessao, time.monotonic, lambda: "autoteste", limite=10)
         recebidas: list[Mensagem] = ponte.tratar(Assinar((_TOPICO_AUTOTESTE,)))
         perdido: Status | None = None
         while perdido is None and time.monotonic() - inicio < _LIMITE_ENTRE_PROCESSOS_S:

@@ -10,10 +10,10 @@ from collections.abc import Iterator
 
 import pytest
 
-from options_engine.adapters.outbound.tryd.board import LiveBoard
-from options_engine.adapters.outbound.tryd.client import TrydBridgeClient
+from options_engine.adapters.outbound.tryd.board import LiveBoard, RawValue
+from options_engine.adapters.outbound.tryd.client import BridgeHealth, TrydBridgeClient
 from options_engine.adapters.outbound.tryd.settings import TEMPO_CARGA_S
-from options_ponte.servidor import Ponte, ServidorTcp
+from options_ponte.servidor import ESPERA_TRYD_ABRIR_S, Ponte, ServidorTcp
 from tests.adapters.tryd._ponte_falsa import esperar
 
 AGORA = "2026-10-28T12:03:00-03:00"
@@ -60,7 +60,7 @@ class SessaoRtdFalsa:
 class Montagem:
     def __init__(self) -> None:
         self.sessao = SessaoRtdFalsa()
-        ponte = Ponte(self.sessao, time.monotonic, lambda: AGORA, limite=20)
+        ponte = Ponte(lambda: self.sessao, time.monotonic, lambda: AGORA, limite=20)
         self.servidor = ServidorTcp(ponte, 0, lambda _passo: time.sleep(0.002))
         self.parar = threading.Event()
         self.thread = threading.Thread(target=self.servidor.rodar, args=(self.parar,), daemon=True)
@@ -147,3 +147,70 @@ def test_app_que_reconecta_recebe_o_reemitido_com_o_inicial_do_que_a_ponte_guard
     finally:
         for cliente in novos:
             cliente.stop()
+
+
+class TrydNaMaquina:
+    """Os ``tryd.exe`` rodando (o teste fecha e reabre) e o ``CoCreateInstance``."""
+
+    def __init__(self) -> None:
+        self.pids = frozenset({100})
+        self.sessoes: list[SessaoRtdFalsa] = []
+        self.listagens = 0
+
+    def processos(self) -> frozenset[int]:
+        self.listagens += 1
+        return self.pids
+
+    def abrir(self) -> SessaoRtdFalsa:
+        sessao = SessaoRtdFalsa()
+        self.sessoes.append(sessao)
+        return sessao
+
+
+def test_tryd_fechado_e_reaberto_com_o_app_aberto_volta_ao_vivo_sozinho() -> None:
+    tryd = TrydNaMaquina()
+    relogio = [0.0]  # o da ponte; só anda quando o teste quer
+    ponte = Ponte(
+        tryd.abrir, lambda: relogio[0], lambda: AGORA, limite=20, processos_tryd=tryd.processos
+    )
+    servidor = ServidorTcp(ponte, 0, lambda _passo: time.sleep(0.002))
+    parar = threading.Event()
+    laco = threading.Thread(target=servidor.rodar, args=(parar,), daemon=True)
+    quadro = LiveBoard(monotonic=lambda: 0.0)  # TEMPO_CARGA_S não passa: só atualização carrega
+    cliente = TrydBridgeClient(quadro, "127.0.0.1", servidor.endereco[1], reconnect_interval_s=0.05)
+    cliente.ensure_subscribed(frozenset({TOPICO}))
+    laco.start()
+    cliente.start()
+    try:
+        esperar(lambda: "OCP" in quadro.values("PETRK500"))
+        (antiga,) = tryd.sessoes
+        antiga.avisar(antiga.conectados[0][0], 4.42)
+        esperar(lambda: quadro.is_loaded("PETRK500"))
+
+        tryd.pids = frozenset()  # o usuário fecha o Tryd
+        relogio[0] = 2.0
+        esperar(lambda: cliente.health() is BridgeHealth.ATRASADA)
+        assert quadro.values("PETRK500")["OCP"].value == 4.42
+
+        tryd.pids = frozenset({200})  # e o reabre
+        listagens = tryd.listagens
+        relogio[0] = 4.0
+        esperar(lambda: tryd.listagens > listagens)
+        relogio[0] = 4.0 + ESPERA_TRYD_ABRIR_S
+        esperar(lambda: quadro.values("PETRK500").get("OCP") == _zero_inicial())
+        assert not quadro.is_loaded("PETRK500")  # o 4,42 era do Tryd que fechou
+        nova = tryd.sessoes[1]
+        assert nova.conectados == antiga.conectados  # o mesmo tópico, com o mesmo id
+        nova.avisar(nova.conectados[0][0], 4.5)
+        esperar(lambda: quadro.is_loaded("PETRK500"))
+        assert quadro.values("PETRK500")["OCP"].value == 4.5
+        assert cliente.health() is BridgeHealth.CONECTADA
+        assert len(tryd.sessoes) == 2
+    finally:
+        cliente.stop()
+        parar.set()
+        laco.join(timeout=5)
+
+
+def _zero_inicial() -> RawValue:
+    return RawValue("float", 0.0, 0.0, initial=True)

@@ -497,6 +497,51 @@ def test_valor_e_pong_nao_levantam_o_limite_de_um_status_iniciando_ou_perdido(
         esperar(lambda: cliente.health() is BridgeHealth.CONECTADA)
 
 
+def _petr4_carregado(
+    ambiente: Ambiente, t: list[float]
+) -> tuple[PonteFalsa, LiveBoard, TrydBridgeClient]:
+    """Cliente com ULT e NEG de PETR4 assinados, Tryd conectado e ULT = 38,4 no quadro."""
+    ponte = ambiente.ponte()
+    quadro = LiveBoard(monotonic=lambda: t[0])
+    cliente = ambiente.cliente(quadro, ponte.porta, monotonic=lambda: t[0])
+    cliente.ensure_subscribed(frozenset({ULT, ("PETR4", "NEG")}))
+    cliente.start()
+    esperar(lambda: ponte.conexoes() == 1)
+    ult = Valor("PETR4", "ULT", "float", 38.4, AGORA)
+    entregar(ponte, quadro, t, 1.0, Status("conectado", None, 2), ult)
+    return ponte, quadro, cliente
+
+
+def test_conectado_depois_de_iniciando_recomeca_o_quadro_dos_ativos_desejados(
+    ambiente: Ambiente,
+) -> None:
+    # A ponte só fica em "iniciando" sem sessão RTD: o "conectado" seguinte é o Tryd reaberto, e o
+    # que o quadro tinha é do Tryd que fechou.
+    t = [0.0]
+    ponte, quadro, _ = _petr4_carregado(ambiente, t)
+    entregar(ponte, quadro, t, 5.0, Status("iniciando", "Tryd fechado", 2))
+    assert _valor_de(quadro, "PETR4", "ULT") == 38.4  # com o Tryd fechado o quadro não muda
+    t[0] = 60.0
+    ponte.enviar(
+        Status("conectado", None, 2), Valor("PETR4", "ULT", "float", 0.0, AGORA, inicial=True)
+    )
+    esperar(partial(_valor_de_e, quadro, "PETR4", "ULT", 0.0))
+    assert set(quadro.values("PETR4")) == {"ULT"}  # o NEG do Tryd que fechou foi esquecido
+    assert not quadro.is_loaded("PETR4")  # o zero inicial não carrega; a contagem recomeça
+    t[0] = 60.0 + TEMPO_CARGA_S
+    assert quadro.is_loaded("PETR4")
+
+
+def test_conectado_depois_de_perdido_mantem_o_quadro(ambiente: Ambiente) -> None:
+    # Do "perdido" a sessão RTD é a mesma, e a ponte não reenvia o que já mandou.
+    t = [0.0]
+    ponte, quadro, _ = _petr4_carregado(ambiente, t)
+    entregar(ponte, quadro, t, 5.0, Status("perdido", "RPC indisponível", 2))
+    entregar(ponte, quadro, t, 60.0, Status("conectado", None, 2))
+    assert _valor_de(quadro, "PETR4", "ULT") == 38.4
+    assert quadro.is_loaded("PETR4")
+
+
 def test_status_de_uma_conexao_anterior_nao_limita_a_saude_da_nova(ambiente: Ambiente) -> None:
     ponte = ambiente.ponte()
     quadro = LiveBoard()

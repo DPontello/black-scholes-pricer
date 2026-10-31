@@ -21,6 +21,7 @@ from options_engine.adapters.outbound.tryd.settings import (
     PORTA_PONTE,
 )
 from options_ponte.protocolo import (
+    TRYD_CONECTADO,
     TRYD_INICIANDO,
     TRYD_PERDIDO,
     Assinar,
@@ -236,11 +237,14 @@ class TrydBridgeClient:
             if self._wanted:
                 # A ponte nova (relançada) manda zeros iniciais; a mesma reemite os últimos valores
                 # logo ao assinar. Em qualquer caso o quadro recomeça: nada herdado vale como carga.
-                tickers = _tickers(self._wanted)
-                self._board.forget(tickers)
-                self._board.mark_subscribed(tickers)
+                self._restart_board_locked()
                 self._send_locked(Assinar(tuple(sorted(self._wanted))))
         return sock
+
+    def _restart_board_locked(self) -> None:
+        tickers = _tickers(self._wanted)
+        self._board.forget(tickers)
+        self._board.mark_subscribed(tickers)
 
     def _drop(self, sock: socket.socket) -> None:
         with self._conn_lock:
@@ -284,6 +288,7 @@ class TrydBridgeClient:
             _log.warning("linha recusada da ponte: %s", erro)
             return
         now = self._monotonic()
+        new_rtd_session = False
         with self._state_lock:
             self._last_message_at = now
             if isinstance(mensagem, Status):
@@ -291,7 +296,16 @@ class TrydBridgeClient:
                     self._tryd_sem_dado_desde = None
                 elif self._tryd_state not in _TRYD_SEM_DADO:  # entrou agora no estado sem dado
                     self._tryd_sem_dado_desde = now
+                # A ponte só fica em "iniciando" sem sessão RTD: o "conectado" seguinte é uma sessão
+                # nova, com o cache da ponte vazio e os zeros iniciais a caminho. Do "perdido" a
+                # sessão é a mesma e a ponte não reenvia o que já mandou: o quadro fica.
+                new_rtd_session = (
+                    self._tryd_state == TRYD_INICIANDO and mensagem.tryd == TRYD_CONECTADO
+                )
                 self._tryd_state = mensagem.tryd
+        if new_rtd_session:
+            with self._conn_lock:
+                self._restart_board_locked()
         if isinstance(mensagem, Valor):
             self._board.apply(mensagem)
         elif isinstance(mensagem, Status):
