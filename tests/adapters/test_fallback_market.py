@@ -242,3 +242,18 @@ def test_ponte_de_pe_com_o_tryd_fechado_recua_para_o_fim_de_dia_apos_30_s(real: 
     assert mercado.get_chain("PETR4") == _cadeia_do_adapter("PETR4")
     entregar(ponte, board, real.tempo, 131.0, Status("conectado", None, 1))
     assert mercado.health() is DataSource.AO_VIVO  # o Tryd voltou: volta ao vivo
+
+
+def test_tryd_conectado_sem_preco_nenhum_recua_para_o_fim_de_dia(tmp_path: Path) -> None:
+    # Fora do pregão o Tryd conecta, mas manda ULT, OCP e OVD vazios.
+    m = montar(tmp_path, lib=biblioteca(tmp_path / "mercado"), saude=BridgeHealth.CONECTADA)
+    mercado = FallbackMarket(m.feed, EndOfDayMarket(m.biblioteca, lambda: m.cdi[0]))
+    mercado.watch(["PETR4", "VALE3"], ["PETR4"])
+    alimentar(m.board, "PETR4", ULT="", OCP="", OVD="", VOL=1.2e9)
+    assert mercado.health() is DataSource.AO_VIVO  # VALE3 ainda não carregou
+    alimentar(m.board, "VALE3", ULT="", OCP="", OVD="")
+    assert mercado.health() is DataSource.FIM_DE_DIA
+    assert _cotacao(mercado, "PETR4").source is DataSource.FIM_DE_DIA
+    assert mercado.get_chain("PETR4").underlying.spot == 30.0
+    alimentar(m.board, "VALE3", OVD=61.2)
+    assert mercado.health() is DataSource.AO_VIVO

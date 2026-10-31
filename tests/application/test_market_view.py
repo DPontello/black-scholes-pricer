@@ -1,18 +1,13 @@
 """``MarketViewService`` com mercado falso: PETR4 a 30, sigma 0,30, pregão 2026-10-23."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 import pytest
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET, StaticHolidayCalendar
-from options_engine.adapters.outbound.tryd.settings import VENCIMENTOS_PADRAO
-from options_engine.application.ports.inbound import (
-    DEFAULT_CHAIN_EXPIRIES,
-    MarketViewUseCase,
-    WatchRow,
-)
+from options_engine.application.ports.inbound import ExpiryOption, MarketViewUseCase, WatchRow
 from options_engine.application.ports.outbound import CadastroFreshness
 from options_engine.application.use_cases.market_view import MarketViewService
 from options_engine.domain.kernel.black_scholes import bs_price
@@ -24,12 +19,15 @@ from options_engine.domain.model.errors import (
     UnderlyingUnavailableError,
     UnknownSymbolError,
 )
+from options_engine.domain.model.expiries import ListedExpiry
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 from options_engine.domain.pricing.smile import SeriesMarket, build_smile, series_risk
 from tests._tolerances import ABS_SELF_FLOOR, REL_SELF, assert_close
 from tests.domain._builders import make_contract, make_snapshot, make_terms
 
 PREGAO = date(2026, 10, 23)
+SEMANAL_30_10 = date(2026, 10, 30)
+SEMANAL_06_11 = date(2026, 11, 6)
 NOVEMBRO = date(2026, 11, 19)
 DEZEMBRO = date(2026, 12, 18)
 JANEIRO = date(2027, 1, 21)
@@ -97,6 +95,7 @@ def _chain(
     *,
     timestamp: datetime = INSTANTE,
     rejected: tuple[RejectedSeries, ...] = (),
+    listed: tuple[ListedExpiry, ...] = (),
 ) -> OptionChain:
     return OptionChain(
         underlying=make_snapshot(
@@ -112,6 +111,7 @@ def _chain(
         ),
         quotes=_quotes() if quotes is None else quotes,
         rejected_series=rejected,
+        listed_expiries=listed,
     )
 
 
@@ -137,15 +137,23 @@ class _Mercado:
     known: tuple[str, ...] = ("PETR4", "VALE3")
     healths: list[DataSource] = field(default_factory=list)
     unavailable: str | None = None
-    watched: list[tuple[tuple[str, ...], tuple[str, ...]]] = field(default_factory=list)
+    watched: list[tuple[tuple[str, ...], tuple[str, ...], frozenset[date] | None]] = field(
+        default_factory=list
+    )
 
     def health(self) -> DataSource:
         if len(self.healths) > 1:
             return self.healths.pop(0)
         return self.healths[0] if self.healths else DataSource.AO_VIVO
 
-    def watch(self, underlyings: Sequence[str], chain_symbols: Sequence[str]) -> None:
-        self.watched.append((tuple(underlyings), tuple(chain_symbols)))
+    def watch(
+        self,
+        underlyings: Sequence[str],
+        chain_symbols: Sequence[str],
+        chain_expiries: Collection[date] | None = None,
+    ) -> None:
+        expiries = None if chain_expiries is None else frozenset(chain_expiries)
+        self.watched.append((tuple(underlyings), tuple(chain_symbols), expiries))
 
     def get_quotes(self, symbols: Sequence[str]) -> Mapping[str, UnderlyingQuote | str]:
         return {
@@ -182,23 +190,57 @@ def test_cumpre_o_protocol_do_use_case() -> None:
     assert isinstance(_servico(), MarketViewUseCase)
 
 
-def test_padrao_de_vencimentos_e_o_mesmo_que_a_fonte_ao_vivo_assina() -> None:
-    assert DEFAULT_CHAIN_EXPIRIES == VENCIMENTOS_PADRAO
-
-
-def test_blocos_por_vencimento_com_os_dias_uteis_do_calendario() -> None:
-    vista = _servico().chain("PETR4")
+def test_blocos_dos_vencimentos_escolhidos_com_os_dias_uteis_do_calendario() -> None:
+    vista = _servico().chain("PETR4", expiries={DEZEMBRO, NOVEMBRO})
     assert [b.expiry for b in vista.expiries] == [NOVEMBRO, DEZEMBRO]
     assert [b.business_days for b in vista.expiries] == [
         CALENDARIO.business_days_between(PREGAO, NOVEMBRO),
         CALENDARIO.business_days_between(PREGAO, DEZEMBRO),
     ]
     assert vista.expiries[0].business_days == 18
-    assert [b.expiry for b in _servico().chain("PETR4", expiries=3).expiries] == [
-        NOVEMBRO,
-        DEZEMBRO,
-        JANEIRO,
-    ]
+    todos = _servico().chain("PETR4", expiries=[NOVEMBRO, DEZEMBRO, JANEIRO])
+    assert [b.expiry for b in todos.expiries] == [NOVEMBRO, DEZEMBRO, JANEIRO]
+
+
+def _com_semanais() -> tuple[OptionQuote, ...]:
+    return (
+        *_quotes(),
+        _quote("PETRJ300W5", 30.0, OptionType.CALL, SEMANAL_30_10),
+        _quote("PETRK300W1", 30.0, OptionType.CALL, SEMANAL_06_11),
+    )
+
+
+def test_padrao_e_o_vencimento_mais_proximo_e_o_proximo_mensal() -> None:
+    vista = _servico(_Mercado(chains={"PETR4": _chain(_com_semanais())})).chain("PETR4")
+    assert [b.expiry for b in vista.expiries] == [SEMANAL_30_10, NOVEMBRO]
+    so_mensais = _servico().chain("PETR4")
+    assert [b.expiry for b in so_mensais.expiries] == [NOVEMBRO]
+
+
+def test_disponiveis_sao_todos_os_vencimentos_com_dias_uteis_e_semanal() -> None:
+    vista = _servico(_Mercado(chains={"PETR4": _chain(_com_semanais())})).chain("PETR4")
+    du = CALENDARIO.business_days_between
+    assert vista.available == (
+        ExpiryOption(SEMANAL_30_10, du(PREGAO, SEMANAL_30_10), weekly=True),
+        ExpiryOption(SEMANAL_06_11, du(PREGAO, SEMANAL_06_11), weekly=True),
+        ExpiryOption(NOVEMBRO, 18, weekly=False),
+        ExpiryOption(DEZEMBRO, du(PREGAO, DEZEMBRO), weekly=False),
+        ExpiryOption(JANEIRO, du(PREGAO, JANEIRO), weekly=False),
+    )
+
+
+def test_escolha_sem_nenhum_vencimento_listado_volta_ao_padrao() -> None:
+    vista = _servico().chain("PETR4", expiries={date(2026, 10, 16), date(2030, 1, 18)})
+    assert [b.expiry for b in vista.expiries] == [NOVEMBRO]
+    assert [b.expiry for b in _servico().chain("PETR4", expiries=()).expiries] == [NOVEMBRO]
+
+
+def test_listados_da_fonte_valem_mesmo_sem_cotacao_e_o_bloco_sai_vazio() -> None:
+    listados = (ListedExpiry(SEMANAL_06_11, True), ListedExpiry(NOVEMBRO, False))
+    mercado = _Mercado(chains={"PETR4": _chain(listed=listados)})
+    vista = _servico(mercado).chain("PETR4", expiries={SEMANAL_06_11, NOVEMBRO, DEZEMBRO})
+    assert [o.expiry for o in vista.available] == [SEMANAL_06_11, NOVEMBRO]
+    assert [(b.expiry, len(b.rows)) for b in vista.expiries] == [(SEMANAL_06_11, 0), (NOVEMBRO, 5)]
 
 
 def test_linhas_por_strike_e_no_mesmo_strike_a_call_antes_da_put() -> None:
@@ -314,11 +356,6 @@ def test_ativo_desconhecido_e_indisponivel_sobem_como_erro_de_dominio() -> None:
         _servico(_Mercado(unavailable="PETR4: aguardando dados do Tryd")).chain("PETR4")
 
 
-def test_vencimentos_precisa_ser_ao_menos_um() -> None:
-    with pytest.raises(InvalidDomainValueError, match="vencimentos"):
-        _servico().chain("PETR4", expiries=0)
-
-
 def test_so_aceita_a_convencao_de_dias_uteis() -> None:
     with pytest.raises(InvalidDomainValueError, match="BUSINESS_252"):
         MarketViewService(
@@ -350,8 +387,13 @@ def test_follow_assina_a_lista_e_a_cadeia_aberta() -> None:
     mercado = _Mercado()
     servico = _servico(mercado)
     servico.follow(["PETR4", "VALE3"], "PETR4")
+    servico.follow(["PETR4"], "PETR4", [DEZEMBRO, NOVEMBRO])
     servico.follow(["PETR4"], None)
-    assert mercado.watched == [(("PETR4", "VALE3"), ("PETR4",)), (("PETR4",), ())]
+    assert mercado.watched == [
+        (("PETR4", "VALE3"), ("PETR4",), None),
+        (("PETR4",), ("PETR4",), frozenset({NOVEMBRO, DEZEMBRO})),
+        (("PETR4",), (), None),
+    ]
 
 
 def test_status_com_cadastro_datado_e_faixa_dos_cotahist() -> None:
@@ -372,3 +414,13 @@ def test_status_sem_cadastro_traz_o_motivo() -> None:
         "cadastro sem data no nome do arquivo",
     )
     assert status.cotahist_range is None
+
+
+def test_vencimento_alem_do_calendario_de_feriados_fica_fora_da_escolha() -> None:
+    alem = date(2028, 1, 21)
+    listados = (ListedExpiry(NOVEMBRO, False), ListedExpiry(alem, False))
+    vista = _servico(_Mercado(chains={"PETR4": _chain(listed=listados)})).chain(
+        "PETR4", expiries={NOVEMBRO, alem}
+    )
+    assert [o.expiry for o in vista.available] == [NOVEMBRO]
+    assert [b.expiry for b in vista.expiries] == [NOVEMBRO]

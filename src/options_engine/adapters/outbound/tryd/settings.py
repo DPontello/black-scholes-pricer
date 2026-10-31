@@ -15,7 +15,6 @@ __all__ = [
     "PONTE_PERDIDA_S",
     "PORTA_PONTE",
     "TEMPO_CARGA_S",
-    "VENCIMENTOS_PADRAO",
 ]
 
 # Depois da assinatura, o RTD manda zeros até o Tryd carregar o tópico (~1 s). Passado este
@@ -29,5 +28,3 @@ PONTE_PERDIDA_S = 30.0
 
 # Strikes assinados: até FAIXA_STRIKES (fração) acima ou abaixo do spot.
 FAIXA_STRIKES = 0.20
-# Quantos vencimentos (a partir de hoje) entram na cadeia assinada.
-VENCIMENTOS_PADRAO = 2

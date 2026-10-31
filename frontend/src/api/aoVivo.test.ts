@@ -32,6 +32,7 @@ test("cadeia que não sai troca a cadeia anterior pelo motivo, e a que sai limpa
     fonte: "ao_vivo" as const,
     hora: "2026-10-28T13:05:09-03:00",
     vencimentos: [],
+    disponiveis: [],
     rejeitadas: [],
   };
   const comCadeia = aplicar(VAZIO, { tipo: "cadeia", dados: cadeia });

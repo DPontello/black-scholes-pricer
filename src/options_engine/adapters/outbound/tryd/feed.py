@@ -18,9 +18,9 @@ Regras que atravessam o módulo:
   chamado de desconhecido.
 
 Assinatura (``watch``): os ativos (e os dos símbolos de cadeia) com ``CAMPOS_ATIVO`` e, para
-cada símbolo de cadeia, as séries do cadastro dos ``VENCIMENTOS_PADRAO`` próximos vencimentos
-(a partir de hoje) com strike a até ``FAIXA_STRIKES`` do spot. O spot de referência é o último
-``ULT`` do Tryd; enquanto ele não chegou, o último fechamento do COTAHIST; sem nenhum dos
+cada símbolo de cadeia, as séries do cadastro dos vencimentos escolhidos (padrão: o mais
+próximo e o próximo mensal) com strike a até ``FAIXA_STRIKES`` do spot. O spot de referência é
+o último ``ULT`` do Tryd; enquanto ele não chegou, o último fechamento do COTAHIST; sem nenhum dos
 dois, todos os strikes. O corte em ``topic_limit`` (``LIMITE_TOPICOS``) mantém os ativos
 primeiro e depois os strikes mais perto do spot, séries inteiras: nunca um campo solto.
 
@@ -45,7 +45,7 @@ um por minuto para cada (ticker, motivo): o polling repetiria o mesmo a cada seg
 import logging
 import threading
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, tzinfo
 from typing import Final
@@ -62,7 +62,6 @@ from options_engine.adapters.outbound.tryd.settings import (
     CAMPOS_OPCAO,
     FAIXA_STRIKES,
     LIMITE_TOPICOS,
-    VENCIMENTOS_PADRAO,
 )
 from options_engine.adapters.outbound.tryd.translation import to_option_quote, to_underlying_quote
 from options_engine.application.ports.outbound import Clock, TradingCalendar
@@ -71,6 +70,7 @@ from options_engine.domain.model.contracts import OptionContract, OptionTerms
 from options_engine.domain.model.conventions import DayCountConvention, Volatility
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
+from options_engine.domain.model.expiries import ListedExpiry, default_expiries, list_expiries
 from options_engine.domain.model.market import MarketSnapshot
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 from options_engine.domain.pricing.smile import SeriesMarket, mid_implied_vol
@@ -228,21 +228,45 @@ class TrydMarketFeed:
         self._watch_lock = threading.Lock()
         self._index_lock = threading.Lock()
         self._index: tuple[LoadedLibrary, _SeriesIndex] | None = None
+        self._assets: tuple[str, ...] = ()
+        self._chain_expiries: frozenset[date] | None = None
 
     # --- LiveFeedPort ---------------------------------------------------------------------------
 
     def health(self) -> DataSource:
         return _SOURCE_OF_HEALTH[self._client.health()]
 
-    def watch(self, underlyings: Sequence[str], chain_symbols: Sequence[str]) -> None:
+    def watch(
+        self,
+        underlyings: Sequence[str],
+        chain_symbols: Sequence[str],
+        chain_expiries: Collection[date] | None = None,
+    ) -> None:
         """Assina exatamente os ativos e as séries pedidos; o que sai da lista é cancelado."""
         assets = tuple(dict.fromkeys((*underlyings, *chain_symbols)))
         with self._watch_lock:
+            self._assets = assets
+            self._chain_expiries = None if chain_expiries is None else frozenset(chain_expiries)
             units: list[tuple[Topic, ...]] = [tuple((a, c) for c in CAMPOS_ATIVO) for a in assets]
             loaded = self._loader.load()
             if not isinstance(loaded, str):
                 units += self._series_units(loaded, tuple(dict.fromkeys(chain_symbols)))
             self._client.ensure_subscribed(self._within_limit(units))
+
+    def has_no_live_prices(self) -> bool:
+        """Todo ativo assinado já carregou e nenhum tem último, compra ou venda.
+
+        É o Tryd fora do pregão: conectado, mas mandando os preços vazios.
+        """
+        assets = self._assets
+        if not assets or not all(self._board.is_loaded(a) for a in assets):
+            return False
+        now = self._now()
+        for asset in assets:
+            quote = self._quote(asset, DataSource.AO_VIVO, now)
+            if quote is not None and (quote.last, quote.bid, quote.ask) != (None, None, None):
+                return False
+        return True
 
     # --- QuoteBoardPort -------------------------------------------------------------------------
 
@@ -308,7 +332,13 @@ class TrydMarketFeed:
             volatility=volatility,
             timestamp=quote.timestamp,
         )
-        return OptionChain(snapshot, quotes, rejected, underlying_book_available=book_available)
+        return OptionChain(
+            snapshot,
+            quotes,
+            rejected,
+            underlying_book_available=book_available,
+            listed_expiries=self._listed(loaded, underlying_symbol, now.date()),
+        )
 
     def _atm_implied_vol(
         self, quotes: Sequence[OptionQuote], spot: float, rate: float, today: date
@@ -352,18 +382,22 @@ class TrydMarketFeed:
         rejected.sort(key=lambda r: r.symbol)
         return tuple(quotes), tuple(rejected)
 
-    def _selected_rows(
-        self, loaded: LoadedLibrary, ticker: str, spot: float | None, today: date
-    ) -> list[_Row]:
-        """Séries dos ``VENCIMENTOS_PADRAO`` próximos vencimentos (>= hoje) dentro da faixa.
-
-        Os vencimentos saem de TODAS as séries candidatas, as de vínculo ambíguo inclusive: o
+    def _listed(self, loaded: LoadedLibrary, ticker: str, today: date) -> tuple[ListedExpiry, ...]:
+        """Os vencimentos saem de TODAS as séries candidatas, as de vínculo ambíguo inclusive: o
         vencimento existe para o ativo mesmo quando não se sabe de quem é cada série, e é por
         ele que as ambíguas chegam a ``rejected_series`` (senão a cadeia sairia vazia e muda).
         """
         rows = self._index_of(loaded).rows_of(ticker)
-        expiries = sorted({r.expiry for r in rows if r.expiry >= today})
-        chosen = set(expiries[:VENCIMENTOS_PADRAO])
+        return list_expiries(((r.symbol, r.expiry) for r in rows), today)
+
+    def _selected_rows(
+        self, loaded: LoadedLibrary, ticker: str, spot: float | None, today: date
+    ) -> list[_Row]:
+        """Séries dos vencimentos escolhidos dentro da faixa; sem escolha válida, o padrão."""
+        listed = self._listed(loaded, ticker, today)
+        offered = {item.expiry for item in listed}
+        chosen = offered.intersection(self._chain_expiries or ()) or default_expiries(listed)
+        rows = self._index_of(loaded).rows_of(ticker)
         return [r for r in rows if r.expiry in chosen and _in_band(r.strike, spot)]
 
     def _series_units(

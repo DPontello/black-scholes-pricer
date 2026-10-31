@@ -15,11 +15,11 @@ Emenda de 2026-07-04 ao ARCH §4.2 (painel de design da Sprint 3):
   um grid completo forçaria todo chamador a inventar um eixo fantasma.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from math import isfinite
-from typing import Final, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.outbound import CadastroFreshness
 from options_engine.domain.income.costs import REFERENCE_POSITION_SHARES
@@ -36,10 +36,10 @@ from options_engine.domain.model.scenarios import SpotAxis, StressScenario, Stre
 from options_engine.domain.model.strategy import Strategy
 
 __all__ = [
-    "DEFAULT_CHAIN_EXPIRIES",
     "AnalyzeStrategyPayoffUseCase",
     "ChainView",
     "ExpiryBlock",
+    "ExpiryOption",
     "MarketStatus",
     "MarketViewUseCase",
     "PriceOptionCommand",
@@ -192,10 +192,6 @@ class ProfileUseCase(Protocol):
     def close(self) -> None: ...
 
 
-# Cópia do VENCIMENTOS_PADRAO do Tryd (application não importa adapters); um teste prende as duas.
-DEFAULT_CHAIN_EXPIRIES: Final = 2
-
-
 @dataclass(frozen=True, slots=True)
 class WatchRow:
     """Exatamente um dos dois: ``quote`` ou ``reason``."""
@@ -234,8 +230,18 @@ class ExpiryBlock:
 
 
 @dataclass(frozen=True, slots=True)
+class ExpiryOption:
+    expiry: date
+    business_days: int
+    weekly: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ChainView:
-    """``timestamp``: a cotação do ativo, que é a data de valoração."""
+    """``timestamp``: a cotação do ativo, que é a data de valoração.
+
+    ``expiries``: os blocos dos vencimentos escolhidos; ``available``: os que há para escolher.
+    """
 
     symbol: str
     spot: float
@@ -243,6 +249,7 @@ class ChainView:
     timestamp: datetime
     expiries: tuple[ExpiryBlock, ...]
     rejected: tuple[RejectedSeries, ...]
+    available: tuple[ExpiryOption, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,12 +265,19 @@ class MarketStatus:
 @runtime_checkable
 class MarketViewUseCase(Protocol):
     """``chain`` levanta ``UnknownSymbolError`` ou ``UnderlyingUnavailableError``; ``quotes``
-    nunca levanta por ativo: o motivo vai na linha."""
+    nunca levanta por ativo: o motivo vai na linha.
 
-    def follow(self, watchlist: Sequence[str], chain_symbol: str | None) -> None: ...
+    ``expiries`` ``None`` é a escolha padrão: o vencimento mais próximo e o próximo mensal."""
+
+    def follow(
+        self,
+        watchlist: Sequence[str],
+        chain_symbol: str | None,
+        expiries: Collection[date] | None = None,
+    ) -> None: ...
 
     def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]: ...
 
-    def chain(self, symbol: str, expiries: int = DEFAULT_CHAIN_EXPIRIES) -> ChainView: ...
+    def chain(self, symbol: str, expiries: Collection[date] | None = None) -> ChainView: ...
 
     def status(self) -> MarketStatus: ...

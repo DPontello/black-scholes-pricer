@@ -1,9 +1,9 @@
 """``TrydMarketFeed`` — assinatura, cotações e cadeia ao vivo sobre quadro e cliente falsos."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -25,6 +25,7 @@ from options_engine.application.ports.outbound import (
 from options_engine.domain.model.conventions import Compounding, RiskFreeRate
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
+from options_engine.domain.model.expiries import ListedExpiry
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 from options_engine.domain.pricing.smile import SeriesMarket, mid_implied_vol
 from options_ponte.protocolo import Valor
@@ -68,11 +69,13 @@ def _campos_de(topicos: frozenset[Topico], ticker: str) -> set[str]:
     return {campo for t, campo in topicos if t == ticker}
 
 
-def _assinar_com_spot(m: Montagem, ticker: str, spot: float) -> frozenset[Topico]:
+def _assinar_com_spot(
+    m: Montagem, ticker: str, spot: float, vencimentos: Collection[date] | None = None
+) -> frozenset[Topico]:
     """Assina, entrega o ``ULT`` e assina de novo: a faixa de strikes passa a seguir o spot vivo."""
     m.feed.watch([ticker], [])
     alimentar(m.board, ticker, ULT=spot)
-    m.feed.watch([ticker], [ticker])
+    m.feed.watch([ticker], [ticker], vencimentos)
     return m.cliente.topicos
 
 
@@ -108,12 +111,12 @@ def test_saude_da_ponte_vira_o_rotulo_da_fonte(
 # --- watch ------------------------------------------------------------------------------------
 
 
-def test_watch_assina_dois_vencimentos_na_faixa_e_respeita_o_limite(
+def test_watch_assina_os_vencimentos_escolhidos_na_faixa_e_respeita_o_limite(
     tmp_path: Path, instrumentos: dict[str, InstrumentInfo]
 ) -> None:
     spot = 27.0
     m = montar(tmp_path)
-    topicos = _assinar_com_spot(m, "PETR4", spot)
+    topicos = _assinar_com_spot(m, "PETR4", spot, (NOVEMBRO, DEZEMBRO))
 
     assert {c for c in _campos_de(topicos, "PETR4")} == set(CAMPOS_ATIVO)
     esperadas = {
@@ -131,18 +134,78 @@ def test_watch_assina_dois_vencimentos_na_faixa_e_respeita_o_limite(
     assert {t for t in topicos if t[0] != "PETR4"} == {
         (s, c) for s in esperadas for c in CAMPOS_OPCAO
     }
-    # Fora do pacote: janeiro (3º vencimento), a série vencida em 16/10 e as de PETR3.
+    # Fora do pacote: janeiro (não escolhido), a série vencida em 16/10 e as de PETR3.
     assert not {"PETRA300", "PETRJ300", *SERIES_DE_PETR3} & _series(topicos, "PETR4")
 
     # Com o limite reduzido, o ativo fica e saem os strikes mais longe do spot.
     pequeno = montar(tmp_path / "pequeno", topic_limit=len(CAMPOS_ATIVO) + 5 * len(CAMPOS_OPCAO))
-    reduzidos = _assinar_com_spot(pequeno, "PETR4", spot)
+    reduzidos = _assinar_com_spot(pequeno, "PETR4", spot, (NOVEMBRO, DEZEMBRO))
     escolhidas = _series(reduzidos, "PETR4")
     assert {c for c in _campos_de(reduzidos, "PETR4")} == set(CAMPOS_ATIVO)
     assert len(escolhidas) == 5
     assert escolhidas <= esperadas
     mais_longe = max(_distancia(instrumentos, s, spot) for s in escolhidas)
     assert all(_distancia(instrumentos, s, spot) >= mais_longe for s in esperadas - escolhidas)
+
+
+_SEMANAL = date(2026, 10, 30)
+
+
+def _cadastro_com_semanal() -> bytes:
+    extra = cadastro_com_objetos().decode("utf-8-sig").rstrip("\r\n") + (
+        f"\r\nPETRJ300W5;PETR;{_SEMANAL.isoformat()};30.00;EURO;CALL;PETR4\r\n"
+    )
+    return extra.encode("utf-8-sig")
+
+
+def test_watch_sem_escolha_assina_o_vencimento_mais_proximo_e_o_proximo_mensal(
+    tmp_path: Path,
+) -> None:
+    so_mensais = montar(tmp_path / "mensais")
+    series = _series(_assinar_com_spot(so_mensais, "PETR4", 30.0), "PETR4")
+    assert "PETRK300" in series and not {"PETRL300", "PETRA300"} & series
+
+    m = montar(tmp_path / "semanal", cadastro=_cadastro_com_semanal())
+    series = _series(_assinar_com_spot(m, "PETR4", 30.0), "PETR4")
+    assert {"PETRJ300W5", "PETRK300"} <= series and "PETRL300" not in series
+
+
+def test_watch_com_escolha_que_nao_esta_no_cadastro_volta_ao_padrao(tmp_path: Path) -> None:
+    m = montar(tmp_path)
+    series = _series(_assinar_com_spot(m, "PETR4", 30.0, {date(2030, 1, 18)}), "PETR4")
+    assert "PETRK300" in series and "PETRL300" not in series
+    so_dezembro = _series(_assinar_com_spot(m, "PETR4", 30.0, {DEZEMBRO}), "PETR4")
+    assert "PETRL300" in so_dezembro and "PETRK300" not in so_dezembro
+
+
+def test_cadeia_lista_todos_os_vencimentos_do_cadastro_com_a_semanal_marcada(
+    tmp_path: Path,
+) -> None:
+    m = montar(tmp_path, cadastro=_cadastro_com_semanal())
+    m.feed.watch(["PETR4"], ["PETR4"])
+    alimentar(m.board, "PETR4", ULT=30.0, OCP=29.9, OVD=30.1)
+    alimentar(m.board, "PETRK300", ULT=1.0, OCP=0.9, OVD=1.1)
+    listados = m.feed.get_chain("PETR4").listed_expiries
+    assert listados[:3] == (
+        ListedExpiry(_SEMANAL, weekly=True),
+        ListedExpiry(NOVEMBRO, weekly=False),
+        ListedExpiry(DEZEMBRO, weekly=False),
+    )
+    assert all(item.expiry >= AGORA.date() for item in listados)
+
+
+def test_sem_preco_ao_vivo_so_quando_todo_ativo_carregou_sem_ultimo_compra_e_venda(
+    tmp_path: Path,
+) -> None:
+    m = montar(tmp_path)
+    assert not m.feed.has_no_live_prices()  # nada assinado
+    m.feed.watch(["PETR4", "VALE3"], [])
+    alimentar(m.board, "PETR4", ULT="", OCP="", OVD="", VOL=1.2e9)
+    assert not m.feed.has_no_live_prices()  # VALE3 ainda não carregou
+    alimentar(m.board, "VALE3", ULT="", OCP="", OVD="")
+    assert m.feed.has_no_live_prices()
+    alimentar(m.board, "VALE3", OVD=61.2)
+    assert not m.feed.has_no_live_prices()
 
 
 def test_watch_sem_spot_ao_vivo_usa_o_ultimo_fechamento_da_biblioteca(tmp_path: Path) -> None:
@@ -511,7 +574,7 @@ def test_cadeia_com_todas_as_series_ambiguas_traz_todas_em_rejeitadas_e_nenhuma_
     # Nenhuma série declara o ativo-objeto e PETR3/PETR4 dividem a raiz: os vencimentos saem das
     # séries candidatas (ambíguas inclusive) e elas aparecem com motivo, nunca em silêncio.
     m = montar(tmp_path, cadastro=cadastro_sem_objetos())
-    m.feed.watch(["PETR4"], ["PETR4"])
+    m.feed.watch(["PETR4"], ["PETR4"], (NOVEMBRO, DEZEMBRO))
     assert _series(m.cliente.topicos, "PETR4") == set()  # ambígua não se assina
     alimentar(m.board, "PETR4", ULT=30.0, OCP=29.5, OVD=30.5)
     for serie in ("PETRK300", "PETRK312"):  # mesmo com valor no quadro: de quem é?
@@ -522,7 +585,7 @@ def test_cadeia_com_todas_as_series_ambiguas_traz_todas_em_rejeitadas_e_nenhuma_
     assert {"PETRK300", "PETRW300", "PETRK312", "PETRL300"} <= set(motivos)  # Nov e Dez
     assert "ambíguo" in motivos["PETRK300"]
     assert "PETR3" in motivos["PETRK300"]
-    assert "PETRA300" not in motivos  # janeiro é o 3º vencimento
+    assert "PETRA300" not in motivos  # janeiro não foi escolhido
     assert motivos["PETRK340"] == "sem estilo de exercício no cadastro"
     assert all("ambíguo" in r or "estilo" in r for r in motivos.values())
 
@@ -547,7 +610,7 @@ def test_recarrega_a_biblioteca_quando_ela_muda(tmp_path: Path) -> None:
     assert _series(m.cliente.topicos, "PETR4") == set()
     lib.import_file(COTAHIST_NAME, (FIXTURE / COTAHIST_NAME).read_bytes())
     lib.import_file(INSTRUMENTS_NAME, cadastro_com_objetos())
-    m.feed.watch(["PETR4"], ["PETR4"])
+    m.feed.watch(["PETR4"], ["PETR4"], (NOVEMBRO, DEZEMBRO))
     assert len(_series(m.cliente.topicos, "PETR4")) > 20
 
 

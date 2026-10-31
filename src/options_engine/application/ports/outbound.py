@@ -16,7 +16,7 @@ ROADMAP S3: port desenhado a partir do mock). Por isso:
   compounding explícito (CONVENTIONS §3).
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol, runtime_checkable
@@ -134,9 +134,17 @@ class LiveFeedPort(Protocol):
     cancelam tudo). ``health`` é o rótulo que o dado dela tem agora:
     ``AO_VIVO``, ``ATRASADO`` ou ``FIM_DE_DIA`` (sem fonte ao vivo; o app cai
     para os arquivos da B3).
+
+    ``chain_expiries``: os vencimentos das cadeias a assinar; ``None`` é o
+    padrão (``default_expiries``).
     """
 
-    def watch(self, underlyings: Sequence[str], chain_symbols: Sequence[str]) -> None: ...
+    def watch(
+        self,
+        underlyings: Sequence[str],
+        chain_symbols: Sequence[str],
+        chain_expiries: Collection[date] | None = None,
+    ) -> None: ...
 
     def health(self) -> DataSource: ...
 

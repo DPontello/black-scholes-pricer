@@ -14,6 +14,7 @@ type Props = {
   ativo: string | null;
   cadeia: Cadeia | null;
   indisponivel: CadeiaIndisponivel | null;
+  onVencimentos: (datas: string[]) => void;
 };
 
 const FONTES = { ao_vivo: "Ao vivo (Tryd)", atrasado: "Atrasado", fim_de_dia: "Fim de dia (B3)" };
@@ -67,8 +68,50 @@ function Lado({ serie, espelho }: { serie: Serie | undefined; espelho: boolean }
   return <>{espelho ? celulas.reverse() : celulas}</>;
 }
 
-export function TabelaCadeia({ ativo, cadeia, indisponivel }: Props) {
-  const [aba, setAba] = useState(0);
+function EscolhaVencimentos({
+  cadeia,
+  onVencimentos,
+  onAdicionado,
+}: {
+  cadeia: Cadeia;
+  onVencimentos: (datas: string[]) => void;
+  onAdicionado: (data: string) => void;
+}) {
+  const escolhidos = new Set(cadeia.vencimentos.map((v) => v.data));
+
+  function alternar(data: string) {
+    if (escolhidos.has(data)) {
+      if (escolhidos.size === 1) return; // a cadeia sempre mostra ao menos um vencimento
+      escolhidos.delete(data);
+    } else {
+      escolhidos.add(data);
+      onAdicionado(data);
+    }
+    onVencimentos([...escolhidos].sort());
+  }
+
+  return (
+    <div className="vencimentos" role="group" aria-label="Vencimentos">
+      <span className="secundario">Vencimentos (S = semanal):</span>
+      {cadeia.disponiveis.map((d) => (
+        <button
+          key={d.data}
+          type="button"
+          aria-pressed={escolhidos.has(d.data)}
+          className={d.semanal ? "semanal" : undefined}
+          title={`${d.semanal ? "Semanal" : "Mensal"}, ${d.dias_uteis} dias úteis`}
+          onClick={() => alternar(d.data)}
+        >
+          {formatarData(d.data).slice(0, 5)}
+          {d.semanal ? " S" : ""}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function TabelaCadeia({ ativo, cadeia, indisponivel, onVencimentos }: Props) {
+  const [aba, setAba] = useState<string | null>(null);
 
   if (ativo === null) {
     return <p className="secundario">Escolha um ativo na lista para ver a cadeia de opções.</p>;
@@ -84,7 +127,7 @@ export function TabelaCadeia({ ativo, cadeia, indisponivel }: Props) {
     return <p className="secundario">Carregando a cadeia de {ativo}…</p>;
   }
 
-  const vencimento = cadeia.vencimentos[Math.min(aba, cadeia.vencimentos.length - 1)];
+  const vencimento = cadeia.vencimentos.find((v) => v.data === aba) ?? cadeia.vencimentos[0];
   const atm =
     vencimento === undefined
       ? null
@@ -101,14 +144,15 @@ export function TabelaCadeia({ ativo, cadeia, indisponivel }: Props) {
           ({FONTES[cadeia.fonte]}, {formatarHora(cadeia.hora)})
         </span>
       </header>
+      <EscolhaVencimentos cadeia={cadeia} onVencimentos={onVencimentos} onAdicionado={setAba} />
       <div className="abas" role="tablist">
-        {cadeia.vencimentos.map((v, i) => (
+        {cadeia.vencimentos.map((v) => (
           <button
             key={v.data}
             type="button"
             role="tab"
             aria-selected={v === vencimento}
-            onClick={() => setAba(i)}
+            onClick={() => setAba(v.data)}
           >
             {formatarData(v.data).slice(0, 5)} ({v.dias_uteis} du)
           </button>
@@ -116,6 +160,8 @@ export function TabelaCadeia({ ativo, cadeia, indisponivel }: Props) {
       </div>
       {vencimento === undefined ? (
         <p className="secundario">Nenhum vencimento com séries no cadastro.</p>
+      ) : vencimento.series.length === 0 ? (
+        <p className="secundario">Nenhuma série deste vencimento chegou ainda.</p>
       ) : (
         <table>
           <thead>
