@@ -35,12 +35,16 @@ export type Serie = {
 
 export type Vencimento = { data: string; dias_uteis: number; series: Serie[] };
 
+export type Disponivel = { data: string; dias_uteis: number; semanal: boolean };
+
 export type Cadeia = {
   ativo: string;
   spot: number;
   fonte: Fonte;
   hora: string;
+  /** Só os vencimentos escolhidos; `disponiveis` são todos os que dá para escolher. */
   vencimentos: Vencimento[];
+  disponiveis: Disponivel[];
   rejeitadas: { ticker: string; motivo: string }[];
 };
 
@@ -103,14 +107,15 @@ function urlAoVivo(): string {
   return `${protocolo}://${window.location.host}/api/ao-vivo`;
 }
 
-export function useAoVivo(): EstadoAoVivo & {
-  seguirCadeia: (ativo: string | null, vencimentos?: number) => void;
-} {
+// `vencimentos` null: o servidor escolhe o mais próximo e o próximo mensal.
+export type SeguirCadeia = (ativo: string | null, vencimentos?: string[] | null) => void;
+
+export function useAoVivo(): EstadoAoVivo & { seguirCadeia: SeguirCadeia } {
   const [estado, setEstado] = useState<EstadoAoVivo>(INICIAL);
   const socket = useRef<WebSocket | null>(null);
-  const pedidoCadeia = useRef<{ ativo: string | null; vencimentos: number }>({
+  const pedidoCadeia = useRef<{ ativo: string | null; vencimentos: string[] | null }>({
     ativo: null,
-    vencimentos: 2,
+    vencimentos: null,
   });
 
   useEffect(() => {
@@ -144,7 +149,7 @@ export function useAoVivo(): EstadoAoVivo & {
     };
   }, []);
 
-  const seguirCadeia = useCallback((ativo: string | null, vencimentos = 2) => {
+  const seguirCadeia = useCallback<SeguirCadeia>((ativo, vencimentos = null) => {
     pedidoCadeia.current = { ativo, vencimentos };
     if (ativo === null) setEstado((atual) => ({ ...atual, cadeia: null, cadeiaIndisponivel: null }));
     const ws = socket.current;

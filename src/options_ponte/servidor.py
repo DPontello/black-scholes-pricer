@@ -45,6 +45,16 @@ SILENCIO_ATE_HEARTBEAT_S = 5.0
 # Depois de um RefreshData que falhou, só tenta de novo passado este tempo: o laço volta a cada
 # ~50 ms e, sem isso, um Tryd pendurado receberia ~20 chamadas por segundo.
 ESPACAMENTO_APOS_FALHA_S = 1.0
+INTERVALO_PROCESSOS_S = 2.0
+# Tryd aberto com a ponte no ar: antes de ele registrar o servidor RTD, o CoCreateInstance
+# não o acha e o COM lança outro tryd.exe.
+ESPERA_TRYD_ABRIR_S = 20.0
+ESPACAMENTO_APOS_FALHA_AO_ABRIR_S = 10.0
+# Cada tentativa que faz o COM lançar um tryd.exe mostra uma janela do Tryd ao usuário.
+ESPERA_APOS_TRYD_LANCADO_S = 60.0
+
+MOTIVO_TRYD_FECHADO = "Tryd fechado: aguardando o usuário abrir o Tryd"
+MOTIVO_TRYD_ABRINDO = "Tryd aberto: aguardando o servidor RTD do Tryd ficar pronto"
 
 _PASSO_S = 0.05  # quanto o laço bombeia por volta; limita a demora para atender um comando
 _ESPERA_ACEITE_S = 0.05  # tempo máximo para a thread de aceite notar o fim
@@ -92,16 +102,23 @@ class Ponte:
     em vez de esperar o tópico mudar. A assinatura repetida não chama ``conectar`` de novo. O
     ``inicial`` vai junto: o valor do ``ConnectData`` continua inicial na reemissão até um
     ``RefreshData`` trazer valor novo.
+
+    Com ``processos_tryd``, a sessão segue o processo do Tryd: só abre com um ``tryd.exe``
+    rodando (com o Tryd fechado, o COM o abriria) e é largada quando ele sai. Sem ele, a sessão
+    abre aqui mesmo e nunca é largada (autoteste e testes).
     """
 
     def __init__(
         self,
-        sessao: SessaoRtd,
+        abrir_sessao: Callable[[], SessaoRtd],
         relogio: Callable[[], float],
         agora_iso: Callable[[], str],
         limite: int,
+        *,
+        processos_tryd: Callable[[], frozenset[int]] | None = None,
     ) -> None:
-        self._sessao = sessao
+        self._abrir_sessao = abrir_sessao
+        self._processos_tryd = processos_tryd
         self._relogio = relogio
         self._agora_iso = agora_iso
         self._registro = RegistroDeTopicos(limite)
@@ -113,7 +130,11 @@ class Ponte:
         self._ultimo_sinal = relogio()  # último aviso, ou última pergunta de Heartbeat
         self._ultimo_status = self._ultimo_sinal
         self._encerrando = False
-        self._sessao_encerrada = False
+        self._encerrada = False
+        self._sessao: SessaoRtd | None = abrir_sessao() if processos_tryd is None else None
+        self._pids_da_sessao: frozenset[int] = frozenset()  # os tryd.exe de quando ela abriu
+        self._processos_vistos_em: float | None = None
+        self._abrir_em: float | None = None  # com o Tryd rodando e sem sessão
 
     @property
     def encerrando(self) -> bool:
@@ -136,16 +157,19 @@ class Ponte:
                 return []
 
     def ciclo(self) -> list[Mensagem]:
-        """Uma volta do laço: busca o que mudou, confere o servidor e dá o status periódico."""
+        """Uma volta do laço: acompanha o Tryd, busca o que mudou, confere o servidor e dá o
+        status periódico."""
         agora = self._relogio()
-        mensagens: list[Mensagem] = []
-        avisos = self._sessao.avisos()
-        if avisos > self._avisos_vistos:
-            if self._retomar_busca_em is None or agora >= self._retomar_busca_em:
-                mensagens += self._buscar_mudancas(avisos, agora)
-        elif agora - self._ultimo_sinal >= SILENCIO_ATE_HEARTBEAT_S:
-            self._ultimo_sinal = agora
-            mensagens += self._conferir_servidor()
+        mensagens = self._acompanhar_tryd(agora)
+        sessao = self._sessao
+        if sessao is not None:
+            avisos = sessao.avisos()
+            if avisos > self._avisos_vistos:
+                if self._retomar_busca_em is None or agora >= self._retomar_busca_em:
+                    mensagens += self._buscar_mudancas(sessao, avisos, agora)
+            elif agora - self._ultimo_sinal >= SILENCIO_ATE_HEARTBEAT_S:
+                self._ultimo_sinal = agora
+                mensagens += self._conferir_servidor(sessao)
         if any(isinstance(m, Status) for m in mensagens):  # o perdido já serviu de status
             self._ultimo_status = agora
         elif agora - self._ultimo_status >= INTERVALO_STATUS_S:
@@ -154,10 +178,89 @@ class Ponte:
         return mensagens
 
     def encerrar(self) -> None:
-        """Encerra a sessão RTD (uma vez só, por mais que seja chamado)."""
-        if not self._sessao_encerrada:
-            self._sessao_encerrada = True
-            self._sessao.encerrar()
+        """Encerra a sessão RTD, se houver uma, e não abre outra."""
+        self._encerrada = True
+        sessao, self._sessao = self._sessao, None
+        if sessao is not None:
+            sessao.encerrar()
+
+    def _acompanhar_tryd(self, agora: float) -> list[Mensagem]:
+        processos = self._processos_tryd
+        if processos is None or self._encerrada:
+            return []
+        visto_em = self._processos_vistos_em
+        if visto_em is not None and agora - visto_em < INTERVALO_PROCESSOS_S:
+            return []
+        self._processos_vistos_em = agora
+        pids = _listar(processos)
+        if pids is None:
+            return []
+        if self._sessao is not None:
+            return [] if pids & self._pids_da_sessao else self._largar_sessao()
+        if not pids:
+            self._abrir_em = None
+            self._motivo = MOTIVO_TRYD_FECHADO
+            return []
+        if self._abrir_em is None:
+            # já rodando quando a ponte subiu: o servidor RTD dele já está registrado
+            self._abrir_em = agora if visto_em is None else agora + ESPERA_TRYD_ABRIR_S
+            self._motivo = MOTIVO_TRYD_ABRINDO
+        return self._abrir(processos, pids, agora) if agora >= self._abrir_em else []
+
+    def _abrir(
+        self, processos: Callable[[], frozenset[int]], antes: frozenset[int], agora: float
+    ) -> list[Mensagem]:
+        try:
+            sessao = self._abrir_sessao()
+        except Exception as erro:
+            motivo = f"falha ao abrir a sessão RTD: {type(erro).__name__}: {erro}"
+            self._adiar_abertura(agora + ESPACAMENTO_APOS_FALHA_AO_ABRIR_S, motivo)
+            return []
+        depois = _listar(processos)
+        lancados = sorted(depois - antes) if depois is not None else []
+        if lancados:
+            # o Tryd lançado pelo COM fecha junto com a sessão
+            _encerrar_sem_erro(sessao)
+            motivo = f"o COM abriu outro Tryd (PID {lancados}); sessão fechada"
+            self._adiar_abertura(agora + ESPERA_APOS_TRYD_LANCADO_S, motivo)
+            return []
+        valores: list[Mensagem] = []
+        for id_, (ticker, campo) in self._registro.assinados():
+            try:
+                bruto_inicial = sessao.conectar(id_, topico_rtd(ticker, campo))
+            except Exception as erro:
+                _encerrar_sem_erro(sessao)
+                self._ultimos.clear()
+                motivo = f"falha ao assinar de novo no Tryd: {type(erro).__name__}: {erro}"
+                self._adiar_abertura(agora + ESPACAMENTO_APOS_FALHA_AO_ABRIR_S, motivo)
+                return []
+            valores.append(self._guardar_valor(ticker, campo, bruto_inicial, inicial=True))
+        self._sessao = sessao
+        self._pids_da_sessao = antes
+        self._abrir_em = None
+        self._avisos_vistos = 0
+        self._retomar_busca_em = None
+        self._ultimo_sinal = agora
+        self._marcar_conectado()
+        _log.info("sessão RTD aberta no Tryd (PID %s)", sorted(antes))
+        # o conectado vai antes dos valores: o app recomeça o quadro ao recebê-lo
+        return [self._status(None), *valores]
+
+    def _adiar_abertura(self, quando: float, motivo: str) -> None:
+        self._abrir_em = quando
+        self._motivo = motivo
+        _log.warning("%s", motivo)
+
+    def _largar_sessao(self) -> list[Mensagem]:
+        sessao, self._sessao = self._sessao, None
+        if sessao is not None:
+            _encerrar_sem_erro(sessao)
+        self._ultimos.clear()
+        self._abrir_em = None
+        self._estado = TRYD_INICIANDO
+        self._motivo = MOTIVO_TRYD_FECHADO
+        _log.warning("o Tryd fechou; sessão RTD largada")
+        return [self._status(self._motivo)]
 
     def _assinar(self, topicos: tuple[tuple[str, str], ...]) -> list[Mensagem]:
         try:
@@ -168,9 +271,12 @@ class Ponte:
         mensagens: list[Mensagem] = [
             self._ultimos[topico] for topico in dict.fromkeys(topicos) if topico in self._ultimos
         ]
+        sessao = self._sessao
+        if sessao is None:  # os novos conectam quando a sessão abrir
+            return mensagens
         for posicao, (id_, (ticker, campo)) in enumerate(novos):
             try:
-                bruto_inicial = self._sessao.conectar(id_, topico_rtd(ticker, campo))
+                bruto_inicial = sessao.conectar(id_, topico_rtd(ticker, campo))
             except Exception as erro:
                 # o que não conectou não fica registrado: o app pode pedir de novo
                 self._registro.remover(topico for _, topico in novos[posicao:])
@@ -185,14 +291,18 @@ class Ponte:
         mensagens: list[Mensagem] = []
         for topico in topicos:
             self._ultimos.pop(topico, None)
-        for id_ in self._registro.remover(topicos):
+        ids = self._registro.remover(topicos)
+        sessao = self._sessao
+        if sessao is None:
+            return mensagens
+        for id_ in ids:
             try:
-                self._sessao.desconectar(id_)
+                sessao.desconectar(id_)
             except Exception as erro:
                 mensagens.append(self._perdeu(erro))
         return mensagens
 
-    def _buscar_mudancas(self, avisos: int, agora: float) -> list[Mensagem]:
+    def _buscar_mudancas(self, sessao: SessaoRtd, avisos: int, agora: float) -> list[Mensagem]:
         """``RefreshData`` do aviso novo. O aviso só conta como atendido se der certo.
 
         Se falhar, tenta de novo sem esperar outro ``UpdateNotify``, mas só depois de
@@ -202,7 +312,7 @@ class Ponte:
         periódico.
         """
         try:
-            mudancas = self._sessao.atualizar()
+            mudancas = sessao.atualizar()
         except Exception as erro:
             self._retomar_busca_em = agora + ESPACAMENTO_APOS_FALHA_S
             ja_perdido = self._estado == TRYD_PERDIDO
@@ -218,9 +328,9 @@ class Ponte:
                 valores.append(self._guardar_valor(*topico, bruto))
         return valores
 
-    def _conferir_servidor(self) -> list[Mensagem]:
+    def _conferir_servidor(self, sessao: SessaoRtd) -> list[Mensagem]:
         try:
-            vivo = self._sessao.vivo()
+            vivo = sessao.vivo()
         except Exception as erro:
             return [self._perdeu(erro)]
         if vivo:
@@ -256,6 +366,22 @@ class Ponte:
         recebido = Valor(ticker, campo, tipo_valor, valor, self._agora_iso(), inicial)
         self._ultimos[(ticker, campo)] = recebido
         return recebido
+
+
+def _listar(processos: Callable[[], frozenset[int]]) -> frozenset[int] | None:
+    """Os PIDs, ou ``None`` se a listagem falhou: falha não pode passar por Tryd fechado."""
+    try:
+        return processos()
+    except Exception as erro:  # o laço é dono da sessão COM e não morre
+        _log.warning("não foi possível listar os processos do Tryd: %s", erro)
+        return None
+
+
+def _encerrar_sem_erro(sessao: SessaoRtd) -> None:
+    try:
+        sessao.encerrar()
+    except Exception as erro:
+        _log.warning("falha ao encerrar a sessão RTD: %s", erro)
 
 
 class ServidorTcp:

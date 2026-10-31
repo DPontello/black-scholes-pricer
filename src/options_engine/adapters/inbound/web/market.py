@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from datetime import date
 from typing import Annotated, Final
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -11,7 +12,6 @@ from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketState
 
 from options_engine.application.ports.inbound import (
-    DEFAULT_CHAIN_EXPIRIES,
     ChainView,
     MarketStatus,
     MarketViewUseCase,
@@ -80,6 +80,12 @@ class VencimentoOut(BaseModel):
     series: list[SerieOut]
 
 
+class DisponivelOut(BaseModel):
+    data: str
+    dias_uteis: int
+    semanal: bool
+
+
 class RejeitadaOut(BaseModel):
     ticker: str
     motivo: str
@@ -91,13 +97,14 @@ class CadeiaOut(BaseModel):
     fonte: str
     hora: str
     vencimentos: list[VencimentoOut]
+    disponiveis: list[DisponivelOut]
     rejeitadas: list[RejeitadaOut]
 
 
 class _PedidoCadeia(BaseModel):
     tipo: str
     ativo: str | None
-    vencimentos: int = Field(default=DEFAULT_CHAIN_EXPIRIES, ge=1, le=MAX_VENCIMENTOS)
+    vencimentos: list[date] | None = Field(default=None, min_length=1, max_length=MAX_VENCIMENTOS)
 
 
 def _status_out(status: MarketStatus) -> StatusOut:
@@ -184,6 +191,14 @@ def _cadeia_out(view: ChainView) -> CadeiaOut:
             )
             for block in view.expiries
         ],
+        disponiveis=[
+            DisponivelOut(
+                data=option.expiry.isoformat(),
+                dias_uteis=option.business_days,
+                semanal=option.weekly,
+            )
+            for option in view.available
+        ],
         rejeitadas=[RejeitadaOut(ticker=r.symbol, motivo=r.reason) for r in view.rejected],
     )
 
@@ -207,7 +222,9 @@ def router_mercado(
     @router.get("/mercado/cadeia/{ativo}")
     def cadeia(
         ativo: str,
-        vencimentos: Annotated[int, Query(ge=1, le=MAX_VENCIMENTOS)] = DEFAULT_CHAIN_EXPIRIES,
+        vencimentos: Annotated[
+            list[date] | None, Query(min_length=1, max_length=MAX_VENCIMENTOS)
+        ] = None,
     ) -> CadeiaOut:
         return _cadeia_out(market.chain(normalize_ticker(ativo), vencimentos))
 
@@ -231,8 +248,8 @@ class _SessaoAoVivo:
         self._market = market
         self._profiles = profiles
         self._interval_s = interval_s
-        self._cadeia: tuple[str, int] | None = None  # (ativo, vencimentos)
-        self._seguindo: tuple[tuple[str, ...], str | None] | None = None
+        self._cadeia: tuple[str, frozenset[date] | None] | None = None  # (ativo, vencimentos)
+        self._seguindo: tuple[tuple[str, ...], str | None, frozenset[date] | None] | None = None
         self._enviado: dict[str, object] = {}
 
     async def rodar(self) -> None:
@@ -279,7 +296,8 @@ class _SessaoAoVivo:
             ativo = None if pedido.ativo is None else normalize_ticker(pedido.ativo)
         except (ValueError, ValidationError, DomainError) as erro:
             return [{"tipo": "erro", "erro": "RequisicaoInvalida", "mensagem": _texto(erro)}]
-        self._cadeia = None if ativo is None else (ativo, pedido.vencimentos)
+        vencimentos = None if pedido.vencimentos is None else frozenset(pedido.vencimentos)
+        self._cadeia = None if ativo is None else (ativo, vencimentos)
         self._enviado.pop("cadeia", None)  # cadeia nova (ou reaberta) sai inteira
         return self._mudancas()
 
@@ -288,7 +306,8 @@ class _SessaoAoVivo:
             lista, motivo = self._profiles.active().watchlist, None
         except NoActiveProfileError as erro:
             lista, motivo = (), str(erro)
-        seguir = (tuple(lista), None if self._cadeia is None else self._cadeia[0])
+        ativo, vencimentos = (None, None) if self._cadeia is None else self._cadeia
+        seguir = (tuple(lista), ativo, vencimentos)
         if seguir != self._seguindo:
             self._market.follow(*seguir)
             self._seguindo = seguir
@@ -306,7 +325,9 @@ class _SessaoAoVivo:
         self._enviado.update(atual)
         return mudou
 
-    def _mensagem_da_cadeia(self, ativo: str, vencimentos: int) -> dict[str, object]:
+    def _mensagem_da_cadeia(
+        self, ativo: str, vencimentos: frozenset[date] | None
+    ) -> dict[str, object]:
         try:
             view = self._market.chain(ativo, vencimentos)
         except DomainError as erro:

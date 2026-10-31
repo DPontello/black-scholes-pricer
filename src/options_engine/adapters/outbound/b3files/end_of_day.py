@@ -19,7 +19,7 @@ perfil na hora da consulta.
 """
 
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from datetime import date, datetime, time, tzinfo
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
@@ -76,7 +76,12 @@ class EndOfDayMarket:
 
     # --- LiveFeedPort ---------------------------------------------------------------------------
 
-    def watch(self, underlyings: Sequence[str], chain_symbols: Sequence[str]) -> None:
+    def watch(
+        self,
+        underlyings: Sequence[str],
+        chain_symbols: Sequence[str],
+        chain_expiries: Collection[date] | None = None,
+    ) -> None:
         """Sem fonte ao vivo para assinar."""
 
     def health(self) -> DataSource:

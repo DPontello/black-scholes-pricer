@@ -10,8 +10,8 @@ importa em qualquer sistema.
 |---|---|
 | `protocolo.py` | mensagens (`assinar`, `cancelar`, `valor`, `status`, `ping`/`pong`, `encerrar`), `PROGID`, `CLSID`, porta/limite/campos padrão |
 | `assinaturas.py` | ids dos tópicos assinados (limite de tópicos) |
-| `servidor.py` | `Ponte` (estado, cache do último valor, heartbeat) e `ServidorTcp` |
-| `rtd.py` | `SessaoRtdCom` (cliente RTD via COM), `diagnostico`, `autoteste` |
+| `servidor.py` | `Ponte` (estado, cache do último valor, heartbeat, sessão que segue o processo do Tryd) e `ServidorTcp` |
+| `rtd.py` | `SessaoRtdCom` (cliente RTD via COM), `processos_tryd`, `diagnostico`, `autoteste` |
 | `rtd_shim.idl` | `IRtdServer`/`IRTDUpdateEvent` com os IIDs e DISPIDs do Excel, para o Wine |
 
 A ponte **não interpreta** o valor que o Tryd entrega: repassa com o tipo de origem
@@ -29,9 +29,11 @@ python -m options_ponte autoteste
 python -m options_ponte espiar --porta 8766 --ativos PETR4,VALE3 --segundos 10 [--campos ULT,OCP,OVD]
 ```
 
-- `servir`: sobe a ponte. Pede o servidor RTD ao COM (o Tryd precisa estar **aberto e logado**,
-  com o RTD ativado: *Arquivo > Ativar DDE e RTD*) e escuta em `127.0.0.1`. Para encerrar, envie
-  a mensagem `encerrar` (ver abaixo) ou use Ctrl+C.
+- `servir`: sobe a ponte e escuta em `127.0.0.1`. Só pede o servidor RTD ao COM com um `tryd.exe`
+  rodando (o Tryd **aberto e logado**, com o RTD ativado: *Arquivo > Ativar DDE e RTD*): com o Tryd
+  fechado, o COM o abriria. Tryd aberto depois da ponte é conectado 20 s depois; Tryd fechado larga
+  a sessão, e a ponte espera o usuário abri-lo de novo. Para encerrar, envie a mensagem `encerrar`
+  (ver abaixo) ou use Ctrl+C.
 - `diagnostico`: só leitura. Mostra como a classe é achada (ProgID ou CLSID), o `LocalServer32`
   do Tryd e sua arquitetura, qual type library foi usada e se o Tryd está rodando.
 - `autoteste`: cliente RTD contra um servidor RTD **falso** (no mesmo processo e noutro), sem

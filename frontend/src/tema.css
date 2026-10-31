@@ -301,6 +301,29 @@ button.link {
   background: var(--fundo);
 }
 
+.vencimentos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.vencimentos button {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.vencimentos button.semanal {
+  color: var(--texto-secundario);
+}
+
+.vencimentos button[aria-pressed="true"] {
+  color: var(--texto);
+  border-color: var(--compra);
+  background: var(--fundo);
+}
+
 .tabela-cadeia th.lado-call,
 .tabela-cadeia th.lado-put {
   text-align: center;

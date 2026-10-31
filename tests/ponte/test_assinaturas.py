@@ -80,3 +80,10 @@ def test_id_de_topico_removido_nao_e_reaproveitado() -> None:
 
 def test_topico_de_id_desconhecido_e_none() -> None:
     assert RegistroDeTopicos(limite=2).topico(99) is None
+
+
+def test_assinados_lista_os_que_ficaram_com_os_ids_na_ordem_de_entrada() -> None:
+    registro = RegistroDeTopicos(limite=10)
+    registro.adicionar([("PETR4", "ULT"), ("PETR4", "OCP"), ("VALE3", "ULT")])
+    registro.remover([("PETR4", "OCP")])
+    assert registro.assinados() == ((1, ("PETR4", "ULT")), (3, ("VALE3", "ULT")))

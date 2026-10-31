@@ -318,3 +318,43 @@ O autor baixou à mão o anual de 2026 (`COTAHIST_A2026.ZIP`, 89 MB; 823 MB desc
   - A primeira consulta depois da importação leva 22 s (monta o pregão a partir do anual); as seguintes vêm do cache.
 - Note (decisão do autor): PETR4, VALE3, BOVA11 e SMAL11 têm vencimentos semanais (30/10, 06/11, 13/11) antes do mensal de 19/11, que concentra as séries (PETR: 43, 35, 24 e 265). Com `VENCIMENTOS_PADRAO = 2`, a cadeia ao vivo mostra só as duas semanais e esconde o mensal.
 - Os strikes de PETR em 28/10 já vêm ajustados no `PREEXE` (PETRK526 com K = 51,41). Falta a conferência com o `PEX` do Tryd, no pregão: às 2h o Tryd não manda nem o `PEX`. Sugestão: PETRK526=51,41, JHSFX960=9,43 e uma de VALE3.
+
+## 2026-10-31: decisões do autor da HANDOFF §6 (branch fix/decisoes-semana-1)
+
+Respostas do autor em enquete (Windows 11):
+
+- Ruling (vencimentos): a cadeia passa a ter **escolha de vencimentos na tela**. O padrão é o vencimento mais próximo e o próximo mensal, e o resto se marca e desmarca. O feed assina só as séries dos escolhidos, e a escolha volta ao padrão quando o ativo muda. Se errado: o padrão esconde algo que o autor queria ver de cara, o que se resolve com um clique.
+  - Semanal × mensal pelo ticker: a série semanal termina em `W` + semana do mês (`PETRK380W1`, `BOVAJ137W5`), e a mensal não. Conferido no Cadastro real de 28/10: em PETR, VALE e BOVA cada vencimento é todo semanal ou todo mensal. Fica em `domain/model/expiries.py`.
+  - A lista de vencimentos sai do Cadastro no ao vivo (`OptionChain.listed_expiries`) e das séries do pregão no fim de dia.
+  - API: `vencimentos` vira lista de datas (REST: `?vencimentos=2026-11-19&vencimentos=…`; WebSocket: `"vencimentos": ["2026-11-19"]` ou `null` para o padrão), com no máximo 12. A cadeia ganha `disponiveis` (`data`, `dias_uteis`, `semanal`). Escolha sem nenhum vencimento listado volta ao padrão.
+  - Saem `VENCIMENTOS_PADRAO` e `DEFAULT_CHAIN_EXPIRIES`.
+- Bug achado no teste ponta a ponta, FIXED: com todos os vencimentos listados, os de 2028 estouravam a cobertura do calendário de feriados (até 31/12/2027) e a cadeia inteira falhava. Vencimento que o calendário não cobre fica fora da escolha. Quando a B3 publicar os feriados de 2028, basta estender o CSV para que esses vencimentos (LEAPS) voltem.
+- Ruling (fora do pregão): **cai para o fim de dia**. Isso acontece quando todo ativo assinado já carregou e nenhum tem `ULT`, `OCP` ou `OVD`; basta um preço ao vivo para voltar ao ao vivo. A regra fica em `TrydMarketFeed.has_no_live_prices` e é aplicada pelo `FallbackMarket` na saúde e na escolha da fonte. A assinatura segue no Tryd. Se errado: um único ativo da lista sem negócio no pregão leva a tela ao fim de dia (só acontece se ele for o único).
+- Ponta a ponta (APPDATA temporário, `--sem-ponte`, arquivos de 28/10 importados da pasta Downloads):
+  - PETR4 abre com 30/10 (semanal, 43 séries) e 19/11 (mensal, 217), que antes ficava escondido; há 16 vencimentos para escolher.
+  - Com a escolha 06/11 + 18/12 vêm 35 e 157 séries.
+  - BOVA11 abre com 30/10 e 19/11, com 19 vencimentos para escolher.
+  - Na tela, marcar 18/12 cria e abre a aba dele.
+- Ruling (Tryd fechado com o app aberto): **só reconectar**, e o app nunca abre o Tryd. A `Ponte` passa a ser dona da sessão RTD e a acompanha pelo processo.
+  - Só cria a sessão com um `tryd.exe` rodando. A lista de processos vem de `rtd.processos_tryd` (Toolhelp32 via ctypes, Windows e Wine; o `LocalServer32` do registro aponta para `tryd.exe`).
+  - Confere os processos a cada 2 s e larga a sessão e o cache quando somem os `tryd.exe` de quando ela abriu. Enquanto não há sessão, o status é "iniciando" com o motivo "Tryd fechado: aguardando o usuário abrir o Tryd".
+  - Se errado: até 2 s de atraso para perceber o Tryd fechado.
+- Ruling (abertura):
+  - Tryd que já rodava quando a ponte subiu: a ponte abre a sessão na hora.
+  - Tryd aberto depois: espera 20 s, porque antes de o servidor RTD estar registrado o COM lançaria outro `tryd.exe`.
+  - Falha ao abrir ou ao reassinar: nova tentativa em 10 s.
+  - PID novo de `tryd.exe` logo depois do `CoCreateInstance`: a sessão fecha na hora e só tenta de novo em 60 s, porque cada tentativa assim mostra uma janela do Tryd.
+  - Se errado: o app volta ao vivo uns segundos depois do necessário.
+- Ruling (reabertura):
+  - A ponte reassina o registro com os mesmos ids e manda o `Status` conectado ANTES dos valores iniciais.
+  - O cliente recomeça o quadro (`forget` + `mark_subscribed`) na passagem iniciando → conectado. Na passagem perdido → conectado ele NÃO recomeça: a sessão é a mesma e a ponte não reenvia o que já mandou, então FEC, DAT e o ULT de série parada sumiriam.
+  - Ficam superados o Ruling da T9 "a ponte não reconecta ao Tryd sozinha" e a nota da T11 sobre a ponte "perdida".
+- Ruling (subida): `servir` não cria mais a sessão ao subir. Carrega a type library antes, para que a falta do pywin32 apareça na hora. Falha ao listar processos não conta como Tryd fechado. O `diagnostico` lista os PIDs do `tryd.exe` sem `tasklist`.
+- Note (a conferir ao vivo, Task 18):
+  - se o Tryd registra o servidor RTD antes do login (uma tela de login de mais de 20 s faria o COM lançar outro Tryd);
+  - se o Tryd lançado pelo COM fecha no `encerrar` com a ponte ainda de pé;
+  - se o Tryd usa um `tryd.exe` só;
+  - se o Toolhelp32 enxerga o `tryd.exe` no Wine.
+- Consequência: com o Tryd fechado ao abrir o app, a tela fica "Atrasado", sem preço, por 30 s antes de cair para o fim de dia. Antes o COM abria o Tryd sozinho.
+- Gates: 4643 testes (cobertura 97,4%), mypy, ruff e import-linter; frontend com `tsc` e 34 testes no Vitest.
+- Achado (fora do escopo, a decidir): a API aceita criar perfil com pasta vazia, e aí o `perfil.json` vai para a pasta de onde o app foi aberto.

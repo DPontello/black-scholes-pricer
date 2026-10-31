@@ -106,16 +106,19 @@ def _erro_de_porta(porta: int, erro: OSError) -> int:
 
 
 def servir(porta: int, limite: int) -> int:
-    """Sobe a ponte: sessão RTD (esta thread, STA) + servidor TCP local. Roda até ``Encerrar``."""
+    """Sobe a ponte: servidor TCP local e, enquanto o Tryd estiver aberto, a sessão RTD (nesta
+    thread, STA). Roda até ``Encerrar``."""
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
-    try:  # antes de assinar no Tryd: porta ocupada (outra ponte) não deve abrir uma 2ª sessão RTD
+    try:  # porta ocupada (outra ponte) falha antes de tocar no pywin32
         socket.create_server(("127.0.0.1", porta)).close()
     except OSError as erro:
         return _erro_de_porta(porta, erro)
-    sessao = rtd.SessaoRtdCom()
-    ponte = Ponte(sessao, time.monotonic, _agora_iso, limite)
+    rtd.carregar_tipos()  # sem pywin32 ou type library, falha já: esperar o Tryd não resolve
+    ponte = Ponte(
+        rtd.SessaoRtdCom, time.monotonic, _agora_iso, limite, processos_tryd=rtd.processos_tryd
+    )
     try:
         servidor = ServidorTcp(ponte, porta, rtd.bombear)
     except OSError as erro:  # alguém ocupou a porta entre a checagem e agora

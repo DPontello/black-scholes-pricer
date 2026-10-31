@@ -1,6 +1,6 @@
 """API de mercado e WebSocket ao vivo (Task 13) — serviço de mercado falso, perfis em memória."""
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
@@ -11,9 +11,9 @@ from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.inbound.web.market import router_mercado
 from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.application.ports.inbound import (
-    DEFAULT_CHAIN_EXPIRIES,
     ChainView,
     ExpiryBlock,
+    ExpiryOption,
     MarketStatus,
     SeriesRow,
     WatchRow,
@@ -27,7 +27,9 @@ from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 from tests.application._fakes import FakeProfileRepository
 
 AGORA = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)
+SEMANAL = date(2026, 11, 6)
 NOVEMBRO = date(2026, 11, 19)
+DEZEMBRO = date(2026, 12, 18)
 
 CHAVES_COTACAO = {
     "ativo",
@@ -71,7 +73,7 @@ def _cotacao(ultimo: float = 30.6) -> UnderlyingQuote:
     )
 
 
-def _cadeia(vencimentos: int) -> ChainView:
+def _cadeia(vencimentos: Collection[date] | None) -> ChainView:
     linha = SeriesRow(
         symbol="PETRK300",
         option_type=OptionType.CALL,
@@ -90,8 +92,13 @@ def _cadeia(vencimentos: int) -> ChainView:
         spot=30.6,
         source=DataSource.AO_VIVO,
         timestamp=AGORA,
-        expiries=tuple(ExpiryBlock(NOVEMBRO, 16, (linha,)) for _ in range(vencimentos)),
+        expiries=tuple(ExpiryBlock(d, 16, (linha,)) for d in sorted(vencimentos or {NOVEMBRO})),
         rejected=(RejectedSeries("PETRK999", "sem estilo de exercício no cadastro"),),
+        available=(
+            ExpiryOption(SEMANAL, 6, weekly=True),
+            ExpiryOption(NOVEMBRO, 16, weekly=False),
+            ExpiryOption(DEZEMBRO, 36, weekly=False),
+        ),
     )
 
 
@@ -100,11 +107,19 @@ class _MercadoFalso:
     """``MarketViewUseCase`` em memória; ``ultimo`` muda a cotação de PETR4 entre consultas."""
 
     ultimo: float = 30.6
-    seguindo: list[tuple[tuple[str, ...], str | None]] = field(default_factory=list)
-    cadeias: list[tuple[str, int]] = field(default_factory=list)
+    seguindo: list[tuple[tuple[str, ...], str | None, frozenset[date] | None]] = field(
+        default_factory=list
+    )
+    cadeias: list[tuple[str, frozenset[date] | None]] = field(default_factory=list)
 
-    def follow(self, watchlist: Sequence[str], chain_symbol: str | None) -> None:
-        self.seguindo.append((tuple(watchlist), chain_symbol))
+    def follow(
+        self,
+        watchlist: Sequence[str],
+        chain_symbol: str | None,
+        expiries: Collection[date] | None = None,
+    ) -> None:
+        escolha = None if expiries is None else frozenset(expiries)
+        self.seguindo.append((tuple(watchlist), chain_symbol, escolha))
 
     def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]:
         return tuple(
@@ -114,8 +129,8 @@ class _MercadoFalso:
             for s in watchlist
         )
 
-    def chain(self, symbol: str, expiries: int = DEFAULT_CHAIN_EXPIRIES) -> ChainView:
-        self.cadeias.append((symbol, expiries))
+    def chain(self, symbol: str, expiries: Collection[date] | None = None) -> ChainView:
+        self.cadeias.append((symbol, None if expiries is None else frozenset(expiries)))
         if symbol == "VALE3":
             raise UnderlyingUnavailableError("VALE3: aguardando dados do Tryd")
         if symbol != "PETR4":
@@ -174,10 +189,11 @@ def test_cotacoes_do_perfil_com_numeros_crus_fonte_e_motivo() -> None:
 
 def test_cadeia_com_vencimentos_series_e_rejeitadas() -> None:
     mercado = _MercadoFalso()
-    corpo = _cliente(mercado).get("/api/mercado/cadeia/petr4?vencimentos=3").json()
-    assert mercado.cadeias == [("PETR4", 3)]  # ticker normalizado
+    url = "/api/mercado/cadeia/petr4?vencimentos=2026-12-18&vencimentos=2026-11-19"
+    corpo = _cliente(mercado).get(url).json()
+    assert mercado.cadeias == [("PETR4", frozenset({NOVEMBRO, DEZEMBRO}))]  # ticker normalizado
     assert (corpo["ativo"], corpo["spot"], corpo["fonte"]) == ("PETR4", 30.6, "ao_vivo")
-    assert len(corpo["vencimentos"]) == 3
+    assert len(corpo["vencimentos"]) == 2
     vencimento = corpo["vencimentos"][0]
     assert (vencimento["data"], vencimento["dias_uteis"]) == ("2026-11-19", 16)
     (serie,) = vencimento["series"]
@@ -191,6 +207,17 @@ def test_cadeia_com_vencimentos_series_e_rejeitadas() -> None:
     assert corpo["rejeitadas"] == [
         {"ticker": "PETRK999", "motivo": "sem estilo de exercício no cadastro"}
     ]
+    assert corpo["disponiveis"] == [
+        {"data": "2026-11-06", "dias_uteis": 6, "semanal": True},
+        {"data": "2026-11-19", "dias_uteis": 16, "semanal": False},
+        {"data": "2026-12-18", "dias_uteis": 36, "semanal": False},
+    ]
+
+
+def test_cadeia_sem_vencimentos_pede_a_escolha_padrao() -> None:
+    mercado = _MercadoFalso()
+    assert _cliente(mercado).get("/api/mercado/cadeia/PETR4").status_code == 200
+    assert mercado.cadeias == [("PETR4", None)]
 
 
 def test_cadeia_de_ativo_desconhecido_e_404_e_indisponivel_e_422() -> None:
@@ -201,8 +228,15 @@ def test_cadeia_de_ativo_desconhecido_e_404_e_indisponivel_e_422() -> None:
     assert indisponivel.json()["mensagem"] == "VALE3: aguardando dados do Tryd"
 
 
-def test_cadeia_com_vencimentos_fora_da_faixa_e_requisicao_invalida() -> None:
-    resposta = _cliente(_MercadoFalso()).get("/api/mercado/cadeia/PETR4?vencimentos=0")
+@pytest.mark.parametrize(
+    "consulta",
+    [
+        "vencimentos=amanha",
+        "&".join(f"vencimentos=2027-{m:02d}-15" for m in range(1, 13)) + "&vencimentos=2028-01-21",
+    ],
+)
+def test_cadeia_com_vencimentos_invalidos_e_requisicao_invalida(consulta: str) -> None:
+    resposta = _cliente(_MercadoFalso()).get(f"/api/mercado/cadeia/PETR4?{consulta}")
     assert (resposta.status_code, resposta.json()["erro"]) == (422, "RequisicaoInvalida")
 
 
@@ -214,7 +248,7 @@ def test_ao_conectar_manda_status_e_depois_cotacoes_e_assina_a_lista() -> None:
     assert status["tipo"] == "status" and status["fonte"] == "ao_vivo"
     assert cotacoes["tipo"] == "cotacoes" and cotacoes["motivo"] is None
     assert [linha["ativo"] for linha in cotacoes["dados"]] == ["PETR4", "VALE3"]
-    assert mercado.seguindo[0] == (("PETR4", "VALE3"), None)
+    assert mercado.seguindo[0] == (("PETR4", "VALE3"), None, None)
 
 
 def test_pedido_de_cadeia_manda_a_cadeia_e_assina_o_ativo() -> None:
@@ -222,7 +256,9 @@ def test_pedido_de_cadeia_manda_a_cadeia_e_assina_o_ativo() -> None:
     with _cliente(mercado).websocket_connect("/api/ao-vivo") as ws:
         ws.receive_json()
         ws.receive_json()
-        ws.send_json({"tipo": "cadeia", "ativo": "PETR4", "vencimentos": 2})
+        ws.send_json(
+            {"tipo": "cadeia", "ativo": "PETR4", "vencimentos": ["2026-11-19", "2026-12-18"]}
+        )
         cadeia = ws.receive_json()
         ws.send_json({"tipo": "cadeia", "ativo": None})
         ws.send_json({"tipo": "cadeia", "ativo": "PETR4"})
@@ -230,8 +266,9 @@ def test_pedido_de_cadeia_manda_a_cadeia_e_assina_o_ativo() -> None:
     assert cadeia["tipo"] == "cadeia" and cadeia["dados"]["ativo"] == "PETR4"
     assert len(cadeia["dados"]["vencimentos"]) == 2
     assert reaberta["tipo"] == "cadeia"  # reaberta sai inteira, mesmo sem mudança
-    assert (("PETR4", "VALE3"), "PETR4") in mercado.seguindo
-    assert (("PETR4", "VALE3"), None) in mercado.seguindo[1:]
+    assert (("PETR4", "VALE3"), "PETR4", frozenset({NOVEMBRO, DEZEMBRO})) in mercado.seguindo
+    assert (("PETR4", "VALE3"), None, None) in mercado.seguindo[1:]
+    assert mercado.seguindo[-1] == (("PETR4", "VALE3"), "PETR4", None)
 
 
 def test_so_reenvia_o_que_mudou() -> None:
@@ -262,7 +299,8 @@ def test_cadeia_que_nao_sai_manda_o_motivo_no_lugar() -> None:
 @pytest.mark.parametrize(
     "mensagem",
     [
-        '{"tipo": "cadeia", "ativo": "PETR4", "vencimentos": 0}',
+        '{"tipo": "cadeia", "ativo": "PETR4", "vencimentos": []}',
+        '{"tipo": "cadeia", "ativo": "PETR4", "vencimentos": ["19/11/2026"]}',
         '{"tipo": "outro", "ativo": null}',
         "{",
     ],

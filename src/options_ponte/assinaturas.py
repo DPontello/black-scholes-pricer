@@ -59,3 +59,7 @@ class RegistroDeTopicos:
 
     def topico(self, id_: int) -> tuple[str, str] | None:
         return self._topicos.get(id_)
+
+    def assinados(self) -> tuple[tuple[int, tuple[str, str]], ...]:
+        """``(id, tópico)`` de cada assinado, na ordem em que entraram."""
+        return tuple(self._topicos.items())
