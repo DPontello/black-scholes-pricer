@@ -26,3 +26,17 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - Ruling (strikes sugeridos): o passo 0 é o strike mais perto do spot; em empate, o menor. Venda coberta e put coberta saem um strike fora do dinheiro; as travas de renda, um e dois strikes fora; as de direção, no dinheiro e um fora; strangle e collar, um de cada lado; iron condor, um e dois de cada lado. É só sugestão: o usuário troca o strike na cadeia. Se errado, muda a tabela `TEMPLATES`, sem mexer em código.
 - Ruling: `Template.build(legs, stock)` confere se as pernas têm a forma do modelo (tipo e lado por strike, proporção e ação) antes de chamar a fábrica. Sem isso, uma trava com os lados trocados passaria pela fábrica genérica com o nome errado na tela.
 - Gates: 4719 testes (cobertura 97,5%; `factories` e `templates` em 100%), mypy, ruff e import-linter.
+
+## 2026-11-01: Task 4 — avaliação "hoje" com vol por perna, gregas e grade
+
+- `domain/simulation/valuation.py`:
+  - `today_value` (valor bruto) e `today_curve` (P&L com o caixa da montagem);
+  - `structure_greeks`;
+  - `scenario_matrix`, com os choques padrão de spot (-20% a +20%) e de vol (-10 a +10 pontos);
+  - `american_call_approximated`.
+
+  Os tipos da convenção (`TimeToExpiry`, `RiskFreeRate` e uma `Volatility` por perna) são conferidos na mesma base, como no motor.
+- Ruling: módulo à parte, sem mexer no `engine`. O `engine` segue europeu-only e de vol única, porque a CLI e o painel usam. Aqui a call americana entra como europeia, e quem mostrar o número tem de mostrar `american_call_approximated` junto (ADR-0002). Put americana levanta `UnsupportedExerciseStyleError`; a tela mostra o vencimento sem a curva de hoje.
+- Ruling: na grade, a célula em que o choque leva a vol de alguma perna a <= 0 sai `None` (a tela mostra "—"), em vez de um número com vol inventada. A grade é só de hoje: no vencimento a vol não muda o resultado.
+- Regressão (hypothesis): com a mesma vol em todas as pernas, opções europeias e ação, valor, curva e as cinco gregas batem com `mark_to_model_value`, `pnl_curve` e `portfolio_greeks`.
+- Gates: 4728 testes (cobertura 97,5%; `valuation` em 100%), mypy, ruff e import-linter. Nesta rodada a suíte levou 7min53 em vez de ~2min30 por carga da máquina; os testes novos levam menos de 0,3 s cada.
