@@ -5,7 +5,7 @@ import pytest
 from options_engine.domain.income.metrics import covered_call_metrics
 from options_engine.domain.income.net_result import net_result_at_expiry
 from options_engine.domain.income.profile import PositionLeg, result_at_expiry
-from options_engine.domain.model.enums import OptionType, Side
+from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side
 from options_engine.domain.model.errors import MissingPremiumError
 from options_engine.domain.model.strategy import Strategy
 from options_engine.domain.simulation import pnl
@@ -109,3 +109,18 @@ def test_sem_premio_o_liquido_e_recusado() -> None:
     sem = Strategy.create("c", [make_leg(premium=None)])
     with pytest.raises(MissingPremiumError):
         net_result_at_expiry(sem, 30.0, make_cost_schedule())
+
+
+def test_call_americana_tambem_tem_resultado_liquido() -> None:
+    call = make_leg(
+        terms=make_terms(strike=32.0, exercise_style=ExerciseStyle.AMERICAN),
+        side=Side.SELL,
+        quantity=100,
+        premium=1.0,
+    )
+    americana = Strategy.create("venda coberta", [call], [make_stock_leg(price=30.0)])
+    tabela = reference_cost_schedule()
+    _perto(
+        net_result_at_expiry(americana, 40.0, tabela),
+        net_result_at_expiry(_coberta(), 40.0, tabela),
+    )

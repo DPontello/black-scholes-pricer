@@ -2,9 +2,11 @@
 
 Mesmo modelo do ``income/profile``, generalizado para quantidade por perna e ação comprada ou
 vendida: bruto - montagem - exercício no cenário - IR estimado, com o IR limitado ao resultado do
-prêmio (a valorização da ação fica fora da base).
+prêmio (a valorização da ação fica fora da base). Aceita opção americana supondo que ela vai até
+o vencimento (``expiry_pnl``).
 """
 
+from dataclasses import dataclass
 from math import fsum
 
 from options_engine.domain.income.costs import (
@@ -16,9 +18,20 @@ from options_engine.domain.income.costs import (
 )
 from options_engine.domain.kernel.payoff import intrinsic
 from options_engine.domain.model.strategy import Strategy
-from options_engine.domain.simulation import pnl
+from options_engine.domain.simulation.valuation import expiry_pnl
 
-__all__ = ["net_result_at_expiry"]
+__all__ = ["NetResult", "net_result_at_expiry", "net_result_breakdown"]
+
+
+@dataclass(frozen=True, slots=True)
+class NetResult:
+    """Em moeda, no cenário: ``net`` = ``gross`` - ``setup`` - ``exercise`` - ``income_tax``."""
+
+    gross: float
+    setup: float
+    exercise: float
+    income_tax: float
+    net: float
 
 
 def net_result_at_expiry(
@@ -29,7 +42,17 @@ def net_result_at_expiry(
     stock_already_held: bool = False,
 ) -> float:
     """``stock_already_held``: a ação veio da carteira e não paga a ordem de compra."""
-    bruto = pnl(strategy, spot)  # recusa prêmio ou preço ausente: o `or 0.0` abaixo só tipa
+    return net_result_breakdown(strategy, spot, schedule, stock_already_held=stock_already_held).net
+
+
+def net_result_breakdown(
+    strategy: Strategy,
+    spot: float,
+    schedule: CostSchedule,
+    *,
+    stock_already_held: bool = False,
+) -> NetResult:
+    bruto = expiry_pnl(strategy, spot)  # recusa prêmio ou preço ausente: o `or 0.0` abaixo só tipa
     pernas = [(leg.premium or 0.0, leg.quantity) for leg in strategy.legs]
     acoes = (
         []
@@ -63,4 +86,10 @@ def net_result_at_expiry(
     imposto = estimate_income_tax(
         schedule, pre_tax_result=antes_do_ir, premium_result=resultado_do_premio
     )
-    return fsum((antes_do_ir, -imposto))
+    return NetResult(
+        gross=bruto,
+        setup=montagem.total,
+        exercise=exercicio.total,
+        income_tax=imposto,
+        net=fsum((antes_do_ir, -imposto)),
+    )

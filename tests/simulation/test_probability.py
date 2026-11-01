@@ -12,7 +12,7 @@ from options_engine.domain.model.conventions import (
     TimeToExpiry,
     Volatility,
 )
-from options_engine.domain.model.enums import OptionType, Side
+from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side
 from options_engine.domain.model.errors import MixedAnnualizationBaseError
 from options_engine.domain.model.factories import iron_condor
 from options_engine.domain.model.strategy import Strategy
@@ -106,3 +106,13 @@ def test_put_comprada_e_a_chance_de_ficar_abaixo_do_breakeven() -> None:
     )
     estrutura = Strategy.create("compra de put", [put])
     assert _probabilidade(estrutura) == pytest.approx(1.0 - _acima(28.2), abs=1e-12)
+
+
+def test_call_americana_tambem_tem_probabilidade() -> None:
+    call = make_leg(
+        terms=make_terms(strike=31.0, exercise_style=ExerciseStyle.AMERICAN),
+        quantity=100,
+        premium=1.2,
+    )
+    estrutura = Strategy.create("compra de call", [call])
+    assert _probabilidade(estrutura) == pytest.approx(_acima(32.2), abs=1e-12)

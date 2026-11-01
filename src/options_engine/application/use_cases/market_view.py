@@ -2,7 +2,6 @@
 
 from collections.abc import Callable, Collection, Sequence
 from datetime import date, tzinfo
-from typing import Final
 
 from options_engine.application.ports.inbound import (
     ChainView,
@@ -17,22 +16,17 @@ from options_engine.application.ports.outbound import (
     MarketPort,
     TradingCalendar,
 )
+from options_engine.application.use_cases._freshness import least_fresh
 from options_engine.application.use_cases._time import resolve_time_to_expiry
 from options_engine.domain.model.chain import OptionQuote
 from options_engine.domain.model.conventions import DayCountConvention
 from options_engine.domain.model.enums import OptionType
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.expiries import ListedExpiry, default_expiries, list_expiries
-from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
+from options_engine.domain.model.quotes import UnderlyingQuote
 from options_engine.domain.pricing.smile import SeriesMarket, VolSmile, build_smile, series_risk
 
 __all__ = ["MarketViewService"]
-
-_FRESHNESS: Final = {DataSource.AO_VIVO: 2, DataSource.ATRASADO: 1, DataSource.FIM_DE_DIA: 0}
-
-
-def _least_fresh(first: DataSource, second: DataSource) -> DataSource:
-    return first if _FRESHNESS[first] <= _FRESHNESS[second] else second
 
 
 def _order(row: SeriesRow) -> tuple[float, bool, str]:
@@ -91,7 +85,7 @@ class MarketViewService:
         # saúde menos fresca, para um dado parado nunca sair como ao vivo.
         before = self._market.health()
         chain = self._market.get_chain(symbol)
-        source = _least_fresh(before, self._market.health())
+        source = least_fresh(before, self._market.health())
 
         snapshot = chain.underlying
         # Data da cotação, como no ranking: preço e tau do mesmo instante.

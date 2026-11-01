@@ -50,3 +50,19 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - `income/costs.py`: `estimate_order_costs` (prêmio ou preço e quantidade por perna; uma ordem por perna) e `estimate_exercise_costs_by_leg`. As funções antigas passam a chamar essas e dão o mesmo número, bit a bit: os testes antigos seguem verdes, e um teste novo compara as duas.
 - `income/net_result.py`: `net_result_at_expiry(strategy, spot, schedule, *, stock_already_held=False)` = bruto - montagem - exercício no cenário - IR estimado, com o IR limitado ao resultado do prêmio (ADR-0005). Bate com `covered_call_metrics` nos extremos e com `income/profile.result_at_expiry` numa trava. Ação vinda da carteira não paga a ordem de compra.
 - Gates: 4752 testes (cobertura 97,5%; `costs`, `net_result` e `probability` em 100%), mypy, ruff e import-linter.
+
+## 2026-11-01: Task 6 — serviço do montador
+
+- `StrategyBuilderService.analyze(BuilderRequest) -> BuilderAnalysis` e `templates()`. O contrato (`BuilderLegInput`, `BuilderStockInput`, `BuilderRequest`, `BuilderAnalysis`, `ExpiryPoint`, `ExpiryResult`, `TodayResult` e `LegPriceOrigin`) fica nos ports de entrada. `StockOrigin` (`compra`/`carteira`) entra nos enums do domínio, para a carteira da Task 9 reaproveitar.
+- Preço da perna, nesta ordem: o digitado (`DIGITADO`); o lado executável do book (`EXECUTAVEL`); o último com negócio (`INDICATIVO`); o teórico pelo smile (`TEORICO`). O teórico só existe com o strike dentro do smile. Sem nenhum deles, a perna fica sem preço, com aviso, e o resultado sai parcial: só o payoff bruto, sem vencimento líquido e sem hoje.
+- Ação comprada junto entra pelo ask, ou pelo bid se for vendida. Sem book do ativo, entra pelo fechamento, rotulada `INDICATIVO`. Ação da carteira exige o preço médio digitado até a Task 12, e não paga a ordem de compra.
+- Bug evitado (Task 5), FIXED aqui: o motor recusa opção americana até no vencimento, e as calls de ações da B3 são quase todas americanas. Então o resultado líquido e a probabilidade não funcionariam numa venda coberta real.
+  - Ruling: `valuation.expiry_payoff`, `expiry_pnl` e `expiry_summary` aceitam qualquer estilo, supondo que a opção vai até o vencimento. O montador avisa ("o resultado no vencimento supõe que não há exercício antecipado").
+  - `net_result_breakdown`, `net_result_at_expiry` e `probability_of_profit` passam a usar essas funções. O `engine` continua europeu-only.
+- Ruling (lote): só as opções são conferidas contra o lote do Cadastro. O `AllcnRndLot` da ação é 1 (Task 1), e a fábrica já exige a mesma quantidade de ações e de opções na venda coberta, na put protetora e no collar.
+- Ruling: ganho e perda líquidos máximos = máximo e mínimo do líquido nos pontos do eixo (0,5 a 1,5 × spot, mais strikes e breakevens), e ilimitados quando o bruto é ilimitado.
+  - Na venda coberta, o máximo cai em S = K, sem exercício, e passa o das métricas de renda (cenário exercido) pelo custo de exercício.
+  - Se errado: muda a escolha do ponto, não o modelo.
+- Ruling: o serviço não recebe o CDI do perfil, porque a taxa vem do snapshot da cadeia, que o mercado já monta com o CDI. A probabilidade usa a vol do smile no spot; sem ela, a vol de referência da cadeia.
+- `application/use_cases/_freshness.least_fresh` passa a ser compartilhado pelo serviço de mercado e pelo montador. O `tests/application/_mercado_falso.py` é o mercado falso novo; o teste do serviço de mercado segue com o dele.
+- Gates: 4772 testes (cobertura 97,6%; `strategy_builder` em 100%), mypy, ruff e import-linter.

@@ -11,7 +11,7 @@ como preço exato (ADR-0002).
 
 from enum import Enum, unique
 
-__all__ = ["ExerciseStyle", "OptionType", "PricingApproximation", "Side"]
+__all__ = ["ExerciseStyle", "OptionType", "PricingApproximation", "Side", "StockOrigin"]
 
 
 @unique
@@ -92,3 +92,11 @@ class Side(Enum):
     def opposite(self) -> "Side":
         """Lado espelhado — usado pela propriedade short == -long da suíte."""
         return Side.SELL if self is Side.BUY else Side.BUY
+
+
+@unique
+class StockOrigin(Enum):
+    """De onde vem a ação de uma estrutura: comprada junto ou já na carteira do perfil."""
+
+    COMPRA = "compra"
+    CARTEIRA = "carteira"

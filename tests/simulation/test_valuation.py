@@ -21,6 +21,7 @@ from options_engine.domain.model.strategy import Strategy
 from options_engine.domain.simulation import (
     mark_to_model_value,
     net_premium_cashflow,
+    pnl,
     pnl_curve,
     portfolio_greeks,
 )
@@ -28,6 +29,9 @@ from options_engine.domain.simulation.valuation import (
     DEFAULT_SPOT_SHOCKS,
     DEFAULT_VOL_SHOCKS,
     american_call_approximated,
+    expiry_pnl,
+    expiry_summary,
+    has_american,
     scenario_matrix,
     structure_greeks,
     today_curve,
@@ -183,3 +187,27 @@ def test_choque_de_spot_de_menos_100_por_cento_e_recusado() -> None:
             vols=_vols(estrutura),
             spot_shocks=(-1.0, 0.0),
         )
+
+
+# ---------------------------------------------------------------------------
+# Vencimento aceitando americana (o montador avisa que supõe ir até o vencimento)
+# ---------------------------------------------------------------------------
+
+
+@given(estrutura=st_strategy(with_premiums=True, with_stock=True))
+def test_pnl_no_vencimento_bate_com_o_motor_nas_europeias(estrutura: Strategy) -> None:
+    for spot in (0.0, 25.0, 30.0, 47.5):
+        _perto(expiry_pnl(estrutura, spot), pnl(estrutura, spot), 2000.0, "vencimento")
+
+
+def test_vencimento_aceita_americana_e_o_resumo_tem_extremos_e_breakevens() -> None:
+    call = make_leg(
+        terms=make_terms(strike=32.0, exercise_style=ExerciseStyle.AMERICAN),
+        side=Side.SELL,
+        quantity=100,
+        premium=1.0,
+    )
+    coberta = Strategy.create("venda coberta", [call], [make_stock_leg(price=30.0)])
+    assert has_american(coberta)
+    assert expiry_pnl(coberta, 35.0) == 300.0
+    assert expiry_summary(coberta) == ((29.0,), 300.0, -2900.0)

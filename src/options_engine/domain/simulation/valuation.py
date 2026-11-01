@@ -3,6 +3,9 @@
 Diferente do ``engine``, que é europeu-only e de vol única: aqui a call americana entra como
 europeia, e quem mostra o número tem de mostrar ``american_call_approximated`` junto (ADR-0002).
 A put americana não tem avaliação hoje. A ação vale o spot e tem delta igual à quantidade.
+
+No vencimento (``expiry_pnl``, ``expiry_summary``) qualquer estilo entra: o resultado supõe que a
+opção vai até o vencimento, e quem mostra avisa quando há americana (``has_american``).
 """
 
 from collections.abc import Sequence
@@ -11,6 +14,7 @@ from math import fsum, isfinite
 from typing import Final
 
 from options_engine.domain.kernel.black_scholes import BSOutputs, bs_outputs
+from options_engine.domain.kernel.payoff import PayoffLeg, breakevens, payoff, payoff_extrema
 from options_engine.domain.model.conventions import RiskFreeRate, TimeToExpiry, Volatility
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import (
@@ -27,6 +31,10 @@ __all__ = [
     "DEFAULT_VOL_SHOCKS",
     "ScenarioMatrix",
     "american_call_approximated",
+    "expiry_payoff",
+    "expiry_pnl",
+    "expiry_summary",
+    "has_american",
     "scenario_matrix",
     "structure_greeks",
     "today_curve",
@@ -54,6 +62,34 @@ def american_call_approximated(strategy: Strategy) -> bool:
         and leg.terms.option_type is OptionType.CALL
         for leg in strategy.legs
     )
+
+
+def has_american(strategy: Strategy) -> bool:
+    return any(leg.terms.exercise_style is ExerciseStyle.AMERICAN for leg in strategy.legs)
+
+
+def _payoff_legs(strategy: Strategy) -> list[PayoffLeg]:
+    return [
+        PayoffLeg(leg.terms.strike, float(leg.signed_quantity), leg.terms.option_type.is_call)
+        for leg in strategy.legs
+    ]
+
+
+def expiry_payoff(strategy: Strategy, spot: float) -> float:
+    """Valor bruto no vencimento, sem o caixa da montagem: não exige prêmio."""
+    return payoff(spot, _payoff_legs(strategy), _acoes(strategy))
+
+
+def expiry_pnl(strategy: Strategy, spot: float) -> float:
+    """P&L no vencimento (payoff + caixa da montagem), aceitando opção americana."""
+    return payoff(spot, _payoff_legs(strategy), _acoes(strategy)) + net_premium_cashflow(strategy)
+
+
+def expiry_summary(strategy: Strategy) -> tuple[tuple[float, ...], float | None, float | None]:
+    """(breakevens, ganho máximo, perda máxima) do P&L no vencimento; ``None`` = ilimitado."""
+    legs, acoes, caixa = _payoff_legs(strategy), _acoes(strategy), net_premium_cashflow(strategy)
+    maximo, minimo = payoff_extrema(legs, caixa, acoes)
+    return breakevens(legs, caixa, acoes), maximo, minimo
 
 
 def _sigmas(
