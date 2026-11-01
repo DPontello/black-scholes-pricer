@@ -18,7 +18,7 @@ from options_engine.domain.model.conventions import (
 )
 from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side
 from options_engine.domain.model.market import MarketSnapshot
-from options_engine.domain.model.strategy import Strategy, StrategyLeg
+from options_engine.domain.model.strategy import StockLeg, Strategy, StrategyLeg
 
 VENCIMENTO_PADRAO = date(2026, 12, 18)
 
@@ -57,6 +57,15 @@ def make_leg(
         quantity=quantity,
         premium=premium,
     )
+
+
+def make_stock_leg(
+    symbol: str = "PETR4",
+    side: Side = Side.BUY,
+    quantity: int = 100,
+    price: float | None = 30.0,
+) -> StockLeg:
+    return StockLeg(symbol=symbol, side=side, quantity=quantity, price=price)
 
 
 # --- legs canônicas das estruturas nomeadas ---------------------------------
@@ -223,6 +232,7 @@ def st_strategy(
     min_legs: int = 1,
     max_legs: int = 5,
     with_premiums: bool = False,
+    with_stock: bool = False,
 ) -> Strategy:
     n = draw(st.integers(min_value=min_legs, max_value=max_legs))
     legs = []
@@ -241,4 +251,15 @@ def st_strategy(
                 premium=premium,
             )
         )
-    return Strategy.create("estrutura aleatória", legs)
+    stock_legs = []
+    if with_stock and draw(st.booleans()):
+        stock_legs.append(
+            make_stock_leg(
+                side=draw(st.sampled_from([Side.BUY, Side.SELL])),
+                quantity=draw(st.integers(min_value=1, max_value=20)),
+                price=draw(st.integers(min_value=40, max_value=240)) / 4.0
+                if with_premiums
+                else None,
+            )
+        )
+    return Strategy.create("estrutura aleatória", legs, stock_legs)
