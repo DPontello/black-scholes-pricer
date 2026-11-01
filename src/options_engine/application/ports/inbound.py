@@ -220,6 +220,7 @@ class SeriesRow:
     volume: float
     implied_vol: float | None
     delta: float | None
+    lot: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

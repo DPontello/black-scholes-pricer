@@ -52,6 +52,10 @@ class LoadedLibrary:
     def knows(self, symbol: str) -> bool:
         return symbol in self.instruments or symbol in self.spot_symbols
 
+    def lot(self, symbol: str) -> int | None:
+        info = self.instruments.get(symbol)
+        return None if info is None else info.lot
+
     def closes(self, symbol: str) -> tuple[tuple[date, float], ...]:
         return () if self.data is None else self.data.closes.get(symbol, ())
 

@@ -49,6 +49,7 @@ class MarketViewService:
         *,
         freshness: Callable[[], CadastroFreshness | str],
         cotahist_range: Callable[[], tuple[date, date] | None],
+        lots: Callable[[str], int | None] = lambda _symbol: None,
     ) -> None:
         if day_count is not DayCountConvention.BUSINESS_252:
             raise InvalidDomainValueError(
@@ -60,6 +61,7 @@ class MarketViewService:
         self._day_count = day_count
         self._freshness = freshness
         self._cotahist_range = cotahist_range
+        self._lots = lots
 
     def follow(
         self,
@@ -110,7 +112,10 @@ class MarketViewService:
             market = SeriesMarket(snapshot.spot, rate, tau.year_fraction)
             of_expiry = [q for q in chain.quotes if q.contract.terms.expiry == expiry]
             smile = build_smile(expiry, of_expiry, market)
-            rows = sorted((_row(q, smile, market) for q in of_expiry), key=_order)
+            rows = sorted(
+                (_row(q, smile, market, self._lots(q.contract.symbol)) for q in of_expiry),
+                key=_order,
+            )
             blocks.append(ExpiryBlock(expiry, days[expiry], tuple(rows)))
         return ChainView(
             symbol=symbol,
@@ -149,7 +154,7 @@ class MarketViewService:
         )
 
 
-def _row(quote: OptionQuote, smile: VolSmile, market: SeriesMarket) -> SeriesRow:
+def _row(quote: OptionQuote, smile: VolSmile, market: SeriesMarket, lot: int | None) -> SeriesRow:
     terms = quote.contract.terms
     risk = series_risk(quote, smile, market)
     return SeriesRow(
@@ -164,4 +169,5 @@ def _row(quote: OptionQuote, smile: VolSmile, market: SeriesMarket) -> SeriesRow
         volume=quote.volume,
         implied_vol=None if risk is None else risk.implied_vol,
         delta=None if risk is None else risk.delta,
+        lot=lot,
     )

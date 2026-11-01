@@ -31,6 +31,8 @@ export type Serie = {
   volume: number;
   iv: number | null;
   delta: number | null;
+  /** Lote padrão do Cadastro da B3 (100 na maioria; 1 nas de BOVA11); null se o Cadastro não diz. */
+  lote: number | null;
 };
 
 export type Vencimento = { data: string; dias_uteis: number; series: Serie[] };

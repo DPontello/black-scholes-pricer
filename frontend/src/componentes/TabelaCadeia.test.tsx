@@ -15,6 +15,7 @@ function serie(parcial: Partial<Serie> & { ticker: string; strike: number }): Se
     volume: 4840,
     iv: 0.312,
     delta: 0.55,
+    lote: 100,
     ...parcial,
   };
 }

@@ -52,6 +52,7 @@ _TICKER: Final = re.compile(r"[A-Z0-9]{4}\d{1,2}")  # B3SA3 e BDR (M1TA34) têm 
 _OPTION_TYPE: Final = "OptnTp"
 _STRIKE: Final = "ExrcPric"
 _EXPIRY: Final = "XprtnDt"
+_LOT: Final = "AllcnRndLot"
 _DATE_FORMATS: Final = ("%Y-%m-%d", "%d/%m/%Y")
 
 
@@ -59,8 +60,8 @@ _DATE_FORMATS: Final = ("%Y-%m-%d", "%d/%m/%Y")
 class InstrumentInfo:
     """O que o painel usa do cadastro: estilo (``None`` = desconhecido), ativo-objeto e termos.
 
-    ``option_type``, ``strike`` e ``expiry`` (os termos da série) são ``None``
-    quando a coluna falta ou o valor é ilegível.
+    ``option_type``, ``strike``, ``expiry`` (os termos da série) e ``lot`` (``AllcnRndLot``) são
+    ``None`` quando a coluna falta ou o valor é ilegível.
     """
 
     symbol: str
@@ -69,6 +70,7 @@ class InstrumentInfo:
     option_type: OptionType | None = None
     strike: float | None = None
     expiry: date | None = None
+    lot: int | None = None
 
 
 def _estilo(bruto: str) -> ExerciseStyle | None:
@@ -98,6 +100,14 @@ def _strike(bruto: str) -> float | None:
     if not math.isfinite(valor) or not valor > 0.0:
         return None
     return valor
+
+
+def _lote(bruto: str) -> int | None:
+    try:
+        valor = int(bruto.strip())
+    except ValueError:
+        return None
+    return valor if valor > 0 else None
 
 
 def _vencimento(bruto: str) -> date | None:
@@ -168,6 +178,7 @@ def load_instruments(path: Path) -> dict[str, InstrumentInfo]:
     i_tipo = colunas.index(_OPTION_TYPE) if _OPTION_TYPE in colunas else None
     i_strike = colunas.index(_STRIKE) if _STRIKE in colunas else None
     i_vencimento = colunas.index(_EXPIRY) if _EXPIRY in colunas else None
+    i_lote = colunas.index(_LOT) if _LOT in colunas else None
     instrumentos: dict[str, InstrumentInfo] = {}
     for celulas in csv.reader(linhas[indice + 1 :], delimiter=delimitador):
         if len(celulas) <= max(i_simbolo, i_estilo):
@@ -187,6 +198,7 @@ def load_instruments(path: Path) -> dict[str, InstrumentInfo]:
             option_type=tipo,
             strike=_strike(_celula(celulas, i_strike)),
             expiry=_vencimento(_celula(celulas, i_vencimento)),
+            lot=_lote(_celula(celulas, i_lote)),
         )
         anterior = instrumentos.get(simbolo)
         if anterior is not None and anterior != info:

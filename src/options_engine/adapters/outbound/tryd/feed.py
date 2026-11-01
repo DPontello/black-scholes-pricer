@@ -198,7 +198,8 @@ class TrydMarketFeed:
     ``client`` e ``board`` são os da composição (o cliente alimenta o quadro). ``cdi_annual``
     devolve o CDI do perfil, lido a cada consulta; ``tz`` é o fuso de valoração. ``calendar``
     conta os dias úteis da IV de referência. ``topic_limit`` e ``monotonic`` (relógio dos avisos
-    limitados) existem para os testes.
+    limitados) existem para os testes. ``loader`` deixa o app ler a biblioteca uma vez só para o
+    ao vivo, o fim de dia e o lote: o Cadastro real tem 20 MB.
     """
 
     def __init__(
@@ -213,10 +214,11 @@ class TrydMarketFeed:
         *,
         topic_limit: int = LIMITE_TOPICOS,
         monotonic: Callable[[], float] = time.monotonic,
+        loader: LibraryLoader | None = None,
     ) -> None:
         self._client = client
         self._board = board
-        self._loader = LibraryLoader(library)
+        self._loader = LibraryLoader(library) if loader is None else loader
         self._calendar = calendar
         self._clock = clock
         self._cdi_annual = cdi_annual

@@ -176,6 +176,7 @@ def _servico(
     *,
     freshness: CadastroFreshness | str = "nenhum cadastro importado",
     cotahist_range: tuple[date, date] | None = None,
+    lots: dict[str, int] | None = None,
 ) -> MarketViewService:
     return MarketViewService(
         _Mercado() if mercado is None else mercado,
@@ -183,6 +184,7 @@ def _servico(
         B3_UTC_OFFSET,
         freshness=lambda: freshness,
         cotahist_range=lambda: cotahist_range,
+        lots=(lots or {}).get,
     )
 
 
@@ -424,3 +426,10 @@ def test_vencimento_alem_do_calendario_de_feriados_fica_fora_da_escolha() -> Non
     )
     assert [o.expiry for o in vista.available] == [NOVEMBRO]
     assert [b.expiry for b in vista.expiries] == [NOVEMBRO]
+
+
+def test_linha_traz_o_lote_do_cadastro_ou_none() -> None:
+    linhas = _servico(lots={"PETRK300": 100}).chain("PETR4").expiries[0].rows
+    lotes = {r.symbol: r.lot for r in linhas}
+    assert lotes["PETRK300"] == 100
+    assert lotes["PETRW300"] is None

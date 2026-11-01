@@ -29,6 +29,7 @@ from options_engine.adapters.outbound.b3files.downloads import (
     ImportacaoAutomatica,
 )
 from options_engine.adapters.outbound.b3files.end_of_day import EndOfDayMarket
+from options_engine.adapters.outbound.b3files.loaded import LibraryLoader
 from options_engine.adapters.outbound.clock import SystemClock
 from options_engine.adapters.outbound.fallback_market import FallbackMarket
 from options_engine.adapters.outbound.storage import JsonProfileRepository
@@ -95,9 +96,10 @@ def build_web_app(
 
     board = LiveBoard()
     client = TrydBridgeClient(board)
+    loader = LibraryLoader(library)
     market = FallbackMarket(
-        TrydMarketFeed(client, board, library, calendar, clock, cdi_annual),
-        EndOfDayMarket(library, cdi_annual),
+        TrydMarketFeed(client, board, library, calendar, clock, cdi_annual, loader=loader),
+        EndOfDayMarket(library, cdi_annual, loader=loader),
     )
     market_view = MarketViewService(
         market,
@@ -105,6 +107,7 @@ def build_web_app(
         B3_UTC_OFFSET,
         freshness=lambda: _freshness(library, calendar, clock),
         cotahist_range=lambda: _cotahist_range(library),
+        lots=lambda symbol: _lot(loader, symbol),
     )
     process = None
     if bridge:
@@ -120,6 +123,11 @@ def build_web_app(
     ]
     lifespan = _lifespan(profiles, client, process, importer)
     return create_app(routers, static_dir, lifespan=lifespan)
+
+
+def _lot(loader: LibraryLoader, symbol: str) -> int | None:
+    loaded = loader.load()
+    return None if isinstance(loaded, str) else loaded.lot(symbol)
 
 
 def _ponte_src_dir() -> Path:

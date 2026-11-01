@@ -72,6 +72,7 @@ class SerieOut(BaseModel):
     volume: float
     iv: float | None
     delta: float | None
+    lote: int | None
 
 
 class VencimentoOut(BaseModel):
@@ -185,6 +186,7 @@ def _cadeia_out(view: ChainView) -> CadeiaOut:
                         volume=row.volume,
                         iv=row.implied_vol,
                         delta=row.delta,
+                        lote=row.lot,
                     )
                     for row in block.rows
                 ],

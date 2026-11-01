@@ -192,3 +192,32 @@ def test_duplicata_com_termos_divergentes_zera_todos_os_campos_opcionais(
     info = load_instruments(caminho)["PETRK300"]
     assert info == InstrumentInfo("PETRK300", None, None)
     assert (info.option_type, info.strike, info.expiry) == (None, None, None)
+
+
+def test_lote_vem_do_allcnrndlot_e_ilegivel_vira_none(tmp_path: Path) -> None:
+    caminho = _gravar(
+        tmp_path,
+        [
+            "TckrSymb;OptnStyle;AllcnRndLot",
+            "PETRK526;EURO;100",
+            "BOVAK170;EURO;1",
+            "ITUBK400;AMER;10",
+            "VALEK600;AMER;",
+            "ABEVK150;AMER;cem",
+            "B3SAK130;AMER;0",
+        ],
+    )
+    lotes = {s: i.lot for s, i in load_instruments(caminho).items()}
+    assert lotes == {
+        "PETRK526": 100,
+        "BOVAK170": 1,
+        "ITUBK400": 10,
+        "VALEK600": None,
+        "ABEVK150": None,
+        "B3SAK130": None,
+    }
+
+
+def test_sem_coluna_de_lote_o_lote_e_none(tmp_path: Path) -> None:
+    caminho = _gravar(tmp_path, ["TckrSymb;OptnStyle", "PETRK300;AMER"])
+    assert load_instruments(caminho)["PETRK300"].lot is None

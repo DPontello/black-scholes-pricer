@@ -54,8 +54,10 @@ class EndOfDayMarket:
         library: B3FileLibrary,
         cdi_annual: Callable[[], float],
         tz: tzinfo = B3_UTC_OFFSET,
+        *,
+        loader: LibraryLoader | None = None,
     ) -> None:
-        self._loader = LibraryLoader(library)
+        self._loader = LibraryLoader(library) if loader is None else loader
         self._cdi_annual = cdi_annual
         self._tz = tz
         # O adapter é caro de montar (relê o cadastro): vale para a mesma foto da biblioteca e o

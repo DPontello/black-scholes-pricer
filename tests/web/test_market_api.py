@@ -56,6 +56,7 @@ CHAVES_SERIE = {
     "volume",
     "iv",
     "delta",
+    "lote",
 }
 
 
@@ -86,6 +87,7 @@ def _cadeia(vencimentos: Collection[date] | None) -> ChainView:
         volume=4840.0,
         implied_vol=None,
         delta=0.55,
+        lot=100,
     )
     return ChainView(
         symbol="PETR4",
@@ -198,11 +200,12 @@ def test_cadeia_com_vencimentos_series_e_rejeitadas() -> None:
     assert (vencimento["data"], vencimento["dias_uteis"]) == ("2026-11-19", 16)
     (serie,) = vencimento["series"]
     assert set(serie) == CHAVES_SERIE
-    assert (serie["tipo"], serie["estilo"], serie["venda"], serie["iv"]) == (
+    assert (serie["tipo"], serie["estilo"], serie["venda"], serie["iv"], serie["lote"]) == (
         "call",
         "american",
         None,
         None,
+        100,
     )
     assert corpo["rejeitadas"] == [
         {"ticker": "PETRK999", "motivo": "sem estilo de exercício no cadastro"}
