@@ -40,3 +40,13 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - Ruling: na grade, a célula em que o choque leva a vol de alguma perna a <= 0 sai `None` (a tela mostra "—"), em vez de um número com vol inventada. A grade é só de hoje: no vencimento a vol não muda o resultado.
 - Regressão (hypothesis): com a mesma vol em todas as pernas, opções europeias e ação, valor, curva e as cinco gregas batem com `mark_to_model_value`, `pnl_curve` e `portfolio_greeks`.
 - Gates: 4728 testes (cobertura 97,5%; `valuation` em 100%), mypy, ruff e import-linter. Nesta rodada a suíte levou 7min53 em vez de ~2min30 por carga da máquina; os testes novos levam menos de 0,3 s cada.
+
+## 2026-11-01: Task 5 — probabilidade de lucro e custos por perna
+
+- `domain/simulation/probability.py`: `probability_of_profit(strategy, spot, *, time_to_expiry, rate, vol)`. O spot no vencimento é lognormal risco-neutro, e as faixas de lucro saem dos breakevens exatos do kernel, com a ação inclusive. Entre dois breakevens o sinal não muda, então basta testar um ponto de cada faixa. Com tau ou vol zero, a resposta é 0 ou 1 pelo spot a termo.
+- Conferido de forma independente:
+  - call comprada, put comprada e venda coberta contra `N(d2)` no breakeven, escrito de novo no teste;
+  - put vendida e iron condor contra uma grade estratificada de 200.000 pontos em probabilidade (tolerância `ABS_PROBABILITY_GRID` = 2e-5, documentada em `tests/_tolerances.py`).
+- `income/costs.py`: `estimate_order_costs` (prêmio ou preço e quantidade por perna; uma ordem por perna) e `estimate_exercise_costs_by_leg`. As funções antigas passam a chamar essas e dão o mesmo número, bit a bit: os testes antigos seguem verdes, e um teste novo compara as duas.
+- `income/net_result.py`: `net_result_at_expiry(strategy, spot, schedule, *, stock_already_held=False)` = bruto - montagem - exercício no cenário - IR estimado, com o IR limitado ao resultado do prêmio (ADR-0005). Bate com `covered_call_metrics` nos extremos e com `income/profile.result_at_expiry` numa trava. Ação vinda da carteira não paga a ordem de compra.
+- Gates: 4752 testes (cobertura 97,5%; `costs`, `net_result` e `probability` em 100%), mypy, ruff e import-linter.
