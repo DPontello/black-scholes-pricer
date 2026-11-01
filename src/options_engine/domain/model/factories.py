@@ -18,12 +18,18 @@ from collections.abc import Sequence
 
 from options_engine.domain.model.enums import OptionType, Side
 from options_engine.domain.model.errors import InvalidStrategyError
-from options_engine.domain.model.strategy import Strategy, StrategyLeg
+from options_engine.domain.model.strategy import StockLeg, Strategy, StrategyLeg
 
 __all__ = [
     "butterfly",
+    "cash_secured_put",
+    "collar",
     "condor_direction",
+    "covered_call",
     "iron_condor",
+    "long_call",
+    "long_put",
+    "protective_put",
     "straddle",
     "strangle",
     "vertical_spread",
@@ -268,3 +274,82 @@ def vertical_spread_direction(strategy: Strategy) -> Side:
     composição garantida).
     """
     return _direcao_da_trava(strategy.legs[0], strategy.legs[1])
+
+
+def _uma_perna(
+    legs: Sequence[StrategyLeg], option_type: OptionType, side: Side, estrutura: str
+) -> StrategyLeg:
+    if len(legs) != 1:
+        raise InvalidStrategyError(f"{estrutura} exige exatamente 1 leg; recebido {len(legs)}")
+    (perna,) = legs
+    if perna.terms.option_type is not option_type or perna.side is not side:
+        raise InvalidStrategyError(
+            f"{estrutura} exige {option_type.value} {side.value}; recebido "
+            f"{perna.terms.option_type.value} {perna.side.value}"
+        )
+    return perna
+
+
+def _exige_acao_comprada(stock: StockLeg, quantidade: int, estrutura: str) -> None:
+    if stock.side is not Side.BUY:
+        raise InvalidStrategyError(
+            f"{estrutura} exige a ação comprada; recebido {stock.side.value}"
+        )
+    if stock.quantity != quantidade:
+        raise InvalidStrategyError(
+            f"{estrutura} exige a mesma quantidade de ações e de opções; recebido "
+            f"{stock.quantity} ações para {quantidade} opções"
+        )
+
+
+def long_call(legs: Sequence[StrategyLeg], name: str | None = None) -> Strategy:
+    perna = _uma_perna(legs, OptionType.CALL, Side.BUY, "compra de call")
+    return Strategy.create(name if name is not None else "compra de call", [perna])
+
+
+def long_put(legs: Sequence[StrategyLeg], name: str | None = None) -> Strategy:
+    perna = _uma_perna(legs, OptionType.PUT, Side.BUY, "compra de put")
+    return Strategy.create(name if name is not None else "compra de put", [perna])
+
+
+def cash_secured_put(legs: Sequence[StrategyLeg], name: str | None = None) -> Strategy:
+    perna = _uma_perna(legs, OptionType.PUT, Side.SELL, "put coberta")
+    return Strategy.create(name if name is not None else "put coberta", [perna])
+
+
+def covered_call(legs: Sequence[StrategyLeg], stock: StockLeg, name: str | None = None) -> Strategy:
+    perna = _uma_perna(legs, OptionType.CALL, Side.SELL, "venda coberta")
+    _exige_acao_comprada(stock, perna.quantity, "venda coberta")
+    return Strategy.create(name if name is not None else "venda coberta", [perna], [stock])
+
+
+def protective_put(
+    legs: Sequence[StrategyLeg], stock: StockLeg, name: str | None = None
+) -> Strategy:
+    perna = _uma_perna(legs, OptionType.PUT, Side.BUY, "put protetora")
+    _exige_acao_comprada(stock, perna.quantity, "put protetora")
+    return Strategy.create(name if name is not None else "put protetora", [perna], [stock])
+
+
+def collar(legs: Sequence[StrategyLeg], stock: StockLeg, name: str | None = None) -> Strategy:
+    """Ação comprada, put comprada abaixo e call vendida acima, nas mesmas quantidades."""
+    ordenadas = _ordenadas_por_strike(legs, 2, "collar")
+    put_leg, call_leg = sorted(ordenadas, key=lambda leg: leg.terms.option_type.is_call)
+    if (put_leg.terms.option_type, put_leg.side, call_leg.terms.option_type, call_leg.side) != (
+        OptionType.PUT,
+        Side.BUY,
+        OptionType.CALL,
+        Side.SELL,
+    ):
+        raise InvalidStrategyError(
+            f"collar exige put comprada e call vendida; recebido "
+            f"{[(leg.terms.option_type.value, leg.side.value) for leg in ordenadas]!r}"
+        )
+    if not (put_leg.terms.strike < call_leg.terms.strike):
+        raise InvalidStrategyError(
+            f"collar exige strike da put < strike da call; recebido "
+            f"{[put_leg.terms.strike, call_leg.terms.strike]!r}"
+        )
+    _exige_quantidades_iguais(ordenadas, "collar")
+    _exige_acao_comprada(stock, put_leg.quantity, "collar")
+    return Strategy.create(name if name is not None else "collar", ordenadas, [stock])
