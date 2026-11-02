@@ -107,3 +107,31 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - Ruling: recálculo 300 ms depois da última mudança e a cada atualização da cadeia (no máximo uma por segundo, que é o ritmo do WebSocket). Apagar simulação pede confirmação.
 - Note: o build avisa que o pacote passou de 500 kB por causa do ECharts. É app local e o carregamento é do disco; fica como está.
 - Testes do frontend: 53 (resumo, pernas, grade, gráfico com o ECharts falso no `setup.ts`, a página do Montador ponta a ponta com a API falsa e o "+" da cadeia), mais `tsc` e build. Backend: 4808 testes (cobertura 97,7%), mypy, ruff e import-linter.
+
+## 2026-11-02: Task 9 — domínio da carteira
+
+- Step 0, IN RFB 1.585/2015 conferida no texto oficial (normasinternet2.receita.fazenda.gov.br, ato 67494, visão multivigente). Está **vigente**: alterada pelas IN RFB 1.637/2016, 1.720/2017 e 1.916/2019, sem revogação. O **art. 60** (mercados de opções) confirma os quatro casos da spec §3.2:
+  - II, a e § 1º: titular de call exercida, custo da ação = strike + prêmio;
+  - II, b: lançador de call, venda = strike + prêmio, contra o custo de aquisição do ativo;
+  - II, c: titular de put, venda = strike - prêmio, contra o custo da compra à vista;
+  - II, d e § 1º: lançador de put, custo da ação = strike - prêmio.
+
+  Mais duas regras do mesmo artigo:
+  - § 2º: os valores pagos ou recebidos entram pela **média ponderada**; é o preço médio por perna;
+  - § 3º: sem encerramento nem exercício, no vencimento o prêmio é ganho do lançador e perda do titular; é o pó.
+- `domain/portfolio`:
+  - `model.py`: `Operation` com pernas (`OptionLegRef`, `StockLegRef` com origem) e eventos (`Open`, `Close`, `Exercise`, `Assignment`, `Expired`). A validação roda em `leg_states`, que recalcula tudo a partir dos eventos.
+  - `positions.py`: `open_legs`, `is_closed`, `realized_result`, `consolidate` e `free_shares`.
+  - `exercise.py`: `stock_from_option` e `apply_exercise`.
+  - `expiry.py`: `expiry_outcome`.
+- Ruling: exercício e atribuição fecham a perna da opção **sem resultado próprio**. O prêmio vai para o preço da ação pelo art. 60; contá-lo nas duas pernas daria o prêmio em dobro.
+  - `apply_exercise` grava o evento da opção e o movimento da ação (custo 0, porque o custo do exercício fica no evento da opção).
+  - A ação que sai vem da perna de ação da própria operação; senão, da ação "da carteira", pelo preço médio dela (`Close.cost_basis`); senão, a operação fica vendida em ações.
+  - A ação que entra vira perna de ação comprada da operação.
+  - Conferido: a venda coberta atribuída fecha com +300 = (32 - 30 + 1) × 100, o ganho máximo.
+- Ruling: a ação "da carteira" não é comprada na operação (`Open` recusado) e só sai pelo custo médio informado. Quem baixa a posição de ações das outras operações é o serviço (Task 11), para o lucro da ação não contar duas vezes.
+- Ruling: custos do resultado realizado:
+  - o real informado no evento, senão a estimativa da ADR-0005 (ordem de opção, ordem de ação ou exercício) pela tabela vigente na data do evento;
+  - o pó não tem custo.
+- Ruling: ações livres = ações compradas nas operações sem ação "da carteira", menos as calls vendidas delas, menos as calls vendidas das operações "da carteira". A put protetora não prende ação.
+- Gates: 4854 testes (cobertura 97,8%; `domain/portfolio` em 99-100%), mypy, ruff e import-linter.
