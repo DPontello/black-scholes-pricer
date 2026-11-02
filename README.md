@@ -202,7 +202,9 @@ ordens: você executa no home broker e registra a operação no app.
 - **Semana 2 (montador e carteira):** [desenho](docs/superpowers/specs/2026-10-31-semana-2-montador-carteira-design.md),
   [plano](docs/superpowers/plans/2026-10-31-app-semana-2-montador-carteira.md) e
   [ledger](docs/superpowers/ledger-semana-2.md).
-- **Estado e como retomar:** [`docs/superpowers/HANDOFF-2026-10-28.md`](docs/superpowers/HANDOFF-2026-10-28.md).
+- **Semana 3 (book e análise):** [desenho](docs/superpowers/specs/2026-11-02-semana-3-book-analise-design.md)
+  e [plano](docs/superpowers/plans/2026-11-02-app-semana-3-book-analise.md).
+- **Estado e como retomar:** [`docs/superpowers/HANDOFF-2026-11-02.md`](docs/superpowers/HANDOFF-2026-11-02.md).
 - **Ponte do Tryd (RTD → TCP local):** [`src/options_ponte/README.md`](src/options_ponte/README.md).
   No Linux, o ambiente Wine é montado por [`scripts/linux/preparar_ponte_wine.sh`](scripts/linux/preparar_ponte_wine.sh).
 

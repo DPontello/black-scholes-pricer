@@ -18,8 +18,12 @@
 >   `feat/app-semana-2`, com o ponta a ponta nos arquivos reais. Falta o teste ao vivo no
 >   pregão (o P&L da carteira pelo Tryd). Decisões no
 >   [ledger](superpowers/ledger-semana-2.md).
-> - **Semanas 3 a 5:** book e análise; alertas, proventos, IR e instalador; teste com a
->   mãe. Os planos ainda não foram escritos.
+> - **Semana 3 (book e análise):** planejada em 2026-11-02, [spec](superpowers/specs/2026-11-02-semana-3-book-analise-design.md)
+>   e [plano](superpowers/plans/2026-11-02-app-semana-3-book-analise.md) (13 tarefas: histórico de
+>   IV, book das quatro famílias e a aba Análise no Mercado).
+> - **Semanas 4 e 5:** alertas, proventos, IR e instalador; teste com a mãe. Os planos ainda não
+>   foram escritos.
+> - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
 >   vitrine (benchmark, ADRs de apresentação) saíram do escopo.
 > - **ADR-0008:** aceita com as correções do spike de 2026-10-28.
