@@ -44,7 +44,7 @@ export class ErroApi extends Error {
   }
 }
 
-async function pedir<T>(caminho: string, init?: RequestInit): Promise<T> {
+export async function pedir<T>(caminho: string, init?: RequestInit): Promise<T> {
   const resposta = await fetch(caminho, init);
   if (!resposta.ok) {
     let corpo: { erro?: string; mensagem?: string; trava?: Trava } = {};
@@ -64,7 +64,7 @@ async function pedir<T>(caminho: string, init?: RequestInit): Promise<T> {
   return (await resposta.json()) as T;
 }
 
-function json(metodo: string, corpo: unknown): RequestInit {
+export function json(metodo: string, corpo: unknown): RequestInit {
   return {
     method: metodo,
     headers: { "Content-Type": "application/json" },

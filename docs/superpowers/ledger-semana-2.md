@@ -90,3 +90,20 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 
   A simulação foi gravada na pasta do perfil.
 - Gates: 4804 testes (cobertura 97,7%; os módulos novos em 100%), mypy, ruff e import-linter.
+
+## 2026-11-02: Task 8 — frontend do Montador (fecha a Parte A)
+
+- Tela `/montador`, que abre também pelo "Montar com PETR4" do Mercado:
+  - à esquerda, a cadeia do ativo com um "+" em cada lado de cada strike;
+  - no topo, ativo, vencimento do modelo, modelo pronto (por família), "+ ação" e "Limpar";
+  - à direita, a tabela de pernas (lado, quantidade, preço editável com o automático como dica, origem do preço, ação comprada junto ou da carteira) e o resultado: resumo em português, números, gregas, avisos, gráfico (ECharts 5.5.1: vencimento líquido e bruto, hoje tracejado, linha do spot) e a grade;
+  - por fim, salvar, abrir e apagar simulações. "Registrar como executada" fica desabilitado até a Parte B.
+- Ruling (desvio do plano): rota nova `GET /api/montador/sugestao?ativo&modelo&vencimento` e `StrategyBuilderService.suggest`. Sem ela, a tela teria de repetir em TypeScript a regra dos strikes sugeridos, que é do domínio (`suggest_strikes`). Quantidade padrão 100 × proporção.
+  - Em modelo com call e put (straddle, strangle, collar, iron condor), só entram strikes que têm os tipos pedidos.
+  - Se errado: muda a rota, não o domínio.
+- Ruling: o vencimento do modelo começa no primeiro **mensal** entre os vencimentos escolhidos na cadeia, e pode ser trocado. No teste com os arquivos reais, o iron condor vendido na semanal de 30/10 (2 dias úteis, séries pouco líquidas) saía com **débito** de R$ 6 pelo bid e pelo ask. No mensal de 19/11 sai com crédito de R$ 13, perda máxima de R$ 37 e breakevens em 51,78 e 53,04.
+- Bug achado na tela, FIXED: o resumo dizia "ganha no máximo R$ 6,00" quando o melhor caso era perder R$ 6 (valor absoluto). Agora diz "no melhor caso ainda perde R$ 6,00", ou "no melhor caso empata".
+- Ruling: o gráfico abre em volta do spot, dos strikes e dos breakevens, com 10% de folga, e não no eixo inteiro de 0,5 a 1,5 × spot. No eixo inteiro, estrutura estreita virava um risco fino.
+- Ruling: recálculo 300 ms depois da última mudança e a cada atualização da cadeia (no máximo uma por segundo, que é o ritmo do WebSocket). Apagar simulação pede confirmação.
+- Note: o build avisa que o pacote passou de 500 kB por causa do ECharts. É app local e o carregamento é do disco; fica como está.
+- Testes do frontend: 53 (resumo, pernas, grade, gráfico com o ECharts falso no `setup.ts`, a página do Montador ponta a ponta com a API falsa e o "+" da cadeia), mais `tsc` e build. Backend: 4808 testes (cobertura 97,7%), mypy, ruff e import-linter.

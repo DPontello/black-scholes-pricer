@@ -15,6 +15,7 @@ type Props = {
   cadeia: Cadeia | null;
   indisponivel: CadeiaIndisponivel | null;
   onVencimentos: (datas: string[]) => void;
+  onEscolherSerie?: (serie: Serie) => void;
 };
 
 const FONTES = { ao_vivo: "Ao vivo (Tryd)", atrasado: "Atrasado", fim_de_dia: "Fim de dia (B3)" };
@@ -110,7 +111,30 @@ function EscolhaVencimentos({
   );
 }
 
-export function TabelaCadeia({ ativo, cadeia, indisponivel, onVencimentos }: Props) {
+function Escolher({ serie, onEscolher }: { serie: Serie | undefined; onEscolher: (s: Serie) => void }) {
+  return (
+    <td>
+      {serie !== undefined && (
+        <button
+          type="button"
+          className="escolher-serie"
+          aria-label={`Pôr ${serie.ticker} no montador`}
+          onClick={() => onEscolher(serie)}
+        >
+          +
+        </button>
+      )}
+    </td>
+  );
+}
+
+export function TabelaCadeia({
+  ativo,
+  cadeia,
+  indisponivel,
+  onVencimentos,
+  onEscolherSerie,
+}: Props) {
   const [aba, setAba] = useState<string | null>(null);
 
   if (ativo === null) {
@@ -166,6 +190,7 @@ export function TabelaCadeia({ ativo, cadeia, indisponivel, onVencimentos }: Pro
         <table>
           <thead>
             <tr>
+              {onEscolherSerie && <th />}
               <th colSpan={6} className="lado-call">
                 CALLS
               </th>
@@ -173,8 +198,10 @@ export function TabelaCadeia({ ativo, cadeia, indisponivel, onVencimentos }: Pro
               <th colSpan={6} className="lado-put">
                 PUTS
               </th>
+              {onEscolherSerie && <th />}
             </tr>
             <tr>
+              {onEscolherSerie && <th />}
               {["Compra", "Venda", "Último", "IV", "Delta", "Neg."].map((c) => (
                 <th key={`call-${c}`} className="num">
                   {c}
@@ -186,6 +213,7 @@ export function TabelaCadeia({ ativo, cadeia, indisponivel, onVencimentos }: Pro
                   {c}
                 </th>
               ))}
+              {onEscolherSerie && <th />}
             </tr>
           </thead>
           <tbody>
@@ -194,9 +222,11 @@ export function TabelaCadeia({ ativo, cadeia, indisponivel, onVencimentos }: Pro
                 key={`${linha.strike}-${linha.call?.ticker ?? ""}-${linha.put?.ticker ?? ""}`}
                 className={linha.strike === atm ? "no-dinheiro" : undefined}
               >
+                {onEscolherSerie && <Escolher serie={linha.call} onEscolher={onEscolherSerie} />}
                 <Lado serie={linha.call} espelho={false} />
                 <td className="num strike">{formatarPreco(linha.strike)}</td>
                 <Lado serie={linha.put} espelho />
+                {onEscolherSerie && <Escolher serie={linha.put} onEscolher={onEscolherSerie} />}
               </tr>
             ))}
           </tbody>
