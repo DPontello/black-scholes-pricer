@@ -140,6 +140,7 @@ class _Mercado:
     watched: list[tuple[tuple[str, ...], tuple[str, ...], frozenset[date] | None]] = field(
         default_factory=list
     )
+    watched_portfolio: list[tuple[str, ...]] = field(default_factory=list)
 
     def health(self) -> DataSource:
         if len(self.healths) > 1:
@@ -151,9 +152,14 @@ class _Mercado:
         underlyings: Sequence[str],
         chain_symbols: Sequence[str],
         chain_expiries: Collection[date] | None = None,
+        portfolio_series: Sequence[str] = (),
     ) -> None:
         expiries = None if chain_expiries is None else frozenset(chain_expiries)
         self.watched.append((tuple(underlyings), tuple(chain_symbols), expiries))
+        self.watched_portfolio.append(tuple(portfolio_series))
+
+    def get_option_quotes(self, symbols: Sequence[str]) -> Mapping[str, OptionQuote | str]:
+        return {s: "sem cotação ao vivo" for s in symbols}
 
     def get_quotes(self, symbols: Sequence[str]) -> Mapping[str, UnderlyingQuote | str]:
         return {
@@ -176,6 +182,7 @@ def _servico(
     *,
     freshness: CadastroFreshness | str = "nenhum cadastro importado",
     cotahist_range: tuple[date, date] | None = None,
+    lots: dict[str, int] | None = None,
 ) -> MarketViewService:
     return MarketViewService(
         _Mercado() if mercado is None else mercado,
@@ -183,6 +190,7 @@ def _servico(
         B3_UTC_OFFSET,
         freshness=lambda: freshness,
         cotahist_range=lambda: cotahist_range,
+        lots=(lots or {}).get,
     )
 
 
@@ -394,6 +402,19 @@ def test_follow_assina_a_lista_e_a_cadeia_aberta() -> None:
         (("PETR4",), ("PETR4",), frozenset({NOVEMBRO, DEZEMBRO})),
         (("PETR4",), (), None),
     ]
+    assert mercado.watched_portfolio == [(), (), ()]
+
+
+def test_follow_poe_a_carteira_depois_da_lista_e_antes_da_cadeia() -> None:
+    mercado = _Mercado()
+    _servico(mercado).follow(
+        ["PETR4"],
+        "PETR4",
+        portfolio_underlyings=["VALE3", "PETR4"],
+        portfolio_series=["VALEK600", "PETRK320"],
+    )
+    assert mercado.watched == [(("PETR4", "VALE3"), ("PETR4",), None)]
+    assert mercado.watched_portfolio == [("VALEK600", "PETRK320")]
 
 
 def test_status_com_cadastro_datado_e_faixa_dos_cotahist() -> None:
@@ -424,3 +445,10 @@ def test_vencimento_alem_do_calendario_de_feriados_fica_fora_da_escolha() -> Non
     )
     assert [o.expiry for o in vista.available] == [NOVEMBRO]
     assert [b.expiry for b in vista.expiries] == [NOVEMBRO]
+
+
+def test_linha_traz_o_lote_do_cadastro_ou_none() -> None:
+    linhas = _servico(lots={"PETRK300": 100}).chain("PETR4").expiries[0].rows
+    lotes = {r.symbol: r.lot for r in linhas}
+    assert lotes["PETRK300"] == 100
+    assert lotes["PETRW300"] is None

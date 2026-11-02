@@ -5,9 +5,11 @@ import { useAoVivo } from "./api/aoVivo";
 import { type Perfil, perfilAtivo } from "./api/cliente";
 import { BarraStatus } from "./componentes/BarraStatus";
 import { Shell } from "./componentes/Shell";
+import { Carteira } from "./paginas/Carteira";
 import { ArquivosB3 } from "./paginas/ArquivosB3";
 import { EmBreve } from "./paginas/EmBreve";
 import { Mercado } from "./paginas/Mercado";
+import { Montador } from "./paginas/Montador";
 import { Perfis } from "./paginas/Perfis";
 
 export function App() {
@@ -61,9 +63,12 @@ function ComPerfil({ perfil, onPerfil, onAberto }: ComPerfilProps) {
           element={<Mercado aoVivo={aoVivo} seguirCadeia={seguirCadeia} onPerfil={onPerfil} />}
         />
         <Route path="/arquivos" element={<ArquivosB3 />} />
-        <Route path="/montador" element={<EmBreve titulo="Montador" semana={2} />} />
+        <Route
+          path="/montador"
+          element={<Montador aoVivo={aoVivo} seguirCadeia={seguirCadeia} />}
+        />
         <Route path="/book" element={<EmBreve titulo="Book" semana={3} />} />
-        <Route path="/carteira" element={<EmBreve titulo="Carteira" semana={2} />} />
+        <Route path="/carteira" element={<Carteira aoVivo={aoVivo} />} />
         <Route path="/alertas" element={<EmBreve titulo="Alertas" semana={4} />} />
         <Route path="*" element={<Navigate to="/mercado" replace />} />
       </Routes>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import type { EstadoAoVivo, SeguirCadeia } from "../api/aoVivo";
 import { definirAtivos, ErroApi, type Perfil } from "../api/cliente";
@@ -51,6 +52,11 @@ export function Mercado({ aoVivo, seguirCadeia, onPerfil }: Props) {
         onEscolher={escolherAtivo}
         onDefinirAtivos={(ativos) => void gravarAtivos(ativos)}
       />
+      {selecionado !== null && (
+        <Link className="montar-ativo" to={`/montador?ativo=${encodeURIComponent(selecionado)}`}>
+          Montar com {selecionado}
+        </Link>
+      )}
       <TabelaCadeia
         ativo={selecionado}
         cadeia={aoVivo.cadeia}

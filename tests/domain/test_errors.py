@@ -29,6 +29,8 @@ _CATALOGO: list[type[DomainError]] = [
     errors.DuplicateProfileError,
     errors.UnknownProfileError,
     errors.NoActiveProfileError,
+    errors.UnknownRecordError,
+    errors.UnreadableRecordError,
 ]
 
 

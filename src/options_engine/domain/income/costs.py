@@ -44,7 +44,9 @@ __all__ = [
     "OperationCosts",
     "OrderCosts",
     "estimate_exercise_costs",
+    "estimate_exercise_costs_by_leg",
     "estimate_income_tax",
+    "estimate_order_costs",
     "estimate_setup_costs",
     "schedule_on",
 ]
@@ -197,6 +199,57 @@ def schedule_on(schedules: Sequence[CostSchedule], on: date) -> CostSchedule:
     return max(vigentes, key=lambda s: s.valid_from)
 
 
+def _exige_quantidade(quantidade: int) -> None:
+    if quantidade < 1:
+        raise InvalidDomainValueError(f"quantidade da perna deve ser >= 1; recebido {quantidade!r}")
+
+
+def estimate_order_costs(
+    schedule: CostSchedule,
+    *,
+    option_legs: Sequence[tuple[float, int]],
+    stock_trades: Sequence[tuple[float, int]] = (),
+) -> OrderCosts:
+    """Custos das ordens de uma estrutura com quantidade por perna (a borboleta é 1-2-1).
+
+    ``option_legs``: (prêmio por opção, quantidade) de cada perna de opção, comprada ou vendida.
+    ``stock_trades``: (preço por ação, quantidade) de cada ordem de ação. Uma ordem por perna.
+    """
+    if not option_legs and not stock_trades:
+        raise InvalidDomainValueError("operação exige ao menos uma perna (uma ordem por perna)")
+    for premio, quantidade in option_legs:
+        _exige_nao_negativo("prêmio da perna", premio)
+        _exige_quantidade(quantidade)
+    for preco, quantidade in stock_trades:
+        _exige_positivo("preço da ação", preco)
+        _exige_quantidade(quantidade)
+    emolumentos_opcoes = schedule.option_exchange_fee_rate * fsum(p * q for p, q in option_legs)
+    if stock_trades:
+        emolumentos_acao = schedule.spot_exchange_fee_rate * fsum(p * q for p, q in stock_trades)
+        emolumentos = fsum((emolumentos_opcoes, emolumentos_acao))
+    else:
+        emolumentos = emolumentos_opcoes
+    return OrderCosts(
+        schedule=schedule,
+        exchange_fees=emolumentos,
+        brokerage=schedule.brokerage_per_order * (len(option_legs) + len(stock_trades)),
+    )
+
+
+def estimate_exercise_costs_by_leg(
+    schedule: CostSchedule, *, exercised: Sequence[tuple[float, int]]
+) -> OrderCosts:
+    """Exercício das pernas dentro do dinheiro: (strike, quantidade) de cada uma."""
+    for strike, quantidade in exercised:
+        _exige_positivo("strike exercido", strike)
+        _exige_quantidade(quantidade)
+    return OrderCosts(
+        schedule=schedule,
+        exchange_fees=schedule.spot_exchange_fee_rate * fsum(k * q for k, q in exercised),
+        brokerage=schedule.exercise_brokerage_per_order * len(exercised),
+    )
+
+
 def estimate_setup_costs(
     schedule: CostSchedule,
     *,
@@ -219,24 +272,15 @@ def estimate_setup_costs(
     """
     if len(option_leg_premiums_per_share) == 0:
         raise InvalidDomainValueError("operação exige ao menos uma perna (uma ordem por perna)")
-    for premio in option_leg_premiums_per_share:
-        _exige_nao_negativo("prêmio da perna", premio)
     _exige_acoes(shares)
-    emolumentos_opcoes = schedule.option_exchange_fee_rate * fsum(
-        p * shares for p in option_leg_premiums_per_share
-    )
-    ordens = len(option_leg_premiums_per_share)
-    if stock_purchase_price_per_share is None:
-        emolumentos = emolumentos_opcoes
-    else:
+    if stock_purchase_price_per_share is not None:
         _exige_positivo("preço de compra da ação", stock_purchase_price_per_share)
-        emolumentos_acao = schedule.spot_exchange_fee_rate * stock_purchase_price_per_share * shares
-        emolumentos = fsum((emolumentos_opcoes, emolumentos_acao))
-        ordens += 1
-    return OrderCosts(
-        schedule=schedule,
-        exchange_fees=emolumentos,
-        brokerage=schedule.brokerage_per_order * ordens,
+    return estimate_order_costs(
+        schedule,
+        option_legs=[(p, shares) for p in option_leg_premiums_per_share],
+        stock_trades=()
+        if stock_purchase_price_per_share is None
+        else [(stock_purchase_price_per_share, shares)],
     )
 
 
@@ -256,13 +300,9 @@ def estimate_exercise_costs(
 
     ``exercised_strikes`` vazio é o cenário sem exercício: custo zero.
     """
-    for strike in exercised_strikes:
-        _exige_positivo("strike exercido", strike)
     _exige_acoes(shares)
-    return OrderCosts(
-        schedule=schedule,
-        exchange_fees=schedule.spot_exchange_fee_rate * fsum(k * shares for k in exercised_strikes),
-        brokerage=schedule.exercise_brokerage_per_order * len(exercised_strikes),
+    return estimate_exercise_costs_by_leg(
+        schedule, exercised=[(k, shares) for k in exercised_strikes]
     )
 
 

@@ -21,6 +21,7 @@ from options_engine.domain.model.errors import (
     NoActiveProfileError,
     ProfileLockedError,
     UnknownProfileError,
+    UnknownRecordError,
     UnknownSymbolError,
 )
 
@@ -33,6 +34,7 @@ ERROR_STATUS: dict[type[Exception], int] = {
     ProfileLockedError: 409,
     NoActiveProfileError: 404,
     UnknownProfileError: 404,
+    UnknownRecordError: 404,
     B3FileRejectedError: 422,
 }
 

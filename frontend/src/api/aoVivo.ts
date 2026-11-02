@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { Carteira } from "./carteira";
 import type { Fonte, StatusMercado } from "./cliente";
 
 export type Cotacao = {
@@ -31,6 +32,8 @@ export type Serie = {
   volume: number;
   iv: number | null;
   delta: number | null;
+  /** Lote padrão do Cadastro da B3 (100 na maioria; 1 nas de BOVA11); null se o Cadastro não diz. */
+  lote: number | null;
 };
 
 export type Vencimento = { data: string; dias_uteis: number; series: Serie[] };
@@ -50,6 +53,8 @@ export type Cadeia = {
 
 export type CadeiaIndisponivel = { ativo: string; erro: string; mensagem: string };
 
+export type CarteiraIndisponivel = { erro: string; mensagem: string };
+
 export type EstadoAoVivo = {
   conectado: boolean;
   status: StatusMercado | null;
@@ -57,6 +62,8 @@ export type EstadoAoVivo = {
   motivoCotacoes: string | null;
   cadeia: Cadeia | null;
   cadeiaIndisponivel: CadeiaIndisponivel | null;
+  carteira: Carteira | null;
+  carteiraIndisponivel: CarteiraIndisponivel | null;
 };
 
 type Mensagem =
@@ -64,6 +71,8 @@ type Mensagem =
   | { tipo: "cotacoes"; dados: Cotacao[]; motivo: string | null }
   | { tipo: "cadeia"; dados: Cadeia }
   | ({ tipo: "cadeia" } & CadeiaIndisponivel)
+  | { tipo: "carteira"; dados: Carteira }
+  | ({ tipo: "carteira" } & CarteiraIndisponivel)
   | { tipo: "erro"; erro: string; mensagem: string };
 
 const RECONEXAO_MS = 2000;
@@ -75,6 +84,8 @@ const INICIAL: EstadoAoVivo = {
   motivoCotacoes: null,
   cadeia: null,
   cadeiaIndisponivel: null,
+  carteira: null,
+  carteiraIndisponivel: null,
 };
 
 export function aplicar(estado: EstadoAoVivo, mensagem: Mensagem): EstadoAoVivo {
@@ -96,6 +107,14 @@ export function aplicar(estado: EstadoAoVivo, mensagem: Mensagem): EstadoAoVivo 
               erro: mensagem.erro,
               mensagem: mensagem.mensagem,
             },
+          };
+    case "carteira":
+      return "dados" in mensagem
+        ? { ...estado, carteira: mensagem.dados, carteiraIndisponivel: null }
+        : {
+            ...estado,
+            carteira: null,
+            carteiraIndisponivel: { erro: mensagem.erro, mensagem: mensagem.mensagem },
           };
     case "erro":
       return estado; // pedido inválido do próprio frontend: nada a mostrar ao usuário

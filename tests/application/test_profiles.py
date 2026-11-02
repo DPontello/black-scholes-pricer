@@ -317,3 +317,28 @@ def test_leitura_do_perfil_ativo_espera_a_edicao_em_curso_de_outra_thread() -> N
     editor.join(5.0)
     leitor.join(5.0)
     assert lido == [Profile("Hugo", ("BOVA11",), 0.15)]
+
+
+@pytest.mark.parametrize("pasta", ["", "   ", "Painel", "pastas/hugo"])
+def test_create_recusa_pasta_vazia_ou_relativa(pasta: str) -> None:
+    # Pasta vazia gravava o perfil na pasta de onde o app foi aberto (achado de 31/10).
+    service, _ = make_service()
+    with pytest.raises(InvalidDomainValueError, match="caminho completo"):
+        service.create("Hugo", pasta)
+    assert service.list() == ()
+
+
+def test_pasta_do_perfil_aberto() -> None:
+    service, _ = make_service_with_profiles("Hugo", "Mãe")
+    with pytest.raises(NoActiveProfileError):
+        service.active_folder()
+    service.open("Mãe")
+    assert service.active_folder() == Path("/pastas/Mãe")
+
+
+def test_perfil_aberto_que_sumiu_da_configuracao_e_erro_claro() -> None:
+    service, repo = make_service_with_profiles("Hugo")
+    service.open("Hugo")
+    del repo.profiles["Hugo"]
+    with pytest.raises(UnknownProfileError, match="sumiu"):
+        service.active_folder()

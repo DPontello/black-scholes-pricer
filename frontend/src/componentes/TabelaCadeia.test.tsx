@@ -15,6 +15,7 @@ function serie(parcial: Partial<Serie> & { ticker: string; strike: number }): Se
     volume: 4840,
     iv: 0.312,
     delta: 0.55,
+    lote: 100,
     ...parcial,
   };
 }
@@ -126,4 +127,24 @@ test("vencimento escolhido que ainda não tem série avisa no lugar da tabela", 
   const vazia = { ...CADEIA, vencimentos: [{ data: "2026-11-06", dias_uteis: 7, series: [] }] };
   render(<TabelaCadeia ativo="PETR4" cadeia={vazia} indisponivel={null} onVencimentos={nada} />);
   expect(screen.getByText("Nenhuma série deste vencimento chegou ainda.")).toBeTruthy();
+});
+
+test("com onEscolherSerie, cada lado ganha o + que põe a série no montador", () => {
+  const escolher = vi.fn();
+  render(
+    <TabelaCadeia
+      ativo="PETR4"
+      cadeia={CADEIA}
+      indisponivel={null}
+      onVencimentos={nada}
+      onEscolherSerie={escolher}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Pôr PETRW520 no montador" }));
+  expect(escolher).toHaveBeenCalledWith(expect.objectContaining({ ticker: "PETRW520" }));
+});
+
+test("sem onEscolherSerie, a cadeia não tem os botões de +", () => {
+  render(<TabelaCadeia ativo="PETR4" cadeia={CADEIA} indisponivel={null} onVencimentos={nada} />);
+  expect(screen.queryByRole("button", { name: /no montador/ })).toBeNull();
 });

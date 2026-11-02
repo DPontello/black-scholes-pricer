@@ -82,6 +82,11 @@ export function formatarData(iso: string): string {
   return `${dia}/${mes}/${ano}`;
 }
 
+// O dia do pregão agora, AAAA-MM-DD: a data padrão de um registro na carteira.
+export function hojeNaB3(agora: Date = new Date()): string {
+  return diaNaB3.format(agora);
+}
+
 export function formatarInstante(iso: string): string {
   return instante.format(new Date(iso)).replace(",", "");
 }

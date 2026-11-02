@@ -2,7 +2,6 @@
 
 from collections.abc import Callable, Collection, Sequence
 from datetime import date, tzinfo
-from typing import Final
 
 from options_engine.application.ports.inbound import (
     ChainView,
@@ -17,22 +16,17 @@ from options_engine.application.ports.outbound import (
     MarketPort,
     TradingCalendar,
 )
+from options_engine.application.use_cases._freshness import least_fresh
 from options_engine.application.use_cases._time import resolve_time_to_expiry
 from options_engine.domain.model.chain import OptionQuote
 from options_engine.domain.model.conventions import DayCountConvention
 from options_engine.domain.model.enums import OptionType
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.expiries import ListedExpiry, default_expiries, list_expiries
-from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
+from options_engine.domain.model.quotes import UnderlyingQuote
 from options_engine.domain.pricing.smile import SeriesMarket, VolSmile, build_smile, series_risk
 
 __all__ = ["MarketViewService"]
-
-_FRESHNESS: Final = {DataSource.AO_VIVO: 2, DataSource.ATRASADO: 1, DataSource.FIM_DE_DIA: 0}
-
-
-def _least_fresh(first: DataSource, second: DataSource) -> DataSource:
-    return first if _FRESHNESS[first] <= _FRESHNESS[second] else second
 
 
 def _order(row: SeriesRow) -> tuple[float, bool, str]:
@@ -49,6 +43,7 @@ class MarketViewService:
         *,
         freshness: Callable[[], CadastroFreshness | str],
         cotahist_range: Callable[[], tuple[date, date] | None],
+        lots: Callable[[str], int | None] = lambda _symbol: None,
     ) -> None:
         if day_count is not DayCountConvention.BUSINESS_252:
             raise InvalidDomainValueError(
@@ -60,17 +55,23 @@ class MarketViewService:
         self._day_count = day_count
         self._freshness = freshness
         self._cotahist_range = cotahist_range
+        self._lots = lots
 
     def follow(
         self,
         watchlist: Sequence[str],
         chain_symbol: str | None,
         expiries: Collection[date] | None = None,
+        *,
+        portfolio_underlyings: Sequence[str] = (),
+        portfolio_series: Sequence[str] = (),
     ) -> None:
+        """A carteira entra depois da lista e antes da cadeia na prioridade da assinatura."""
         self._market.watch(
-            tuple(watchlist),
+            tuple(dict.fromkeys((*watchlist, *portfolio_underlyings))),
             () if chain_symbol is None else (chain_symbol,),
             None if expiries is None else frozenset(expiries),
+            tuple(portfolio_series),
         )
 
     def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]:
@@ -89,7 +90,7 @@ class MarketViewService:
         # saúde menos fresca, para um dado parado nunca sair como ao vivo.
         before = self._market.health()
         chain = self._market.get_chain(symbol)
-        source = _least_fresh(before, self._market.health())
+        source = least_fresh(before, self._market.health())
 
         snapshot = chain.underlying
         # Data da cotação, como no ranking: preço e tau do mesmo instante.
@@ -110,7 +111,10 @@ class MarketViewService:
             market = SeriesMarket(snapshot.spot, rate, tau.year_fraction)
             of_expiry = [q for q in chain.quotes if q.contract.terms.expiry == expiry]
             smile = build_smile(expiry, of_expiry, market)
-            rows = sorted((_row(q, smile, market) for q in of_expiry), key=_order)
+            rows = sorted(
+                (_row(q, smile, market, self._lots(q.contract.symbol)) for q in of_expiry),
+                key=_order,
+            )
             blocks.append(ExpiryBlock(expiry, days[expiry], tuple(rows)))
         return ChainView(
             symbol=symbol,
@@ -149,7 +153,7 @@ class MarketViewService:
         )
 
 
-def _row(quote: OptionQuote, smile: VolSmile, market: SeriesMarket) -> SeriesRow:
+def _row(quote: OptionQuote, smile: VolSmile, market: SeriesMarket, lot: int | None) -> SeriesRow:
     terms = quote.contract.terms
     risk = series_risk(quote, smile, market)
     return SeriesRow(
@@ -164,4 +168,5 @@ def _row(quote: OptionQuote, smile: VolSmile, market: SeriesMarket) -> SeriesRow
         volume=quote.volume,
         implied_vol=None if risk is None else risk.implied_vol,
         delta=None if risk is None else risk.delta,
+        lot=lot,
     )

@@ -38,6 +38,7 @@ from tests.domain._builders import (
     make_butterfly_legs,
     make_condor_legs,
     make_leg,
+    make_stock_leg,
     make_straddle_legs,
     make_terms,
     st_strategy,
@@ -275,3 +276,76 @@ def test_pnl_rejeita_american(option_type: OptionType) -> None:
 def test_perfil_rejeita_american(option_type: OptionType) -> None:
     with pytest.raises(UnsupportedExerciseStyleError):
         payoff_profile(_estrutura_americana(option_type), (20.0, 30.0, 40.0))
+
+
+# ---------------------------------------------------------------------------
+# Perna de ação: venda coberta, collar e put protetora (100 ações)
+# ---------------------------------------------------------------------------
+
+
+def _coberta() -> Strategy:
+    chamada = make_leg(
+        symbol="PETRK320", terms=make_terms(strike=32.0), side=Side.SELL, quantity=100, premium=1.0
+    )
+    return Strategy.create("venda coberta", [chamada], [make_stock_leg(price=30.0)])
+
+
+def test_venda_coberta_contra_a_conta_feita_a_mao() -> None:
+    coberta = _coberta()
+    assert net_premium_cashflow(coberta) == -2900.0  # +100 de prêmio, -3000 das ações
+    assert pnl(coberta, 35.0) == 300.0
+    assert pnl(coberta, 29.0) == 0.0
+    assert payoff_at_expiry(coberta, 35.0) == 3200.0
+    perfil = payoff_profile(coberta, [0.0, 29.0, 32.0, 40.0])
+    assert perfil.breakevens == (29.0,)
+    assert (perfil.max_gain, perfil.max_loss) == (300.0, -2900.0)
+
+
+def test_collar_tem_ganho_e_perda_limitados() -> None:
+    put = make_leg(
+        symbol="PETRW280",
+        terms=make_terms(strike=28.0, option_type=OptionType.PUT),
+        quantity=100,
+        premium=0.5,
+    )
+    call = make_leg(
+        symbol="PETRK330", terms=make_terms(strike=33.0), side=Side.SELL, quantity=100, premium=0.6
+    )
+    collar = Strategy.create("collar", [put, call], [make_stock_leg(price=30.0)])
+    perfil = payoff_profile(collar, [0.0, 28.0, 33.0, 40.0])
+    assert (perfil.max_gain, perfil.max_loss) == (310.0, -190.0)
+
+
+def test_put_protetora_tem_perda_limitada_e_ganho_ilimitado() -> None:
+    put = make_leg(
+        terms=make_terms(strike=28.0, option_type=OptionType.PUT), quantity=100, premium=0.5
+    )
+    protegida = Strategy.create("put protetora", [put], [make_stock_leg(price=30.0)])
+    perfil = payoff_profile(protegida, [0.0, 28.0, 40.0])
+    assert (perfil.max_gain, perfil.max_loss) == (None, -250.0)
+
+
+def test_call_vendida_a_seco_tem_perda_ilimitada() -> None:
+    seca = Strategy.create("a seco", [make_leg(side=Side.SELL, quantity=100, premium=1.0)])
+    assert payoff_profile(seca, [0.0, 30.0, 40.0]).max_loss is None
+
+
+def test_pnl_sem_preco_da_acao_e_erro_tipado_com_o_ticker() -> None:
+    coberta = Strategy.create(
+        "c", [make_leg(side=Side.SELL, premium=1.0)], [make_stock_leg(price=None)]
+    )
+    with pytest.raises(MissingPremiumError, match="PETR4"):
+        pnl(coberta, 30.0)
+
+
+@given(estrutura=st_strategy(with_premiums=True, with_stock=True), spot=_SPOTS)
+def test_short_e_menos_long_tambem_com_acao(estrutura: Strategy, spot: float) -> None:
+    espelhada = estrutura.mirrored()
+    escala = max([leg.terms.strike for leg in estrutura.legs] + [spot, 1.0]) * 20
+    assert_close(
+        pnl(espelhada, spot),
+        -pnl(estrutura, spot),
+        rel=REL_SELF,
+        abs_=ABS_SELF_FLOOR * escala,
+        label="short == -long com ação (pnl)",
+    )

@@ -21,7 +21,9 @@ from options_engine.domain.income.costs import (
     OperationCosts,
     OrderCosts,
     estimate_exercise_costs,
+    estimate_exercise_costs_by_leg,
     estimate_income_tax,
+    estimate_order_costs,
     estimate_setup_costs,
 )
 from options_engine.domain.model.errors import InvalidDomainValueError
@@ -424,3 +426,54 @@ def test_mais_custo_na_tabela_nunca_reduz_o_custo(
     ):
         escala = max(1.0, abs(receita), caro)
         assert caro >= barato - INEQ_SLACK * escala, f"{nome}: {caro} < {barato}"
+
+
+# ---------------------------------------------------------------------------
+# Custos por perna (montador): quantidade de cada perna, inclusive a borboleta 1-2-1
+# ---------------------------------------------------------------------------
+
+
+def test_ordens_da_borboleta_somam_cada_perna_com_a_sua_quantidade() -> None:
+    tabela = make_cost_schedule()
+    custos = estimate_order_costs(tabela, option_legs=[(0.5, 100), (1.2, 200), (2.4, 100)])
+    assert custos.exchange_fees == pytest.approx(0.0005 * (50.0 + 240.0 + 240.0), abs=1e-12)
+    assert custos.brokerage == 3 * 5.0
+
+
+def test_ordem_da_acao_entra_pela_tabela_do_a_vista() -> None:
+    tabela = make_cost_schedule()
+    custos = estimate_order_costs(tabela, option_legs=[(1.0, 100)], stock_trades=[(30.0, 100)])
+    assert custos.exchange_fees == pytest.approx(0.0005 * 100.0 + 0.0002 * 3000.0, abs=1e-12)
+    assert custos.brokerage == 2 * 5.0
+
+
+def test_ordens_sem_perna_nenhuma_e_quantidade_invalida_sao_recusadas() -> None:
+    tabela = make_cost_schedule()
+    with pytest.raises(InvalidDomainValueError, match="perna"):
+        estimate_order_costs(tabela, option_legs=[])
+    with pytest.raises(InvalidDomainValueError, match="quantidade"):
+        estimate_order_costs(tabela, option_legs=[(1.0, 0)])
+
+
+def test_funcao_antiga_e_a_nova_dao_o_mesmo_numero_com_quantidades_iguais() -> None:
+    tabela = make_cost_schedule()
+    antiga = estimate_setup_costs(
+        tabela,
+        option_leg_premiums_per_share=(0.3, 0.8),
+        stock_purchase_price_per_share=30.0,
+        shares=300,
+    )
+    nova = estimate_order_costs(
+        tabela, option_legs=[(0.3, 300), (0.8, 300)], stock_trades=[(30.0, 300)]
+    )
+    assert (antiga.exchange_fees, antiga.brokerage) == (nova.exchange_fees, nova.brokerage)
+    assert estimate_exercise_costs(
+        tabela, exercised_strikes=(28.0, 32.0), shares=300
+    ) == estimate_exercise_costs_by_leg(tabela, exercised=[(28.0, 300), (32.0, 300)])
+
+
+def test_exercicio_por_perna_usa_a_quantidade_de_cada_uma() -> None:
+    tabela = make_cost_schedule()
+    custos = estimate_exercise_costs_by_leg(tabela, exercised=[(30.0, 200), (32.0, 100)])
+    assert custos.exchange_fees == pytest.approx(0.0002 * (6000.0 + 3200.0), abs=1e-12)
+    assert custos.brokerage == 2 * 2.0

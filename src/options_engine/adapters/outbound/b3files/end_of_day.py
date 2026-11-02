@@ -2,8 +2,8 @@
 
 O mercado sem fonte ao vivo: o último pregão dos COTAHIST e o cadastro mais recente da
 ``B3FileLibrary``, sempre rotulado ``FIM_DE_DIA``. Recarrega sozinho quando a biblioteca muda
-(arquivo novo importado). Implementa o painel de cotações e a cadeia de opções; a assinatura
-ao vivo (``watch``) não faz nada, e a saúde é sempre ``FIM_DE_DIA``.
+(arquivo novo importado). Implementa o painel de cotações, a cadeia e as séries pelo ticker; a
+assinatura ao vivo (``watch``) não faz nada, e a saúde é sempre ``FIM_DE_DIA``.
 
 Cotação do ativo (registro à vista do pregão): ``last`` é o fechamento (PREULT); ``bid`` e
 ``ask`` são as melhores ofertas, ausentes (``None``) quando zeradas (ADR-0003) ou quando o
@@ -32,7 +32,7 @@ from options_engine.adapters.outbound.b3files.loaded import (
 from options_engine.adapters.outbound.cotahist import CotahistOptionChainAdapter
 from options_engine.adapters.outbound.cotahist.errors import SourceFileError
 from options_engine.adapters.outbound.fixed_rate import FixedRateAdapter
-from options_engine.domain.model.chain import OptionChain
+from options_engine.domain.model.chain import OptionChain, OptionQuote
 from options_engine.domain.model.errors import UnderlyingUnavailableError
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 
@@ -54,8 +54,10 @@ class EndOfDayMarket:
         library: B3FileLibrary,
         cdi_annual: Callable[[], float],
         tz: tzinfo = B3_UTC_OFFSET,
+        *,
+        loader: LibraryLoader | None = None,
     ) -> None:
-        self._loader = LibraryLoader(library)
+        self._loader = LibraryLoader(library) if loader is None else loader
         self._cdi_annual = cdi_annual
         self._tz = tz
         # O adapter é caro de montar (relê o cadastro): vale para a mesma foto da biblioteca e o
@@ -81,6 +83,7 @@ class EndOfDayMarket:
         underlyings: Sequence[str],
         chain_symbols: Sequence[str],
         chain_expiries: Collection[date] | None = None,
+        portfolio_series: Sequence[str] = (),
     ) -> None:
         """Sem fonte ao vivo para assinar."""
 
@@ -98,6 +101,20 @@ class EndOfDayMarket:
         return self._adapter_for(loaded, loaded.session, underlying_symbol).get_chain(
             underlying_symbol
         )
+
+    # --- OptionQuotePort -------------------------------------------------------------------------
+
+    def get_option_quotes(self, symbols: Sequence[str]) -> Mapping[str, OptionQuote | str]:
+        loaded = self._loader.load()
+        if isinstance(loaded, str):
+            return {symbol: loaded for symbol in symbols}
+        if loaded.session is None:
+            return {symbol: NO_COTAHIST_REASON for symbol in symbols}
+        try:
+            adapter = self._adapter_for(loaded, loaded.session, "séries")
+        except UnderlyingUnavailableError as erro:
+            return {symbol: str(erro) for symbol in symbols}
+        return adapter.get_option_quotes(symbols)
 
     # --- internos -------------------------------------------------------------------------------
 

@@ -1,4 +1,9 @@
-"""Router de mercado: status, cotações, cadeia e o WebSocket ``/api/ao-vivo``."""
+"""Router de mercado: status, cotações, cadeia e o WebSocket ``/api/ao-vivo``.
+
+O WebSocket manda cada mensagem (``status``, ``cotacoes``, ``cadeia``, ``carteira``) só quando
+ela muda. A carteira entra na assinatura do mercado: os ativos dela depois da lista do perfil e
+as séries abertas antes da cadeia.
+"""
 
 import asyncio
 import json
@@ -11,6 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketState
 
+from options_engine.adapters.inbound.web.portfolio import Closes, carteira_atual
 from options_engine.application.ports.inbound import (
     ChainView,
     MarketStatus,
@@ -18,6 +24,7 @@ from options_engine.application.ports.inbound import (
     ProfileUseCase,
     WatchRow,
 )
+from options_engine.application.ports.portfolio import PortfolioSymbols, PortfolioUseCase
 from options_engine.domain.model.errors import DomainError, NoActiveProfileError
 from options_engine.domain.model.profile import normalize_ticker
 
@@ -25,6 +32,7 @@ __all__ = ["INTERVALO_AO_VIVO_S", "MAX_VENCIMENTOS", "router_mercado"]
 
 INTERVALO_AO_VIVO_S: Final = 1.0
 MAX_VENCIMENTOS: Final = 12
+_NADA: Final = PortfolioSymbols((), ())
 
 
 class CadastroOut(BaseModel):
@@ -72,6 +80,7 @@ class SerieOut(BaseModel):
     volume: float
     iv: float | None
     delta: float | None
+    lote: int | None
 
 
 class VencimentoOut(BaseModel):
@@ -185,6 +194,7 @@ def _cadeia_out(view: ChainView) -> CadeiaOut:
                         volume=row.volume,
                         iv=row.implied_vol,
                         delta=row.delta,
+                        lote=row.lot,
                     )
                     for row in block.rows
                 ],
@@ -207,6 +217,8 @@ def router_mercado(
     market: MarketViewUseCase,
     profiles: ProfileUseCase,
     *,
+    portfolio: PortfolioUseCase | None = None,
+    closes: Closes = lambda _symbol, _day: None,
     interval_s: float = INTERVALO_AO_VIVO_S,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["mercado"])
@@ -231,7 +243,7 @@ def router_mercado(
     @router.websocket("/ao-vivo")
     async def ao_vivo(websocket: WebSocket) -> None:
         await websocket.accept()
-        await _SessaoAoVivo(websocket, market, profiles, interval_s).rodar()
+        await _SessaoAoVivo(websocket, market, profiles, interval_s, portfolio, closes).rodar()
 
     return router
 
@@ -243,13 +255,19 @@ class _SessaoAoVivo:
         market: MarketViewUseCase,
         profiles: ProfileUseCase,
         interval_s: float,
+        portfolio: PortfolioUseCase | None,
+        closes: Closes,
     ) -> None:
         self._ws = websocket
         self._market = market
         self._profiles = profiles
         self._interval_s = interval_s
+        self._portfolio = portfolio
+        self._closes = closes
         self._cadeia: tuple[str, frozenset[date] | None] | None = None  # (ativo, vencimentos)
-        self._seguindo: tuple[tuple[str, ...], str | None, frozenset[date] | None] | None = None
+        self._seguindo: (
+            tuple[tuple[str, ...], str | None, frozenset[date] | None, PortfolioSymbols] | None
+        ) = None
         self._enviado: dict[str, object] = {}
 
     async def rodar(self) -> None:
@@ -307,9 +325,16 @@ class _SessaoAoVivo:
         except NoActiveProfileError as erro:
             lista, motivo = (), str(erro)
         ativo, vencimentos = (None, None) if self._cadeia is None else self._cadeia
-        seguir = (tuple(lista), ativo, vencimentos)
+        carteira, simbolos = self._mensagem_da_carteira()
+        seguir = (tuple(lista), ativo, vencimentos, simbolos)
         if seguir != self._seguindo:
-            self._market.follow(*seguir)
+            self._market.follow(
+                tuple(lista),
+                ativo,
+                vencimentos,
+                portfolio_underlyings=simbolos.underlyings,
+                portfolio_series=simbolos.series,
+            )
             self._seguindo = seguir
         atual: dict[str, dict[str, object]] = {
             "status": {"tipo": "status", **_status_out(self._market.status()).model_dump()},
@@ -321,9 +346,20 @@ class _SessaoAoVivo:
         }
         if self._cadeia is not None:
             atual["cadeia"] = self._mensagem_da_cadeia(*self._cadeia)
+        if carteira is not None:
+            atual["carteira"] = carteira
         mudou = [m for chave, m in atual.items() if self._enviado.get(chave) != m]
         self._enviado.update(atual)
         return mudou
+
+    def _mensagem_da_carteira(self) -> tuple[dict[str, object] | None, PortfolioSymbols]:
+        if self._portfolio is None:
+            return None, _NADA
+        try:
+            dados, simbolos = carteira_atual(self._portfolio, self._closes)
+        except DomainError as erro:  # sem perfil aberto, pasta fora do ar
+            return {"tipo": "carteira", "erro": type(erro).__name__, "mensagem": str(erro)}, _NADA
+        return {"tipo": "carteira", "dados": dados.model_dump()}, simbolos
 
     def _mensagem_da_cadeia(
         self, ativo: str, vencimentos: frozenset[date] | None

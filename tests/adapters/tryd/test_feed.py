@@ -22,6 +22,7 @@ from options_engine.application.ports.outbound import (
     OptionChainPort,
     QuoteBoardPort,
 )
+from options_engine.domain.model.chain import OptionQuote
 from options_engine.domain.model.conventions import Compounding, RiskFreeRate
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
@@ -692,3 +693,53 @@ def test_consultas_e_assinaturas_de_varias_threads_nao_se_atropelam(tmp_path: Pa
         for futuro in futuros:
             futuro.result()  # propaga qualquer exceção
     assert isinstance(m.feed.get_quotes(["PETR4"])["PETR4"], UnderlyingQuote)
+
+
+# --- carteira ---------------------------------------------------------------------------------
+
+
+def test_carteira_entra_antes_da_cadeia_e_o_limite_corta_a_cadeia(tmp_path: Path) -> None:
+    carteira = {"PETRA300", "PETRK300"}
+    m = montar(tmp_path, topic_limit=len(CAMPOS_ATIVO) + 3 * len(CAMPOS_OPCAO))
+    m.feed.watch(["PETR4"], ["PETR4"], portfolio_series=sorted(carteira))
+    series = _series(m.cliente.topicos, "PETR4")
+    assert carteira <= series  # janeiro não é vencimento da cadeia, mas é da carteira
+    assert len(series - carteira) == 1
+    assert _campos_de(m.cliente.topicos, "PETRA300") == set(CAMPOS_OPCAO)
+
+
+def test_serie_da_carteira_cotada_pelo_ticker_com_os_termos_do_cadastro(tmp_path: Path) -> None:
+    m = montar(tmp_path)
+    m.feed.watch(["PETR4"], [], portfolio_series=["PETRA300", "PETRK280", "PETRK340"])
+    alimentar(m.board, "PETRA300", ULT=1.0, OCP=0.9, OVD=1.1, NEG=3, VOL=300.0)
+    cotacoes = m.feed.get_option_quotes(["PETRA300", "PETRK280", "PETRK300", "PETRK340", "XPTO11"])
+    janeiro = cotacoes["PETRA300"]
+    assert isinstance(janeiro, OptionQuote)
+    assert (janeiro.bid, janeiro.ask, janeiro.last) == (0.9, 1.1, 1.0)
+    termos = janeiro.contract.terms
+    assert (termos.underlying, termos.strike, termos.expiry, termos.exercise_style) == (
+        "PETR4",
+        30.0,
+        date(2027, 1, 15),
+        ExerciseStyle.EUROPEAN,
+    )
+    assert cotacoes["PETRK280"] == "aguardando dados"
+    assert cotacoes["PETRK300"] == "sem cotação ao vivo"  # fora da assinatura: nunca o preço velho
+    assert cotacoes["PETRK340"] == "sem estilo de exercício no cadastro"
+    assert cotacoes["XPTO11"] == "série desconhecida no cadastro"
+
+
+def test_serie_da_carteira_com_a_ponte_caida_ou_sem_biblioteca(tmp_path: Path) -> None:
+    m = montar(tmp_path / "caida", saude=BridgeHealth.DESCONECTADA)
+    m.feed.watch(["PETR4"], [], portfolio_series=["PETRA300"])
+    alimentar(m.board, "PETRA300", ULT=1.0, OCP=0.9, OVD=1.1)
+    assert m.feed.get_option_quotes(["PETRA300"]) == {"PETRA300": "sem cotação ao vivo"}
+    vazia = biblioteca(tmp_path / "vazia", com_cotahist=False, com_cadastro=False)
+    sem_biblioteca = montar(tmp_path / "sem", lib=vazia).feed
+    assert sem_biblioteca.get_option_quotes(["PETRA300"]) == {"PETRA300": _SEM_CADASTRO}
+
+
+def test_serie_sem_ativo_objeto_e_de_raiz_dividida_sai_com_o_motivo(tmp_path: Path) -> None:
+    m = montar(tmp_path, cadastro=cadastro_sem_objetos())
+    (motivo,) = m.feed.get_option_quotes(["PETRK300"]).values()
+    assert isinstance(motivo, str) and "ambíguo" in motivo

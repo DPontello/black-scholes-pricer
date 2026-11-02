@@ -27,6 +27,7 @@ from options_engine.adapters.outbound.cotahist.errors import SourceFileError
 from options_engine.adapters.outbound.cotahist.instruments import InstrumentInfo, load_instruments
 from options_engine.adapters.outbound.cotahist.parser import MARKET_SPOT, CotahistRecord
 from options_engine.adapters.outbound.cotahist.session import SessionData, load_session_data
+from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.errors import DomainError
 
 __all__ = ["NO_CADASTRO_REASON", "NO_COTAHIST_REASON", "LibraryLoader", "LoadedLibrary"]
@@ -51,6 +52,25 @@ class LoadedLibrary:
 
     def knows(self, symbol: str) -> bool:
         return symbol in self.instruments or symbol in self.spot_symbols
+
+    def lot(self, symbol: str) -> int | None:
+        info = self.instruments.get(symbol)
+        return None if info is None else info.lot
+
+    def option_terms(self, symbol: str, underlying: str) -> OptionTerms | str:
+        """Termos da série pelo cadastro; sem o ativo-objeto nele, vale ``underlying``."""
+        info = self.instruments.get(symbol)
+        if info is None or info.option_type is None or info.strike is None or info.expiry is None:
+            return f"{symbol}: série desconhecida no cadastro"
+        if info.exercise_style is None:
+            return f"{symbol}: sem estilo de exercício no cadastro"
+        return OptionTerms(
+            info.underlying_symbol or underlying,
+            info.strike,
+            info.expiry,
+            info.option_type,
+            info.exercise_style,
+        )
 
     def closes(self, symbol: str) -> tuple[tuple[date, float], ...]:
         return () if self.data is None else self.data.closes.get(symbol, ())

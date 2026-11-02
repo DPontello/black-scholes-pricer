@@ -94,6 +94,12 @@ ABS_INCOME_ORACLE_PER_SCALE = 1e-12  # multiplicar pela escala strike x ações
 # ~16x (√252), dezenas de erros-padrão no N usado.
 GBM_STAT_Z = 4.0
 
+# Probabilidade de lucro conferida contra uma grade estratificada em probabilidade: N pontos
+# u = (i + 0,5) / N da normal, e conta-se a fração com resultado positivo. Cada fronteira de
+# região erra no máximo 1/N; com N = 200.000 e até 4 breakevens, 4 / N = 2e-5.
+PROBABILITY_GRID_POINTS = 200_000
+ABS_PROBABILITY_GRID = 4.0 / PROBABILITY_GRID_POINTS
+
 # --- folga para desigualdades (bounds, monotonia) ----------------------------
 # Desigualdade estrita vira `>= -folga` para não flakar exatamente no limite.
 INEQ_SLACK = 1e-9  # escalar pela escala do problema

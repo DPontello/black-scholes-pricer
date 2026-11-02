@@ -343,3 +343,169 @@ button.link {
   margin-top: 0.75rem;
   color: var(--texto-secundario);
 }
+
+.montar-ativo {
+  display: inline-block;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.montador-topo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.montador-topo select {
+  font: inherit;
+  color: var(--texto);
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: 4px;
+  padding: 0.3rem 0.4rem;
+}
+
+.montador-corpo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .montador-corpo {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.montador-cadeia {
+  overflow-x: auto;
+}
+
+.escolher-serie {
+  padding: 0 0.4rem;
+  line-height: 1.2;
+}
+
+.tabela-pernas input,
+.tabela-pernas select {
+  width: 6.5rem;
+}
+
+.tabela-pernas input.fora-do-lote {
+  border-color: var(--atencao);
+}
+
+.resumo-estrutura .frase {
+  font-size: 1.05rem;
+  margin: 0.5rem 0;
+}
+
+.numeros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: 0.5rem 0;
+}
+
+.numero {
+  display: flex;
+  flex-direction: column;
+}
+
+.avisos {
+  margin: 0.5rem 0;
+  padding-left: 1.2rem;
+}
+
+.grafico-payoff {
+  width: 100%;
+  height: 320px;
+  margin: 0.75rem 0;
+}
+
+.grade-cenarios caption {
+  text-align: left;
+  color: var(--texto-secundario);
+  padding-bottom: 0.25rem;
+}
+
+.acoes-montador {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.simulacoes ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.painel-carteira {
+  margin: 0.75rem 0;
+  padding: 0.8rem 1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.painel-carteira h2 {
+  margin-top: 0;
+}
+
+.campos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.execucoes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.execucao {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.execucao input,
+.tabela-registro input {
+  width: 7rem;
+}
+
+.teorico {
+  color: var(--atencao);
+}
+
+.acoes-operacao {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.detalhe-operacao > td {
+  background: var(--painel);
+}
+
+.eventos {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  color: var(--texto-secundario);
+}
+
+.tabela-totais {
+  margin-top: 1rem;
+}
+
+.tabela-totais caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.25rem;
+}

@@ -11,8 +11,15 @@
 >   [`superpowers/plans/2026-10-28-app-semana-1-base.md`](superpowers/plans/2026-10-28-app-semana-1-base.md)
 >   e estado para retomar em
 >   [`superpowers/HANDOFF-2026-10-28.md`](superpowers/HANDOFF-2026-10-28.md).
-> - **Semana 1:** tarefas 1 a 10 concluídas e revisadas; a 11 tem a correção
->   feita e falta a re-revisão; faltam 12 a 18.
+> - **Semana 1 (base, mercado ao vivo e fim de dia):** concluída e mergeada na
+>   `development`, com os arquivos reais da B3 de 28/10 conferidos.
+> - **Semana 2 (montador e carteira, 2026-11-02):** as 15 tarefas do
+>   [plano](superpowers/plans/2026-10-31-app-semana-2-montador-carteira.md) feitas na branch
+>   `feat/app-semana-2`, com o ponta a ponta nos arquivos reais. Falta o teste ao vivo no
+>   pregão (o P&L da carteira pelo Tryd). Decisões no
+>   [ledger](superpowers/ledger-semana-2.md).
+> - **Semanas 3 a 5:** book e análise; alertas, proventos, IR e instalador; teste com a
+>   mãe. Os planos ainda não foram escritos.
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
 >   vitrine (benchmark, ADRs de apresentação) saíram do escopo.
 > - **ADR-0008:** aceita com as correções do spike de 2026-10-28.

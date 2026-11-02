@@ -18,7 +18,9 @@ Emenda de 2026-07-04 ao ARCH §4.2 (painel de design da Sprint 3):
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from enum import Enum
 from math import isfinite
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.outbound import CadastroFreshness
@@ -27,19 +29,30 @@ from options_engine.domain.income.metrics import IncomeStructure
 from options_engine.domain.income.ranking import IncomeRanking, RankingCriterion
 from options_engine.domain.model.chain import RejectedSeries
 from options_engine.domain.model.contracts import OptionTerms
-from options_engine.domain.model.enums import ExerciseStyle, OptionType
+from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.profile import Profile, ProfileEntry
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
-from options_engine.domain.model.results import PayoffProfile, PricingResult
+from options_engine.domain.model.results import Greeks, PayoffProfile, PricingResult
 from options_engine.domain.model.scenarios import SpotAxis, StressScenario, StressTestReport
 from options_engine.domain.model.strategy import Strategy
+from options_engine.domain.model.templates import Template
+from options_engine.domain.simulation.valuation import ScenarioMatrix
 
 __all__ = [
     "AnalyzeStrategyPayoffUseCase",
+    "BuilderAnalysis",
+    "BuilderLegInput",
+    "BuilderLegView",
+    "BuilderRequest",
+    "BuilderStockInput",
+    "BuilderStockView",
     "ChainView",
     "ExpiryBlock",
     "ExpiryOption",
+    "ExpiryPoint",
+    "ExpiryResult",
+    "LegPriceOrigin",
     "MarketStatus",
     "MarketViewUseCase",
     "PriceOptionCommand",
@@ -48,7 +61,9 @@ __all__ = [
     "RankIncomeCommand",
     "RankIncomeOpportunitiesUseCase",
     "SeriesRow",
+    "StrategyBuilderUseCase",
     "StressTestUseCase",
+    "TodayResult",
     "WatchRow",
 ]
 
@@ -187,6 +202,8 @@ class ProfileUseCase(Protocol):
 
     def active(self) -> Profile: ...
 
+    def active_folder(self) -> Path: ...
+
     def set_watchlist(self, tickers: Sequence[str]) -> Profile: ...
 
     def close(self) -> None: ...
@@ -220,6 +237,7 @@ class SeriesRow:
     volume: float
     implied_vol: float | None
     delta: float | None
+    lot: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,6 +292,9 @@ class MarketViewUseCase(Protocol):
         watchlist: Sequence[str],
         chain_symbol: str | None,
         expiries: Collection[date] | None = None,
+        *,
+        portfolio_underlyings: Sequence[str] = (),
+        portfolio_series: Sequence[str] = (),
     ) -> None: ...
 
     def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]: ...
@@ -281,3 +302,127 @@ class MarketViewUseCase(Protocol):
     def chain(self, symbol: str, expiries: Collection[date] | None = None) -> ChainView: ...
 
     def status(self) -> MarketStatus: ...
+
+
+class LegPriceOrigin(Enum):
+    """De onde veio o preço da perna no montador (ADR-0004); ``DIGITADO`` é o que o usuário pôs."""
+
+    EXECUTAVEL = "executavel"
+    INDICATIVO = "indicativo"
+    TEORICO = "teorico"
+    DIGITADO = "digitado"
+    PRECO_MEDIO = "preco_medio"  # a ação "da carteira", pelo preço médio do perfil
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderLegInput:
+    symbol: str
+    side: Side
+    quantity: int
+    price: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderStockInput:
+    side: Side
+    quantity: int
+    origin: StockOrigin
+    price: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderRequest:
+    """``template``: a chave de um modelo pronto, para conferir a forma e dar o nome."""
+
+    underlying: str
+    legs: tuple[BuilderLegInput, ...]
+    stock: BuilderStockInput | None = None
+    template: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderLegView:
+    symbol: str
+    option_type: OptionType
+    strike: float
+    exercise_style: ExerciseStyle
+    side: Side
+    quantity: int
+    lot: int | None
+    price: float | None
+    origin: LegPriceOrigin | None
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderStockView:
+    symbol: str
+    side: Side
+    quantity: int
+    origin: StockOrigin
+    price: float | None
+    price_origin: LegPriceOrigin | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryPoint:
+    """``payoff`` bruto sempre; ``pnl`` e ``net`` só com todas as pernas com preço."""
+
+    spot: float
+    payoff: float
+    pnl: float | None
+    net: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryResult:
+    """Em moeda. ``max_gain``/``max_loss`` e os ``net_*``: ``None`` = ilimitado."""
+
+    net_premium: float
+    breakevens: tuple[float, ...]
+    max_gain: float | None
+    max_loss: float | None
+    net_max_gain: float | None
+    net_max_loss: float | None
+    setup_costs: float
+    income_tax_at_max_gain: float | None
+    probability_of_profit: float
+
+
+@dataclass(frozen=True, slots=True)
+class TodayResult:
+    curve: tuple[tuple[float, float], ...]
+    greeks: Greeks
+    grid: ScenarioMatrix
+    american_call_approximated: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderAnalysis:
+    """``at_expiry`` e ``today`` são ``None`` quando falta preço ou vol; o motivo vai em
+    ``warnings`` e em ``today_unavailable``."""
+
+    name: str
+    underlying: str
+    expiry: date
+    business_days: int
+    spot: float
+    source: DataSource
+    timestamp: datetime
+    legs: tuple[BuilderLegView, ...]
+    stock: BuilderStockView | None
+    curve: tuple[ExpiryPoint, ...]
+    at_expiry: ExpiryResult | None
+    today: TodayResult | None
+    today_unavailable: str | None
+    warnings: tuple[str, ...]
+
+
+@runtime_checkable
+class StrategyBuilderUseCase(Protocol):
+    """``suggest``: as pernas de um modelo pronto com as séries da cadeia (100 x proporção)."""
+
+    def templates(self) -> tuple[Template, ...]: ...
+
+    def suggest(self, underlying: str, template_key: str, expiry: date) -> BuilderRequest: ...
+
+    def analyze(self, request: BuilderRequest) -> BuilderAnalysis: ...
