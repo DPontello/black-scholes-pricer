@@ -292,6 +292,9 @@ class MarketViewUseCase(Protocol):
         watchlist: Sequence[str],
         chain_symbol: str | None,
         expiries: Collection[date] | None = None,
+        *,
+        portfolio_underlyings: Sequence[str] = (),
+        portfolio_series: Sequence[str] = (),
     ) -> None: ...
 
     def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]: ...
@@ -308,6 +311,7 @@ class LegPriceOrigin(Enum):
     INDICATIVO = "indicativo"
     TEORICO = "teorico"
     DIGITADO = "digitado"
+    PRECO_MEDIO = "preco_medio"  # a ação "da carteira", pelo preço médio do perfil
 
 
 @dataclass(frozen=True, slots=True)

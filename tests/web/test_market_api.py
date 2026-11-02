@@ -119,6 +119,9 @@ class _MercadoFalso:
         watchlist: Sequence[str],
         chain_symbol: str | None,
         expiries: Collection[date] | None = None,
+        *,
+        portfolio_underlyings: Sequence[str] = (),
+        portfolio_series: Sequence[str] = (),
     ) -> None:
         escolha = None if expiries is None else frozenset(expiries)
         self.seguindo.append((tuple(watchlist), chain_symbol, escolha))

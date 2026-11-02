@@ -40,7 +40,7 @@ Timestamps: ``datetime(pregão, 18:00, fuso de valoração)`` — marcador de fi
 de pregão; só a data importa.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime, time, tzinfo
 from pathlib import Path
 
@@ -118,6 +118,9 @@ class CotahistOptionChainAdapter:
         )
         self._instruments = load_instruments(instruments_path)
         self._spot_records = {r.symbol: r for r in self._data.records if r.market == MARKET_SPOT}
+        self._option_records = {
+            r.symbol: r for r in self._data.records if r.market in _OPTION_TYPES
+        }
 
     @property
     def loaded_from_cache(self) -> bool:
@@ -174,6 +177,26 @@ class CotahistOptionChainAdapter:
             rejected_series=tuple(rejeitadas),
             underlying_book_available=book_observado,
         )
+
+    def get_option_quotes(self, symbols: Sequence[str]) -> Mapping[str, OptionQuote | str]:
+        """Séries do pregão pelo ticker, com o vínculo e as rejeições da cadeia; série sem
+        registro no pregão (sem negócio) ou fora do cadastro sai com o motivo."""
+        resultado: dict[str, OptionQuote | str] = {}
+        for simbolo in symbols:
+            registro = self._option_records.get(simbolo)
+            if registro is None:
+                resultado[simbolo] = (
+                    f"sem negócio no pregão de {self._session.isoformat()}"
+                    if simbolo in self._instruments
+                    else "série desconhecida no cadastro"
+                )
+                continue
+            vinculo = self._vinculo(registro)
+            serie = (
+                vinculo if isinstance(vinculo, RejectedSeries) else self._serie(registro, vinculo)
+            )
+            resultado[simbolo] = serie.reason if isinstance(serie, RejectedSeries) else serie
+        return resultado
 
     # ------------------------------------------------------------------
     # Ativo-objeto

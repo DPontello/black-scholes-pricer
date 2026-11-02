@@ -159,3 +159,20 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - Ruling: a operação de destino é gravada antes das fontes. Se a gravação parar no meio (nuvem fora do ar), repetir a atribuição é recusado (a perna já foi atribuída) em vez de tirar as ações duas vezes.
 - `domain/portfolio/exercise.py`: `takes_portfolio_shares(operation, leg, quantity)`, a mesma regra que o `apply_exercise` usa para saber se a ação sai "da carteira".
 - Gates: 4898 testes (cobertura 97,8%; `use_cases/portfolio` em 100%), mypy, ruff e import-linter.
+
+## 2026-11-02: Task 12 — cotação das pernas e assinatura da carteira
+
+- Port novo `OptionQuotePort.get_option_quotes(symbols) -> Mapping[str, OptionQuote | str]`, dentro do `MarketPort`. Toda série pedida volta com a cotação ou o motivo: "sem cotação ao vivo", "aguardando dados", "série desconhecida no cadastro", "sem estilo de exercício no cadastro", o vínculo ambíguo e, no fim de dia, "sem negócio no pregão de AAAA-MM-DD".
+- `watch(..., portfolio_series=())`: a ordem do limite de tópicos é ativos, carteira e cadeia, então a cadeia é cortada antes da carteira. A série que está na carteira e na cadeia é assinada uma vez só, com a prioridade da carteira.
+- `TrydMarketFeed.get_option_quotes`: os termos vêm do cadastro (o ativo-objeto declarado, senão o dono único da raiz). O feed guarda os tickers da última assinatura: a série fora dela (cortada pelo limite) ou com a ponte caída sai "sem cotação ao vivo", nunca com o preço que sobrou no quadro.
+- `EndOfDayMarket.get_option_quotes`: pelo `CotahistOptionChainAdapter.get_option_quotes`, com o mesmo vínculo e as mesmas rejeições da cadeia. O `FallbackMarket` escolhe a fonte como na cadeia, sem misturar fontes por série.
+- `MarketViewService.follow(..., portfolio_underlyings=(), portfolio_series=())`: os ativos da carteira entram depois da lista do perfil. Quem chama com a carteira é o WebSocket (Task 13).
+- `PortfolioService(..., market=, calendar=)`. `open_operations` marca cada perna aberta e cada total por ativo (`LegMark`):
+  - preço de zerar: bid para a comprada e ask para a vendida, na opção e na ação; P&L não realizado bruto, sem o custo de zerar;
+  - sem esse lado, `price` e `unrealized` ficam vazios, `reason` diz por quê e `theoretical` traz o prêmio teórico: BS com a vol do smile do vencimento no strike, senão a vol de referência do ativo. A cadeia só é pedida para a série sem preço de zerar;
+  - o não realizado da operação é `None` quando alguma perna aberta não tem preço de zerar;
+  - `source`: a saúde menos fresca da consulta, como na cadeia e no montador.
+- Ruling: só o lado de zerar vale como preço. O último negócio (o "indicativo" do montador) não marca a carteira, porque a spec manda mostrar o teórico quando falta o lado.
+- Ruling: put americana fica sem teórico (sem fórmula fechada, ADR-0002), em vez de mostrar o valor da europeia. Ação sem lado de zerar também fica sem teórico.
+- `PortfolioService.symbols()` (os ativos e as séries abertas, para a assinatura) e `average_price(symbol)` (o médio das ações compradas no perfil).
+- Montador: `StrategyBuilderService(..., portfolio_average=)`. A ação "da carteira" sem preço digitado usa o preço médio do perfil, com a origem nova `preco_medio` ("preço médio da carteira" na tela). Sem ações no perfil, o erro pede o preço médio. A ligação com a carteira na composição fica para a Task 13.

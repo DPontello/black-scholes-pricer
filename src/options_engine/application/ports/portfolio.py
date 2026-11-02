@@ -8,14 +8,18 @@ from typing import Protocol, runtime_checkable
 from options_engine.application.ports.outbound import UnreadableFile
 from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.enums import Side, StockOrigin
+from options_engine.domain.model.quotes import DataSource
 from options_engine.domain.portfolio.expiry import ExpiryOutcome
 from options_engine.domain.portfolio.model import LegState, Operation
 from options_engine.domain.portfolio.positions import AssetTotal
 
 __all__ = [
+    "AssetView",
     "ExpiryNotice",
     "Fill",
+    "LegMark",
     "OperationView",
+    "PortfolioSymbols",
     "PortfolioUseCase",
     "PortfolioView",
     "RegisterOperation",
@@ -60,12 +64,36 @@ class RegisterOperation:
 
 
 @dataclass(frozen=True, slots=True)
+class LegMark:
+    """Posição aberta a mercado pelo preço de zerar: bid para a comprada, ask para a vendida
+    (ADR-0004). Sem esse lado, ``price`` e ``unrealized`` são ``None`` e ``reason`` diz por quê;
+    ``theoretical`` é o prêmio teórico, só nesse caso, e fica fora do total executável."""
+
+    price: float | None
+    unrealized: float | None
+    theoretical: float | None = None
+    reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class OperationView:
-    """``realized``: resultado realizado com custos (reais ou estimados), em moeda."""
+    """``realized``: resultado realizado com custos (reais ou estimados), em moeda.
+
+    ``marks``: uma por perna, ``None`` na perna sem posição aberta (e no histórico).
+    ``unrealized``: a soma das pernas abertas, ``None`` se alguma não tem preço de zerar.
+    """
 
     operation: Operation
     legs: tuple[LegState, ...]
     realized: float
+    marks: tuple[LegMark | None, ...] = ()
+    unrealized: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AssetView:
+    total: AssetTotal
+    mark: LegMark
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,9 +107,20 @@ class ExpiryNotice:
 
 @dataclass(frozen=True, slots=True)
 class PortfolioView:
+    """``source``: de onde vieram os preços de zerar (a saúde menos fresca da consulta)."""
+
     operations: tuple[OperationView, ...]
-    totals: tuple[AssetTotal, ...]
+    totals: tuple[AssetView, ...]
     unreadable: tuple[UnreadableFile, ...]
+    source: DataSource
+
+
+@dataclass(frozen=True, slots=True)
+class PortfolioSymbols:
+    """O que a carteira aberta precisa assinar: os ativos das operações e as séries."""
+
+    underlyings: tuple[str, ...]
+    series: tuple[str, ...]
 
 
 @runtime_checkable
@@ -115,6 +154,10 @@ class PortfolioUseCase(Protocol):
     def open_operations(self) -> PortfolioView: ...
 
     def history(self) -> tuple[OperationView, ...]: ...
+
+    def symbols(self) -> PortfolioSymbols: ...
+
+    def average_price(self, symbol: str) -> float | None: ...
 
     def process_expiries(
         self, closes: Callable[[str, date], float | None]

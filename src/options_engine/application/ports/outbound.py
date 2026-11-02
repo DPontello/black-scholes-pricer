@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol, runtime_checkable
 
-from options_engine.domain.model.chain import OptionChain
+from options_engine.domain.model.chain import OptionChain, OptionQuote
 from options_engine.domain.model.market import MarketSnapshot
 from options_engine.domain.model.profile import Profile, ProfileEntry
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
@@ -35,6 +35,7 @@ __all__ = [
     "MarketPort",
     "OperationRepository",
     "OptionChainPort",
+    "OptionQuotePort",
     "ProfileRepository",
     "QuoteBoardPort",
     "RandomSource",
@@ -139,7 +140,9 @@ class LiveFeedPort(Protocol):
     para os arquivos da B3).
 
     ``chain_expiries``: os vencimentos das cadeias a assinar; ``None`` é o
-    padrão (``default_expiries``).
+    padrão (``default_expiries``). ``portfolio_series``: as séries abertas da
+    carteira. Com o limite de tópicos da fonte, a ordem de prioridade é
+    ativos, carteira e cadeia: a cadeia é cortada antes da carteira.
     """
 
     def watch(
@@ -147,14 +150,33 @@ class LiveFeedPort(Protocol):
         underlyings: Sequence[str],
         chain_symbols: Sequence[str],
         chain_expiries: Collection[date] | None = None,
+        portfolio_series: Sequence[str] = (),
     ) -> None: ...
 
     def health(self) -> DataSource: ...
 
 
 @runtime_checkable
-class MarketPort(QuoteBoardPort, LiveFeedPort, OptionChainPort, Protocol):
-    """Tudo o que o serviço de mercado consome: cotações, assinatura e cadeia."""
+class OptionQuotePort(Protocol):
+    """Cotação de séries pelo ticker, para as pernas da carteira fora da cadeia aberta.
+
+    Contrato:
+
+    1. o resultado traz TODAS as séries pedidas: ``OptionQuote`` ou o MOTIVO
+       (``str``) de não haver cotação. Série fora da assinatura (cortada pelo
+       limite) ou com a fonte ao vivo fora do ar sai ``"sem cotação ao vivo"``,
+       nunca com o último preço que sobrou;
+    2. termos da série pelo cadastro; lado ausente é ``None``, nunca ``0``;
+    3. a fonte é a ``health()`` do mercado, como na cadeia;
+    4. consulta, não comando: motivo é valor de retorno, nunca exceção.
+    """
+
+    def get_option_quotes(self, symbols: Sequence[str]) -> Mapping[str, OptionQuote | str]: ...
+
+
+@runtime_checkable
+class MarketPort(QuoteBoardPort, LiveFeedPort, OptionChainPort, OptionQuotePort, Protocol):
+    """Tudo o que o serviço de mercado consome: cotações, assinatura, cadeia e séries."""
 
 
 @dataclass(frozen=True, slots=True)

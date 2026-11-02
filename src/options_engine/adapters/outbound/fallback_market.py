@@ -21,7 +21,7 @@ from datetime import date
 
 from options_engine.adapters.outbound.b3files.end_of_day import EndOfDayMarket
 from options_engine.adapters.outbound.tryd.feed import TrydMarketFeed
-from options_engine.domain.model.chain import OptionChain
+from options_engine.domain.model.chain import OptionChain, OptionQuote
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 
 __all__ = ["FallbackMarket"]
@@ -40,13 +40,17 @@ class FallbackMarket:
     def get_chain(self, underlying_symbol: str) -> OptionChain:
         return self._active().get_chain(underlying_symbol)
 
+    def get_option_quotes(self, symbols: Sequence[str]) -> Mapping[str, OptionQuote | str]:
+        return self._active().get_option_quotes(symbols)
+
     def watch(
         self,
         underlyings: Sequence[str],
         chain_symbols: Sequence[str],
         chain_expiries: Collection[date] | None = None,
+        portfolio_series: Sequence[str] = (),
     ) -> None:
-        self._live.watch(underlyings, chain_symbols, chain_expiries)
+        self._live.watch(underlyings, chain_symbols, chain_expiries, portfolio_series)
 
     def health(self) -> DataSource:
         source = self._live.health()

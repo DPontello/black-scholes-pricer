@@ -2,7 +2,12 @@ import { json, pedir, type Fonte } from "./cliente";
 
 export type Lado = "compra" | "venda";
 export type OrigemAcao = "compra" | "carteira";
-export type OrigemPreco = "executavel" | "indicativo" | "teorico" | "digitado";
+export type OrigemPreco =
+  | "executavel"
+  | "indicativo"
+  | "teorico"
+  | "digitado"
+  | "preco_medio";
 
 export type PernaPedido = { ticker: string; lado: Lado; quantidade: number; preco: number | null };
 export type AcaoPedido = { lado: Lado; quantidade: number; origem: OrigemAcao; preco: number | null };

@@ -15,6 +15,7 @@ const ORIGEM: Record<OrigemPreco, string> = {
   indicativo: "último negócio",
   teorico: "teórico",
   digitado: "digitado",
+  preco_medio: "preço médio da carteira",
 };
 
 type Props = {

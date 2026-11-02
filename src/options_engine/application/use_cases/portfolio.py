@@ -2,14 +2,24 @@
 
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, time, tzinfo
+from math import fsum
 
-from options_engine.application.ports.outbound import Clock, OperationRepository, UnreadableFile
+from options_engine.application.ports.outbound import (
+    Clock,
+    MarketPort,
+    OperationRepository,
+    TradingCalendar,
+    UnreadableFile,
+)
 from options_engine.application.ports.portfolio import (
+    AssetView,
     ExpiryNotice,
     OperationView,
+    PortfolioSymbols,
     PortfolioView,
     RegisterOperation,
 )
+from options_engine.application.use_cases._marks import Marker
 from options_engine.domain.income.costs import CostSchedule
 from options_engine.domain.model.enums import OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError
@@ -43,7 +53,8 @@ _ACOES_A_MAO = "ações à mão"
 
 class PortfolioService:
     """``repository_for`` é chamado a cada operação: o perfil aberto pode ter mudado.
-    ``market_timezone``: o fuso da B3, para saber se o pregão do vencimento já acabou."""
+    ``market_timezone``: o fuso da B3, para saber se o pregão do vencimento já acabou.
+    ``market`` e ``calendar``: os preços de zerar e o teórico das posições abertas."""
 
     def __init__(
         self,
@@ -52,12 +63,17 @@ class PortfolioService:
         schedules: Sequence[CostSchedule],
         new_id: Callable[[], str],
         market_timezone: tzinfo,
+        *,
+        market: MarketPort,
+        calendar: TradingCalendar,
     ) -> None:
         self._repository_for = repository_for
         self._clock = clock
         self._schedules = tuple(schedules)
         self._new_id = new_id
         self._tz = market_timezone
+        self._market = market
+        self._calendar = calendar
 
     def register(self, command: RegisterOperation) -> Operation:
         pernas: list[LegRef] = []
@@ -141,15 +157,36 @@ class PortfolioService:
     def open_operations(self) -> PortfolioView:
         itens = self._repository_for().list()
         abertas = [o for o in _operacoes(itens) if not is_closed(o)]
+        refs = {e.ref.symbol: e.ref for o in abertas for e in open_legs(o)}
+        marcador = Marker(self._market, self._calendar, self._tz, tuple(refs.values()))
         return PortfolioView(
-            operations=tuple(self._visao(o) for o in _recentes(abertas)),
-            totals=consolidate(abertas),
+            operations=tuple(self._visao_aberta(o, marcador) for o in _recentes(abertas)),
+            totals=tuple(
+                AssetView(t, marcador.mark(refs[t.symbol], t.side, t.quantity, t.average_price))
+                for t in consolidate(abertas)
+            ),
             unreadable=tuple(i for i in itens if isinstance(i, UnreadableFile)),
+            source=marcador.source,
         )
 
     def history(self) -> tuple[OperationView, ...]:
         encerradas = [o for o in _operacoes(self._repository_for().list()) if is_closed(o)]
         return tuple(self._visao(o) for o in _recentes(encerradas))
+
+    def symbols(self) -> PortfolioSymbols:
+        pernas = [(o, e) for o in _operacoes(self._repository_for().list()) for e in open_legs(o)]
+        return PortfolioSymbols(
+            underlyings=tuple(sorted({o.underlying for o, _ in pernas})),
+            series=tuple(
+                sorted({e.ref.symbol for _, e in pernas if isinstance(e.ref, OptionLegRef)})
+            ),
+        )
+
+    def average_price(self, symbol: str) -> float | None:
+        for total in consolidate(_operacoes(self._repository_for().list())):
+            if total.symbol == symbol and total.side is Side.BUY:
+                return total.average_price
+        return None
 
     def process_expiries(
         self, closes: Callable[[str, date], float | None]
@@ -183,6 +220,21 @@ class PortfolioService:
     def _visao(self, operacao: Operation) -> OperationView:
         return OperationView(
             operacao, leg_states(operacao), realized_result(operacao, self._schedules)
+        )
+
+    def _visao_aberta(self, operacao: Operation, marcador: Marker) -> OperationView:
+        estados = leg_states(operacao)
+        marcas = tuple(
+            None if e.side is None else marcador.mark(e.ref, e.side, e.quantity, e.average_price)
+            for e in estados
+        )
+        abertas = [m.unrealized for m in marcas if m is not None]
+        return OperationView(
+            operacao,
+            estados,
+            realized_result(operacao, self._schedules),
+            marcas,
+            None if None in abertas else fsum(a for a in abertas if a is not None),
         )
 
     def _exercer(

@@ -101,13 +101,16 @@ def cadeia(
 
 @dataclass
 class MercadoFalso:
-    """``healths``: a sequência que ``health()`` devolve (a última se repete)."""
+    """``healths``: a sequência que ``health()`` devolve (a última se repete). ``quotes`` e
+    ``option_quotes``: o que os painéis devolvem; o que não está ali sai "aguardando dados"."""
 
     chains: dict[str, OptionChain] = field(default_factory=lambda: {"PETR4": cadeia()})
     healths: list[DataSource] = field(default_factory=list)
     watched: list[tuple[tuple[str, ...], tuple[str, ...], frozenset[date] | None]] = field(
         default_factory=list
     )
+    quotes: dict[str, UnderlyingQuote | str] = field(default_factory=dict)
+    option_quotes: dict[str, OptionQuote | str] = field(default_factory=dict)
 
     def health(self) -> DataSource:
         if len(self.healths) > 1:
@@ -119,12 +122,16 @@ class MercadoFalso:
         underlyings: Sequence[str],
         chain_symbols: Sequence[str],
         chain_expiries: Collection[date] | None = None,
+        portfolio_series: Sequence[str] = (),
     ) -> None:
         escolha = None if chain_expiries is None else frozenset(chain_expiries)
         self.watched.append((tuple(underlyings), tuple(chain_symbols), escolha))
 
     def get_quotes(self, symbols: Sequence[str]) -> Mapping[str, UnderlyingQuote | str]:
-        return {s: "aguardando dados" for s in symbols}
+        return {s: self.quotes.get(s, "aguardando dados") for s in symbols}
+
+    def get_option_quotes(self, symbols: Sequence[str]) -> Mapping[str, OptionQuote | str]:
+        return {s: self.option_quotes.get(s, "aguardando dados") for s in symbols}
 
     def get_chain(self, underlying_symbol: str) -> OptionChain:
         if underlying_symbol not in self.chains:

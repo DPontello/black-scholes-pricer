@@ -171,6 +171,27 @@ def test_acao_da_carteira_exige_o_preco_medio_e_nao_paga_a_compra() -> None:
     assert perda_carteira - perda_comprada == pytest.approx(0.0002 * 3000.0 + 5.0, abs=1e-9)
 
 
+def test_acao_da_carteira_sem_preco_digitado_usa_o_preco_medio_do_perfil() -> None:
+    medios = {"PETR4": 28.5}
+    servico = StrategyBuilderService(
+        MercadoFalso(),
+        CALENDARIO,
+        B3_UTC_OFFSET,
+        schedules=[make_cost_schedule()],
+        lots=lambda _symbol: None,
+        portfolio_average=medios.get,
+    )
+    perna = BuilderLegInput("PETRK320", _VENDA, 100)
+    analise = servico.analyze(
+        _pedido(perna, acao=BuilderStockInput(_COMPRA, 100, StockOrigin.CARTEIRA))
+    )
+    assert analise.stock is not None
+    assert (analise.stock.price, analise.stock.price_origin) == (28.5, LegPriceOrigin.PRECO_MEDIO)
+    medios.clear()
+    with pytest.raises(InvalidDomainValueError, match="nenhuma ação de PETR4 no perfil"):
+        servico.analyze(_pedido(perna, acao=BuilderStockInput(_COMPRA, 100, StockOrigin.CARTEIRA)))
+
+
 def test_modelo_confere_a_forma_e_modelo_desconhecido_e_recusado() -> None:
     trava = _pedido(
         BuilderLegInput("PETRK300", _COMPRA, 100),

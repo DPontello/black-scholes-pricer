@@ -62,11 +62,16 @@ class MarketViewService:
         watchlist: Sequence[str],
         chain_symbol: str | None,
         expiries: Collection[date] | None = None,
+        *,
+        portfolio_underlyings: Sequence[str] = (),
+        portfolio_series: Sequence[str] = (),
     ) -> None:
+        """A carteira entra depois da lista e antes da cadeia na prioridade da assinatura."""
         self._market.watch(
-            tuple(watchlist),
+            tuple(dict.fromkeys((*watchlist, *portfolio_underlyings))),
             () if chain_symbol is None else (chain_symbol,),
             None if expiries is None else frozenset(expiries),
+            tuple(portfolio_series),
         )
 
     def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]:

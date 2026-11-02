@@ -18,7 +18,7 @@ from options_engine.application.ports.outbound import (
     OptionChainPort,
     QuoteBoardPort,
 )
-from options_engine.domain.model.chain import OptionChain
+from options_engine.domain.model.chain import OptionChain, OptionQuote
 from options_engine.domain.model.conventions import Compounding, RiskFreeRate
 from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
@@ -29,6 +29,7 @@ from tests.adapters._mercado import (
     Montagem,
     alimentar,
     biblioteca,
+    cadastro_com_objetos,
     montar,
     relogio,
 )
@@ -257,3 +258,19 @@ def test_tryd_conectado_sem_preco_nenhum_recua_para_o_fim_de_dia(tmp_path: Path)
     assert mercado.get_chain("PETR4").underlying.spot == 30.0
     alimentar(m.board, "VALE3", OVD=61.2)
     assert mercado.health() is DataSource.AO_VIVO
+
+
+def test_series_da_carteira_seguem_a_fonte_e_a_assinatura_vai_ao_vivo(tmp_path: Path) -> None:
+    # O cadastro com o ativo-objeto: o cru deixa as séries de PETR ambíguas para o ao vivo.
+    m = montar(tmp_path, lib=biblioteca(tmp_path / "mercado", cadastro=cadastro_com_objetos()))
+    mercado = FallbackMarket(m.feed, EndOfDayMarket(m.biblioteca, lambda: CDI))
+    mercado.watch(["PETR4"], [], None, ["PETRK300"])
+    assert "PETRK300" in {t for t, _ in m.cliente.topicos}
+    alimentar(m.board, "PETRK300", ULT=1.6, OCP=1.5, OVD=1.7)
+    ao_vivo = mercado.get_option_quotes(["PETRK300", "PETRK320"])
+    assert isinstance(ao_vivo["PETRK300"], OptionQuote) and ao_vivo["PETRK300"].bid == 1.5
+    assert ao_vivo["PETRK320"] == "sem cotação ao vivo"
+    m.cliente.saude = BridgeHealth.DESCONECTADA
+    fim_de_dia = mercado.get_option_quotes(["PETRK300"])["PETRK300"]
+    assert isinstance(fim_de_dia, OptionQuote)
+    assert fim_de_dia.timestamp.date() == REFERENCE_SESSION

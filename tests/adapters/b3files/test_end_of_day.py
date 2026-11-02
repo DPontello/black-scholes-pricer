@@ -23,7 +23,7 @@ from options_engine.application.ports.outbound import (
 from options_engine.domain.model.conventions import Compounding, RiskFreeRate
 from options_engine.domain.model.errors import UnderlyingUnavailableError
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
-from tests.adapters._mercado import FIXTURE, biblioteca, relogio
+from tests.adapters._mercado import FIXTURE, biblioteca, cadastro_com_objetos, relogio
 from tests.adapters.cotahist._layout import arquivo, registro
 from tests.data.cotahist.build_fixture import COTAHIST_NAME, INSTRUMENTS_NAME, REFERENCE_SESSION
 
@@ -258,3 +258,28 @@ def test_fechamento_zero_e_registros_divergentes_viram_motivo(tmp_path: Path) ->
     resultado = _mercado_com_pregao_curioso(tmp_path).get_quotes(["VALE3", "ITUB4"])
     assert resultado["VALE3"] == "sem fechamento no pregão de 2026-10-23"
     assert resultado["ITUB4"] == "registros divergentes do ativo no pregão de 2026-10-23"
+
+
+def test_series_pelo_ticker_sao_as_da_cadeia_do_mesmo_pregao(tmp_path: Path) -> None:
+    mercado = EndOfDayMarket(
+        biblioteca(tmp_path / "mercado", cadastro=cadastro_com_objetos()), lambda: _CDI
+    )
+    cadeia = mercado.get_chain("PETR4")
+    cotadas = {q.contract.symbol: q for q in cadeia.quotes}
+    rejeitadas = {r.symbol: r.reason for r in cadeia.rejected_series}
+    pedidas = ["PETRK300", "PETRK320", "PETRK340", "PETRA300", "XPTO11"]
+    cotacoes = mercado.get_option_quotes(pedidas)
+    assert cotacoes["PETRK300"] == cotadas["PETRK300"]
+    assert cotacoes["PETRK320"] == cotadas["PETRK320"]  # só com oferta de compra
+    assert cotacoes["PETRK340"] == rejeitadas["PETRK340"]
+    assert cotacoes["PETRA300"] == f"sem negócio no pregão de {REFERENCE_SESSION.isoformat()}"
+    assert cotacoes["XPTO11"] == "série desconhecida no cadastro"
+
+
+def test_series_sem_arquivos_da_b3_saem_com_o_motivo(tmp_path: Path) -> None:
+    sem_nada = EndOfDayMarket(
+        biblioteca(tmp_path / "vazia", com_cotahist=False, com_cadastro=False), lambda: _CDI
+    )
+    assert sem_nada.get_option_quotes(["PETRK300"]) == {"PETRK300": _SEM_CADASTRO}
+    sem_cotahist = EndOfDayMarket(biblioteca(tmp_path / "so", com_cotahist=False), lambda: _CDI)
+    assert sem_cotahist.get_option_quotes(["PETRK300"]) == {"PETRK300": _SEM_COTAHIST}

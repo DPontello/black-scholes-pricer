@@ -80,12 +80,14 @@ class StrategyBuilderService:
         *,
         schedules: Sequence[CostSchedule],
         lots: Callable[[str], int | None],
+        portfolio_average: Callable[[str], float | None] = lambda _symbol: None,
     ) -> None:
         self._market = market
         self._calendar = calendar
         self._timezone = valuation_timezone
         self._schedules = tuple(schedules)
         self._lots = lots
+        self._portfolio_average = portfolio_average
 
     def templates(self) -> tuple[Template, ...]:
         return TEMPLATES
@@ -174,7 +176,9 @@ class StrategyBuilderService:
                     origem,
                 )
             )
-        acao, vista_acao = _stock(request.underlying, request.stock, snapshot, chain)
+        acao, vista_acao = _stock(
+            request.underlying, request.stock, snapshot, chain, self._portfolio_average
+        )
         estrutura = _strategy(request.template, pernas, acao)
         if has_american(estrutura):
             avisos.append(
@@ -309,15 +313,19 @@ def _stock(
     pedido: BuilderStockInput | None,
     snapshot: MarketSnapshot,
     chain: OptionChain,
+    portfolio_average: Callable[[str], float | None],
 ) -> tuple[StockLeg | None, BuilderStockView | None]:
     if pedido is None:
         return None, None
     if pedido.price is not None:
         preco, origem = pedido.price, LegPriceOrigin.DIGITADO
     elif pedido.origin is StockOrigin.CARTEIRA:
-        raise InvalidDomainValueError(
-            "ação da carteira: informe o preço médio da posição (a carteira ainda não o fornece)"
-        )
+        medio = portfolio_average(underlying)
+        if medio is None:
+            raise InvalidDomainValueError(
+                f"ação da carteira: nenhuma ação de {underlying} no perfil; informe o preço médio"
+            )
+        preco, origem = medio, LegPriceOrigin.PRECO_MEDIO
     else:
         preco = snapshot.ask if pedido.side is Side.BUY else snapshot.bid
         origem = (

@@ -17,12 +17,14 @@ Regras que atravessam o módulo:
   dos COTAHIST da biblioteca. Sem nenhum dos dois arquivos não há como julgar: ninguém é
   chamado de desconhecido.
 
-Assinatura (``watch``): os ativos (e os dos símbolos de cadeia) com ``CAMPOS_ATIVO`` e, para
-cada símbolo de cadeia, as séries do cadastro dos vencimentos escolhidos (padrão: o mais
-próximo e o próximo mensal) com strike a até ``FAIXA_STRIKES`` do spot. O spot de referência é
-o último ``ULT`` do Tryd; enquanto ele não chegou, o último fechamento do COTAHIST; sem nenhum dos
-dois, todos os strikes. O corte em ``topic_limit`` (``LIMITE_TOPICOS``) mantém os ativos
-primeiro e depois os strikes mais perto do spot, séries inteiras: nunca um campo solto.
+Assinatura (``watch``): os ativos (e os dos símbolos de cadeia) com ``CAMPOS_ATIVO``, as séries
+abertas da carteira e, para cada símbolo de cadeia, as séries do cadastro dos vencimentos
+escolhidos (padrão: o mais próximo e o próximo mensal) com strike a até ``FAIXA_STRIKES`` do
+spot. O spot de referência é o último ``ULT`` do Tryd; enquanto ele não chegou, o último
+fechamento do COTAHIST; sem nenhum dos dois, todos os strikes. O corte em ``topic_limit``
+(``LIMITE_TOPICOS``) segue essa ordem: os ativos, a carteira e depois os strikes da cadeia mais
+perto do spot, séries inteiras: nunca um campo solto. Série da carteira cortada sai
+"sem cotação ao vivo" em ``get_option_quotes``.
 
 Séries de um ativo: as que o cadastro liga a ele (``UndrlygTckrSymb1``) e, quando o cadastro
 não diz o ativo-objeto, as de mesma raiz (4 primeiras letras) — SÓ se ele é o único ativo à
@@ -136,6 +138,8 @@ class _SeriesIndex:
 
     by_underlying: Mapping[str, tuple[_Row, ...]]
     by_root: Mapping[str, tuple[_Row, ...]]
+    # O ativo-objeto de cada série: o do cadastro, senão o dono da raiz (None se ambíguo).
+    by_symbol: Mapping[str, tuple[_Row, str | None]]
 
     def rows_of(self, ticker: str) -> tuple[_Row, ...]:
         da_raiz = (r for r in self.by_root.get(_root(ticker), ()) if r.owner in (None, ticker))
@@ -148,6 +152,7 @@ def _build_index(loaded: LoadedLibrary) -> _SeriesIndex:
         spots_by_root.setdefault(_root(symbol), []).append(symbol)
     by_underlying: dict[str, list[_Row]] = {}
     by_root: dict[str, list[_Row]] = {}
+    by_symbol: dict[str, tuple[_Row, str | None]] = {}
     for info in loaded.instruments.values():
         if info.option_type is None or info.strike is None or info.expiry is None:
             continue  # sem os termos da série não há o que assinar nem cotar
@@ -165,17 +170,17 @@ def _build_index(loaded: LoadedLibrary) -> _SeriesIndex:
             )
             owner = candidatos[0] if len(candidatos) == 1 else None
             alvo = by_root.setdefault(raiz, [])
-        alvo.append(
-            _Row(
-                info.symbol,
-                info.option_type,
-                info.strike,
-                info.expiry,
-                info.exercise_style,
-                ambiguity,
-                owner,
-            )
+        row = _Row(
+            info.symbol,
+            info.option_type,
+            info.strike,
+            info.expiry,
+            info.exercise_style,
+            ambiguity,
+            owner,
         )
+        alvo.append(row)
+        by_symbol[info.symbol] = (row, info.underlying_symbol or owner)
 
     def ordenadas(linhas: list[_Row]) -> tuple[_Row, ...]:
         return tuple(
@@ -185,6 +190,7 @@ def _build_index(loaded: LoadedLibrary) -> _SeriesIndex:
     return _SeriesIndex(
         {u: ordenadas(r) for u, r in by_underlying.items()},
         {raiz: ordenadas(r) for raiz, r in by_root.items()},
+        by_symbol,
     )
 
 
@@ -193,7 +199,7 @@ def _in_band(strike: float, spot: float | None) -> bool:
 
 
 class TrydMarketFeed:
-    """``QuoteBoardPort``, ``LiveFeedPort`` e ``OptionChainPort`` sobre o Tryd ao vivo.
+    """``MarketPort`` sobre o Tryd ao vivo: cotações, assinatura, cadeia e séries pelo ticker.
 
     ``client`` e ``board`` são os da composição (o cliente alimenta o quadro). ``cdi_annual``
     devolve o CDI do perfil, lido a cada consulta; ``tz`` é o fuso de valoração. ``calendar``
@@ -231,6 +237,7 @@ class TrydMarketFeed:
         self._index_lock = threading.Lock()
         self._index: tuple[LoadedLibrary, _SeriesIndex] | None = None
         self._assets: tuple[str, ...] = ()
+        self._subscribed: frozenset[str] = frozenset()
         self._chain_expiries: frozenset[date] | None = None
 
     # --- LiveFeedPort ---------------------------------------------------------------------------
@@ -243,17 +250,26 @@ class TrydMarketFeed:
         underlyings: Sequence[str],
         chain_symbols: Sequence[str],
         chain_expiries: Collection[date] | None = None,
+        portfolio_series: Sequence[str] = (),
     ) -> None:
         """Assina exatamente os ativos e as séries pedidos; o que sai da lista é cancelado."""
         assets = tuple(dict.fromkeys((*underlyings, *chain_symbols)))
+        carteira = tuple(dict.fromkeys(s for s in portfolio_series if s not in assets))
         with self._watch_lock:
             self._assets = assets
             self._chain_expiries = None if chain_expiries is None else frozenset(chain_expiries)
             units: list[tuple[Topic, ...]] = [tuple((a, c) for c in CAMPOS_ATIVO) for a in assets]
+            units += [tuple((s, c) for c in CAMPOS_OPCAO) for s in carteira]
             loaded = self._loader.load()
             if not isinstance(loaded, str):
-                units += self._series_units(loaded, tuple(dict.fromkeys(chain_symbols)))
-            self._client.ensure_subscribed(self._within_limit(units))
+                units += [
+                    unit
+                    for unit in self._series_units(loaded, tuple(dict.fromkeys(chain_symbols)))
+                    if unit[0][0] not in carteira
+                ]
+            topics = self._within_limit(units)
+            self._subscribed = frozenset(ticker for ticker, _ in topics)
+            self._client.ensure_subscribed(topics)
 
     def has_no_live_prices(self) -> bool:
         """Todo ativo assinado já carregou e nenhum tem último, compra ou venda.
@@ -284,6 +300,42 @@ class TrydMarketFeed:
             quote = None if source is DataSource.FIM_DE_DIA else self._quote(symbol, source, now)
             result[symbol] = "aguardando dados" if quote is None else quote
         return result
+
+    # --- OptionQuotePort -------------------------------------------------------------------------
+
+    def get_option_quotes(self, symbols: Sequence[str]) -> Mapping[str, OptionQuote | str]:
+        loaded = self._loader.load()
+        source = self.health()
+        now = self._now()
+        subscribed = self._subscribed
+        result: dict[str, OptionQuote | str] = {}
+        for symbol in symbols:
+            contract = loaded if isinstance(loaded, str) else self._contract(loaded, symbol)
+            if isinstance(contract, str):
+                result[symbol] = contract
+            elif source is DataSource.FIM_DE_DIA or symbol not in subscribed:
+                result[symbol] = "sem cotação ao vivo"
+            else:
+                found = to_option_quote(
+                    contract, self._board.values(symbol), self._board.is_loaded(symbol), now
+                )
+                if found is None:
+                    result[symbol] = "aguardando dados"
+                else:
+                    result[symbol] = found if isinstance(found, OptionQuote) else found.reason
+        return result
+
+    def _contract(self, loaded: LoadedLibrary, symbol: str) -> OptionContract | str:
+        entry = self._index_of(loaded).by_symbol.get(symbol)
+        if entry is None:
+            return "série desconhecida no cadastro"
+        row, underlying = entry
+        if row.style is None:
+            return "sem estilo de exercício no cadastro"
+        if underlying is None:
+            return row.ambiguity or "série sem ativo-objeto no cadastro"
+        terms = OptionTerms(underlying, row.strike, row.expiry, row.option_type, row.style)
+        return OptionContract(symbol, terms)
 
     # --- OptionChainPort ------------------------------------------------------------------------
 

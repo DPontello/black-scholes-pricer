@@ -15,11 +15,22 @@ from options_engine.application.ports.portfolio import (
     RegisterStock,
 )
 from options_engine.application.use_cases.portfolio import PortfolioService
-from options_engine.domain.model.enums import Side, StockOrigin
+from options_engine.domain.model.chain import OptionQuote
+from options_engine.domain.model.contracts import OptionContract, OptionTerms
+from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError, UnknownRecordError
+from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 from options_engine.domain.portfolio.expiry import ExpiryOutcome
-from options_engine.domain.portfolio.model import Close, Expired, Open, Operation, TransferOut
+from options_engine.domain.portfolio.model import (
+    Close,
+    Expired,
+    Open,
+    Operation,
+    OptionLegRef,
+    TransferOut,
+)
 from options_engine.domain.portfolio.positions import leg_states
+from tests.application._mercado_falso import CALENDARIO, INSTANTE, MercadoFalso, preco_bs
 from tests.income._builders import make_cost_schedule
 from tests.portfolio._builders import D1, D2, NOVEMBRO, call, put
 
@@ -52,7 +63,11 @@ class _Relogio:
         return self.agora
 
 
-def _servico(repositorio: _Repositorio, relogio: _Relogio | None = None) -> PortfolioService:
+def _servico(
+    repositorio: _Repositorio,
+    relogio: _Relogio | None = None,
+    mercado: MercadoFalso | None = None,
+) -> PortfolioService:
     ids = iter(f"op{i}" for i in range(1, 100))
     return PortfolioService(
         lambda: repositorio,
@@ -60,6 +75,8 @@ def _servico(repositorio: _Repositorio, relogio: _Relogio | None = None) -> Port
         [make_cost_schedule()],
         lambda: next(ids),
         B3,
+        market=MercadoFalso() if mercado is None else mercado,
+        calendar=CALENDARIO,
     )
 
 
@@ -113,7 +130,7 @@ def test_registra_e_lista_a_operacao_aberta() -> None:
     (aberta,) = visao.operations
     assert aberta.operation == trava
     assert aberta.legs[0].average_price == pytest.approx(1.20, abs=1e-12)
-    assert [(t.symbol, t.side, t.quantity) for t in visao.totals] == [
+    assert [(t.total.symbol, t.total.side, t.total.quantity) for t in visao.totals] == [
         ("PETRK320", _C, 300),
         ("PETRK340", _V, 300),
     ]
@@ -166,7 +183,7 @@ def test_atribuicao_com_acao_da_carteira_tira_as_acoes_pelo_preco_medio_do_perfi
         0, NOVEMBRO, 150, coberta.id
     )
     assert repositorio.operacoes[segundo.id].events[-1] == TransferOut(0, NOVEMBRO, 50, coberta.id)
-    (acoes,) = [t for t in servico.open_operations().totals if t.symbol == "PETR4"]
+    (acoes,) = [t.total for t in servico.open_operations().totals if t.total.symbol == "PETR4"]
     assert (acoes.quantity, acoes.average_price) == (200, 29.0)
 
 
@@ -335,10 +352,136 @@ def test_perfil_trocado_troca_a_pasta() -> None:
     aberto = [hugo]
     ids = iter(["a" * 32, "b" * 32])
     servico = PortfolioService(
-        lambda: aberto[0], _Relogio(), [make_cost_schedule()], lambda: next(ids), B3
+        lambda: aberto[0],
+        _Relogio(),
+        [make_cost_schedule()],
+        lambda: next(ids),
+        B3,
+        market=MercadoFalso(),
+        calendar=CALENDARIO,
     )
     servico.add_stock("PETR4", 100, 28.0, D1)
     aberto[0] = mae
     assert servico.open_operations().operations == ()
     servico.add_stock("VALE3", 100, 60.0, D1)
     assert list(hugo.operacoes) == ["a" * 32] and list(mae.operacoes) == ["b" * 32]
+
+
+def _cotacao(ref: OptionLegRef, bid: float | None, ask: float | None) -> OptionQuote:
+    return OptionQuote(OptionContract(ref.symbol, ref.terms), bid, ask, None, 0, 0.0, INSTANTE)
+
+
+def _acao(bid: float | None, ask: float | None) -> UnderlyingQuote:
+    return UnderlyingQuote("PETR4", 30.0, bid, ask, 29.0, 100, 1.0e6, INSTANTE, DataSource.AO_VIVO)
+
+
+def _trava(servico: PortfolioService) -> Operation:
+    return servico.register(
+        RegisterOperation(
+            "PETR4",
+            "trava de alta",
+            D1,
+            (_perna(30.0, _C, Fill(100, 1.20)), _perna(32.0, _V, Fill(100, 0.60))),
+        )
+    )
+
+
+def test_marca_pelo_preco_de_zerar_bid_na_comprada_e_ask_na_vendida() -> None:
+    mercado = MercadoFalso(
+        option_quotes={
+            "PETRK300": _cotacao(call(30.0), 1.50, 1.60),
+            "PETRK320": _cotacao(call(32.0), 0.40, 0.45),
+        }
+    )
+    servico = _servico(_Repositorio(), mercado=mercado)
+    _trava(servico)
+    visao = servico.open_operations()
+    assert visao.source is DataSource.AO_VIVO
+    (trava,) = visao.operations
+    comprada, vendida = trava.marks
+    assert comprada is not None and vendida is not None
+    assert (comprada.price, comprada.theoretical, comprada.reason) == (1.50, None, None)
+    assert comprada.unrealized == pytest.approx(30.0, abs=1e-9)
+    assert vendida.price == 0.45 and vendida.unrealized == pytest.approx(15.0, abs=1e-9)
+    assert trava.unrealized == pytest.approx(45.0, abs=1e-9)
+    assert [t.mark.price for t in visao.totals] == [1.50, 0.45]
+
+
+def test_sem_bid_a_comprada_fica_sem_preco_de_zerar_e_com_o_teorico_ao_lado() -> None:
+    mercado = MercadoFalso(
+        option_quotes={
+            "PETRK300": _cotacao(call(30.0), None, 1.60),
+            "PETRK320": _cotacao(call(32.0), 0.40, 0.45),
+        }
+    )
+    servico = _servico(_Repositorio(), mercado=mercado)
+    _trava(servico)
+    (trava,) = servico.open_operations().operations
+    comprada = trava.marks[0]
+    assert comprada is not None
+    assert (comprada.price, comprada.unrealized) == (None, None)
+    assert comprada.reason == "sem oferta de compra para zerar"
+    # O smile da cadeia falsa sai da vol de 30% com que as séries foram precificadas.
+    assert comprada.theoretical == pytest.approx(preco_bs(30.0, OptionType.CALL), abs=0.01)
+    assert trava.unrealized is None
+
+
+def test_sem_cotacao_sai_o_motivo_e_sem_cadeia_nao_ha_teorico() -> None:
+    mercado = MercadoFalso(chains={}, option_quotes={"PETRK320": "sem cotação ao vivo"})
+    servico = _servico(_Repositorio(), mercado=mercado)
+    _trava(servico)
+    (trava,) = servico.open_operations().operations
+    comprada, vendida = trava.marks
+    assert comprada is not None and vendida is not None
+    assert (comprada.reason, comprada.theoretical) == ("aguardando dados", None)
+    assert (vendida.reason, vendida.theoretical) == ("sem cotação ao vivo", None)
+
+
+def test_put_americana_nao_tem_teorico() -> None:
+    americana = OptionLegRef(
+        "PETRX280",
+        OptionTerms("PETR4", 28.0, NOVEMBRO, OptionType.PUT, ExerciseStyle.AMERICAN),
+    )
+    mercado = MercadoFalso(option_quotes={"PETRX280": _cotacao(americana, None, None)})
+    servico = _servico(_Repositorio(), mercado=mercado)
+    servico.register(
+        RegisterOperation(
+            "PETR4",
+            "put",
+            D1,
+            (RegisterOptionLeg(americana.symbol, americana.terms, _C, (Fill(100, 0.50),)),),
+        )
+    )
+    (operacao,) = servico.open_operations().operations
+    marca = operacao.marks[0]
+    assert marca is not None and (marca.price, marca.theoretical) == (None, None)
+
+
+def test_acoes_marcadas_pelo_book_do_ativo_e_fim_de_dia_rotulado() -> None:
+    mercado = MercadoFalso(healths=[DataSource.FIM_DE_DIA], quotes={"PETR4": _acao(29.9, 30.0)})
+    servico = _servico(_Repositorio(), mercado=mercado)
+    servico.add_stock("PETR4", 100, 28.0, D1)
+    visao = servico.open_operations()
+    assert visao.source is DataSource.FIM_DE_DIA
+    (acoes,) = visao.operations
+    marca = acoes.marks[0]
+    assert marca is not None and marca.price == 29.9
+    assert marca.unrealized == pytest.approx(190.0, abs=1e-9)
+    mercado.quotes["PETR4"] = _acao(None, 30.0)
+    (sem_bid,) = servico.open_operations().operations
+    assert sem_bid.marks[0] is not None and sem_bid.marks[0].theoretical is None
+
+
+def test_simbolos_da_carteira_aberta_e_preco_medio_das_acoes() -> None:
+    servico = _servico(_Repositorio())
+    trava = _trava(servico)
+    servico.add_stock("VALE3", 100, 60.0, D1)
+    servico.add_stock("PETR4", 300, 28.0, D1)
+    servico.add_stock("PETR4", 100, 32.0, D2)
+    simbolos = servico.symbols()
+    assert simbolos.underlyings == ("PETR4", "VALE3")
+    assert simbolos.series == ("PETRK300", "PETRK320")
+    servico.close(trava.id, 0, 100, 1.5, D2)
+    assert servico.symbols().series == ("PETRK320",)
+    assert servico.average_price("PETR4") == 29.0
+    assert servico.average_price("ITUB4") is None
