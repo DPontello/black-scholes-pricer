@@ -45,3 +45,15 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - Ruling: os filtros de liquidez do preset valem só para o que entra no book (todas as pernas, como na spec); as referências não passam por eles, porque sem book completo não há spread a medir e elas seriam sempre descartadas. Por isso o `BookService` pede o ranking sem `min_trades` e sem `max_spread_pct`. Reprovar na liquidez é filtro, não exclusão (como a faixa de delta).
 - Ruling: vencimento no próprio pregão (0 du) fica fora do book em todas as famílias.
 - Gates: 5025 testes (cobertura 98,22%; `domain/book` em 100%), mypy, ruff e import-linter. Frontend sem mudança.
+
+## 2026-11-02: Task 5 — família Volatilidade
+
+- `domain/book/scan.py`: a varredura comum às famílias sobre a cadeia — os N próximos vencimentos com pelo menos 1 du (os dias úteis vêm de quem chama, pelo calendário), o smile de cada um, o delta pelo `series_risk` (o mesmo do painel de renda), o prêmio pelo lado (EXECUTAVEL, INDICATIVO ou TEORICO), a liquidez das pernas e o resultado no vencimento pelo cálculo do montador (`expiry_summary`, `net_result_breakdown` nos pontos de extremo, `probability_of_profit` com a vol do smile no spot).
+- Refactor: os pontos de extremo do líquido saíram do `StrategyBuilderService` para `domain/income/net_result.extreme_spots`, usados pelo montador e pelo book (o book soma os breakevens, onde o IR muda de inclinação). O montador continua igual (testes verdes).
+- `domain/book/volatilidade.py`: `volatility_items(chain, context, settings, schedule, business_days)`. Vol alta: iron condor vendido (vendidas na faixa de delta, compradas 1 strike mais fora), borboleta comprada (miolo no dinheiro, asas a 1 e a 2 strikes) e, com `allow_unlimited_loss`, strangle vendido. Vol baixa: straddle comprado no dinheiro e strangle comprado na faixa de delta. Neutra: as duas, rotuladas "sem sinal claro". Rótulos também para regime pela HV e IV 30 extrapolada.
+- Conferido à mão, sem custos: o iron condor W260/W280/K320/K340 da cadeia falsa tem crédito, risco `(2 - c) x 100`, ganho/risco `c / (2 - c)` e breakevens `28 - c` e `32 + c` em desvios (`|ln(BE/30)| / (IV x sqrt(du/252))`).
+- Ruling: o strangle vendido, que tem perda ilimitada, usa como critério a distância até o breakeven mais perto em desvios-padrão (maior é melhor), espelho da compra de vol; ganho/risco não existe sem perda máxima. O risco máximo do preset não se aplica a ele: quem o libera é o `allow_unlimited_loss`.
+- Ruling: estrutura com ganho máximo líquido <= 0 (custos maiores que o crédito) fica fora, como filtro.
+- Ruling: a put americana fica fora da varredura com o motivo, como no painel de renda: o delta dela, que escolhe a faixa, não tem a aproximação europeia (ADR-0002).
+- Exclusões repetidas (a mesma perna sem preço em várias combinações) aparecem uma vez só.
+- Checagens (combinado com o autor em 02/11: o gate completo fica para o fim da semana): ruff, mypy, import-linter e as suítes do book, da renda e do montador. A última suíte inteira (fim da Task 5, antes do combinado) deu 5042 testes, 98,27%.

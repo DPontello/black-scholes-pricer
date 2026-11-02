@@ -168,7 +168,15 @@ class FamilyResult:
             best_per_structure(
                 (c for c in todos if c.quality is not PriceQuality.EXECUTAVEL), ascending=ascending
             ),
-            tuple(exclusions),
+            tuple(dict.fromkeys(exclusions)),
+        )
+
+    @classmethod
+    def combine(cls, *parts: "FamilyResult") -> "FamilyResult":
+        return cls(
+            tuple(i for p in parts for i in p.items),
+            tuple(i for p in parts for i in p.references),
+            tuple(dict.fromkeys(e for p in parts for e in p.exclusions)),
         )
 
 

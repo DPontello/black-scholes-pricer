@@ -2,7 +2,6 @@
 
 from collections.abc import Callable, Sequence
 from datetime import date, tzinfo
-from math import inf, nextafter
 from typing import Final
 
 from options_engine.application.ports.inbound import (
@@ -21,7 +20,11 @@ from options_engine.application.ports.outbound import MarketPort, TradingCalenda
 from options_engine.application.use_cases._freshness import least_fresh
 from options_engine.application.use_cases._time import resolve_time_to_expiry
 from options_engine.domain.income.costs import CostSchedule, schedule_on
-from options_engine.domain.income.net_result import NetResult, net_result_breakdown
+from options_engine.domain.income.net_result import (
+    NetResult,
+    extreme_spots,
+    net_result_breakdown,
+)
 from options_engine.domain.kernel.payoff import linspace
 from options_engine.domain.model.chain import (
     OptionChain,
@@ -211,7 +214,9 @@ class StrategyBuilderService:
                 estrutura,
                 [
                     net_result_breakdown(estrutura, s, tabela, stock_already_held=held)
-                    for s in _extreme_candidates(snapshot.spot, eixo, pernas)
+                    for s in extreme_spots(
+                        snapshot.spot, [leg.terms.strike for leg in pernas], eixo
+                    )
                 ],
                 snapshot,
                 tau,
@@ -366,25 +371,6 @@ def _axis(spot: float, strikes: Sequence[float], breakevens: Sequence[float]) ->
     # Strikes e breakevens no eixo: a curva é linear por partes e as quinas a tornam exata.
     pontos = {*linspace(0.5 * spot, 1.5 * spot, _AXIS_POINTS), *strikes, *breakevens}
     return tuple(sorted(p for p in pontos if p >= 0.0))
-
-
-def _extreme_candidates(
-    spot: float, eixo: Sequence[float], pernas: Sequence[StrategyLeg]
-) -> tuple[float, ...]:
-    """Onde o líquido pode ter extremo: o eixo, o ativo a zero, cada strike e logo acima dele (onde
-    o custo de exercício entra) e a cauda depois do último strike."""
-    strikes = [leg.terms.strike for leg in pernas]
-    return tuple(
-        sorted(
-            {
-                0.0,
-                *eixo,
-                *strikes,
-                *(nextafter(k, inf) for k in strikes),
-                2.0 * max([spot, *strikes]),
-            }
-        )
-    )
 
 
 def _at_expiry(
