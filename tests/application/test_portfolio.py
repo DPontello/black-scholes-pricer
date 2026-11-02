@@ -1,6 +1,6 @@
 """``PortfolioService``: registro, encerramento, exercício, vencimento e a pasta do perfil."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
@@ -18,7 +18,7 @@ from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.domain.model.chain import OptionQuote
 from options_engine.domain.model.contracts import OptionContract, OptionTerms
 from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side, StockOrigin
-from options_engine.domain.model.errors import InvalidDomainValueError, UnknownRecordError
+from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
 from options_engine.domain.portfolio.expiry import ExpiryOutcome
 from options_engine.domain.portfolio.model import (
@@ -30,29 +30,13 @@ from options_engine.domain.portfolio.model import (
     TransferOut,
 )
 from options_engine.domain.portfolio.positions import leg_states
+from tests.application._fakes import FakeOperationRepository
 from tests.application._mercado_falso import CALENDARIO, INSTANTE, MercadoFalso, preco_bs
 from tests.income._builders import make_cost_schedule
 from tests.portfolio._builders import D1, D2, NOVEMBRO, call, put
 
 B3 = timezone(timedelta(hours=-3))
 _V, _C = Side.SELL, Side.BUY
-
-
-@dataclass
-class _Repositorio:
-    operacoes: dict[str, Operation] = field(default_factory=dict)
-    ilegiveis: tuple[UnreadableFile, ...] = ()
-
-    def list(self) -> tuple[Operation | UnreadableFile, ...]:
-        return (*self.operacoes.values(), *self.ilegiveis)
-
-    def save(self, operation: Operation) -> None:
-        self.operacoes[operation.id] = operation
-
-    def load(self, operation_id: str) -> Operation:
-        if operation_id not in self.operacoes:
-            raise UnknownRecordError(operation_id)
-        return self.operacoes[operation_id]
 
 
 @dataclass
@@ -64,7 +48,7 @@ class _Relogio:
 
 
 def _servico(
-    repositorio: _Repositorio,
+    repositorio: FakeOperationRepository,
     relogio: _Relogio | None = None,
     mercado: MercadoFalso | None = None,
 ) -> PortfolioService:
@@ -108,11 +92,11 @@ def _strangle_vendido() -> RegisterOperation:
 
 
 def test_cumpre_o_protocol() -> None:
-    assert isinstance(_servico(_Repositorio()), PortfolioUseCase)
+    assert isinstance(_servico(FakeOperationRepository()), PortfolioUseCase)
 
 
 def test_registra_e_lista_a_operacao_aberta() -> None:
-    servico = _servico(_Repositorio())
+    servico = _servico(FakeOperationRepository())
     trava = servico.register(
         RegisterOperation(
             "PETR4",
@@ -138,7 +122,7 @@ def test_registra_e_lista_a_operacao_aberta() -> None:
 
 
 def test_encerrar_tudo_move_para_o_historico() -> None:
-    servico = _servico(_Repositorio())
+    servico = _servico(FakeOperationRepository())
     vendida = servico.register(
         RegisterOperation("PETR4", "call", D1, (_perna(32.0, _V, Fill(100, 1.0, costs=0.0)),))
     )
@@ -151,7 +135,7 @@ def test_encerrar_tudo_move_para_o_historico() -> None:
 
 
 def test_acoes_livres_insuficientes_sao_recusadas() -> None:
-    servico = _servico(_Repositorio())
+    servico = _servico(FakeOperationRepository())
     servico.add_stock("PETR4", 100, 28.0, D1)
     with pytest.raises(InvalidDomainValueError, match="100 ações livres"):
         servico.register(_coberta_da_carteira(200))
@@ -161,7 +145,7 @@ def test_acoes_livres_insuficientes_sao_recusadas() -> None:
 
 
 def test_acoes_a_mao_sao_uma_operacao_de_uma_perna_sem_custo_estimado() -> None:
-    servico = _servico(_Repositorio())
+    servico = _servico(FakeOperationRepository())
     a_mao = servico.add_stock("PETR4", 300, 28.5, D1)
     assert a_mao.events == (Open(0, D1, _C, 300, 28.5, costs=0.0),)
     (visao,) = servico.open_operations().operations
@@ -169,7 +153,7 @@ def test_acoes_a_mao_sao_uma_operacao_de_uma_perna_sem_custo_estimado() -> None:
 
 
 def test_atribuicao_com_acao_da_carteira_tira_as_acoes_pelo_preco_medio_do_perfil() -> None:
-    repositorio = _Repositorio()
+    repositorio = FakeOperationRepository()
     servico = _servico(repositorio)
     primeiro = servico.add_stock("PETR4", 300, 28.0, D1)
     segundo = servico.add_stock("PETR4", 100, 32.0, D2)
@@ -188,7 +172,7 @@ def test_atribuicao_com_acao_da_carteira_tira_as_acoes_pelo_preco_medio_do_perfi
 
 
 def test_sobra_da_divisao_vai_para_a_operacao_mais_antiga() -> None:
-    repositorio = _Repositorio()
+    repositorio = FakeOperationRepository()
     servico = _servico(repositorio)
     lotes = [servico.add_stock("PETR4", 100, preco, D1) for preco in (28.0, 30.0, 32.0)]
     coberta = servico.register(_coberta_da_carteira(100))
@@ -198,7 +182,7 @@ def test_sobra_da_divisao_vai_para_a_operacao_mais_antiga() -> None:
 
 
 def test_atribuicao_da_carteira_sem_acoes_livres_e_recusada_sem_gravar() -> None:
-    repositorio = _Repositorio()
+    repositorio = FakeOperationRepository()
     servico = _servico(repositorio)
     a_mao = servico.add_stock("PETR4", 100, 28.0, D1)
     coberta = servico.register(_coberta_da_carteira(100))
@@ -210,7 +194,7 @@ def test_atribuicao_da_carteira_sem_acoes_livres_e_recusada_sem_gravar() -> None
 
 
 def test_coberta_com_a_propria_acao_nao_mexe_na_carteira() -> None:
-    repositorio = _Repositorio()
+    repositorio = FakeOperationRepository()
     servico = _servico(repositorio)
     a_mao = servico.add_stock("PETR4", 100, 28.0, D1)
     coberta = servico.register(
@@ -229,7 +213,7 @@ def test_coberta_com_a_propria_acao_nao_mexe_na_carteira() -> None:
 
 
 def test_exercicio_e_atribuicao_conferem_o_lado_da_perna() -> None:
-    servico = _servico(_Repositorio())
+    servico = _servico(FakeOperationRepository())
     vendida = servico.register(
         RegisterOperation("PETR4", "call", D1, (_perna(32.0, _V, Fill(100, 1.0)),))
     )
@@ -284,7 +268,7 @@ def test_exercicio_e_atribuicao_conferem_o_lado_da_perna() -> None:
     ],
 )
 def test_registro_invalido_e_recusado_sem_gravar(command: RegisterOperation, motivo: str) -> None:
-    repositorio = _Repositorio()
+    repositorio = FakeOperationRepository()
     with pytest.raises(InvalidDomainValueError, match=motivo):
         _servico(repositorio).register(command)
     assert repositorio.operacoes == {}
@@ -295,7 +279,7 @@ def _fechamento(valor: float | None) -> dict[tuple[str, date], float | None]:
 
 
 def test_po_e_gravado_uma_vez_so() -> None:
-    repositorio = _Repositorio()
+    repositorio = FakeOperationRepository()
     servico = _servico(repositorio, _Relogio(datetime(2026, 11, 19, 18, 0, tzinfo=B3)))
     strangle = servico.register(_strangle_vendido())
     fechamentos = _fechamento(30.0)
@@ -309,7 +293,7 @@ def test_po_e_gravado_uma_vez_so() -> None:
 
 
 def test_dentro_do_dinheiro_avisa_para_registrar_e_sem_fechamento_aguarda() -> None:
-    repositorio = _Repositorio()
+    repositorio = FakeOperationRepository()
     servico = _servico(repositorio, _Relogio(datetime(2026, 11, 20, 10, 0, tzinfo=B3)))
     strangle = servico.register(_strangle_vendido())
     assert servico.process_expiries(lambda _ativo, _dia: None) == (
@@ -333,7 +317,7 @@ def test_dentro_do_dinheiro_avisa_para_registrar_e_sem_fechamento_aguarda() -> N
     ],
 )
 def test_so_o_pregao_do_vencimento_ja_encerrado_conta(agora: datetime, processa: bool) -> None:
-    repositorio = _Repositorio()
+    repositorio = FakeOperationRepository()
     servico = _servico(repositorio, _Relogio(agora))
     strangle = servico.register(_strangle_vendido())
     fechamentos = _fechamento(30.0)
@@ -343,12 +327,12 @@ def test_so_o_pregao_do_vencimento_ja_encerrado_conta(agora: datetime, processa:
 
 def test_arquivos_ilegiveis_aparecem_na_carteira() -> None:
     ilegivel = UnreadableFile("operacoes/x.json", "JSON ilegível")
-    servico = _servico(_Repositorio(ilegiveis=(ilegivel,)))
+    servico = _servico(FakeOperationRepository(ilegiveis=(ilegivel,)))
     assert servico.open_operations().unreadable == (ilegivel,)
 
 
 def test_perfil_trocado_troca_a_pasta() -> None:
-    hugo, mae = _Repositorio(), _Repositorio()
+    hugo, mae = FakeOperationRepository(), FakeOperationRepository()
     aberto = [hugo]
     ids = iter(["a" * 32, "b" * 32])
     servico = PortfolioService(
@@ -393,7 +377,7 @@ def test_marca_pelo_preco_de_zerar_bid_na_comprada_e_ask_na_vendida() -> None:
             "PETRK320": _cotacao(call(32.0), 0.40, 0.45),
         }
     )
-    servico = _servico(_Repositorio(), mercado=mercado)
+    servico = _servico(FakeOperationRepository(), mercado=mercado)
     _trava(servico)
     visao = servico.open_operations()
     assert visao.source is DataSource.AO_VIVO
@@ -414,7 +398,7 @@ def test_sem_bid_a_comprada_fica_sem_preco_de_zerar_e_com_o_teorico_ao_lado() ->
             "PETRK320": _cotacao(call(32.0), 0.40, 0.45),
         }
     )
-    servico = _servico(_Repositorio(), mercado=mercado)
+    servico = _servico(FakeOperationRepository(), mercado=mercado)
     _trava(servico)
     (trava,) = servico.open_operations().operations
     comprada = trava.marks[0]
@@ -428,7 +412,7 @@ def test_sem_bid_a_comprada_fica_sem_preco_de_zerar_e_com_o_teorico_ao_lado() ->
 
 def test_sem_cotacao_sai_o_motivo_e_sem_cadeia_nao_ha_teorico() -> None:
     mercado = MercadoFalso(chains={}, option_quotes={"PETRK320": "sem cotação ao vivo"})
-    servico = _servico(_Repositorio(), mercado=mercado)
+    servico = _servico(FakeOperationRepository(), mercado=mercado)
     _trava(servico)
     (trava,) = servico.open_operations().operations
     comprada, vendida = trava.marks
@@ -443,7 +427,7 @@ def test_put_americana_nao_tem_teorico() -> None:
         OptionTerms("PETR4", 28.0, NOVEMBRO, OptionType.PUT, ExerciseStyle.AMERICAN),
     )
     mercado = MercadoFalso(option_quotes={"PETRX280": _cotacao(americana, None, None)})
-    servico = _servico(_Repositorio(), mercado=mercado)
+    servico = _servico(FakeOperationRepository(), mercado=mercado)
     servico.register(
         RegisterOperation(
             "PETR4",
@@ -459,7 +443,7 @@ def test_put_americana_nao_tem_teorico() -> None:
 
 def test_acoes_marcadas_pelo_book_do_ativo_e_fim_de_dia_rotulado() -> None:
     mercado = MercadoFalso(healths=[DataSource.FIM_DE_DIA], quotes={"PETR4": _acao(29.9, 30.0)})
-    servico = _servico(_Repositorio(), mercado=mercado)
+    servico = _servico(FakeOperationRepository(), mercado=mercado)
     servico.add_stock("PETR4", 100, 28.0, D1)
     visao = servico.open_operations()
     assert visao.source is DataSource.FIM_DE_DIA
@@ -473,15 +457,15 @@ def test_acoes_marcadas_pelo_book_do_ativo_e_fim_de_dia_rotulado() -> None:
 
 
 def test_simbolos_da_carteira_aberta_e_preco_medio_das_acoes() -> None:
-    servico = _servico(_Repositorio())
+    servico = _servico(FakeOperationRepository())
     trava = _trava(servico)
     servico.add_stock("VALE3", 100, 60.0, D1)
     servico.add_stock("PETR4", 300, 28.0, D1)
     servico.add_stock("PETR4", 100, 32.0, D2)
-    simbolos = servico.symbols()
+    simbolos = servico.open_operations().symbols
     assert simbolos.underlyings == ("PETR4", "VALE3")
     assert simbolos.series == ("PETRK300", "PETRK320")
     servico.close(trava.id, 0, 100, 1.5, D2)
-    assert servico.symbols().series == ("PETRK320",)
+    assert servico.open_operations().symbols.series == ("PETRK320",)
     assert servico.average_price("PETR4") == 29.0
     assert servico.average_price("ITUB4") is None

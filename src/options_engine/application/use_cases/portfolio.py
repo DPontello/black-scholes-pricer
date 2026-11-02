@@ -1,5 +1,6 @@
 """``PortfolioService``: a carteira na pasta do perfil aberto, recalculada a partir dos eventos."""
 
+import threading
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, time, tzinfo
 from math import fsum
@@ -74,8 +75,14 @@ class PortfolioService:
         self._tz = market_timezone
         self._market = market
         self._calendar = calendar
+        # Toda gravação lê, muda e regrava: o WebSocket (pó) e a API não podem se atropelar.
+        self._lock = threading.Lock()
 
     def register(self, command: RegisterOperation) -> Operation:
+        with self._lock:
+            return self._registrar(command)
+
+    def _registrar(self, command: RegisterOperation) -> Operation:
         pernas: list[LegRef] = []
         eventos: list[Event] = []
         for perna in command.legs:
@@ -125,7 +132,8 @@ class PortfolioService:
             (StockLegRef(symbol, StockOrigin.COMPRA),),
             (Open(0, on, Side.BUY, quantity, average_price, costs=0.0),),
         )
-        self._repository_for().save(operacao)
+        with self._lock:
+            self._repository_for().save(operacao)
         return operacao
 
     def close(
@@ -137,22 +145,25 @@ class PortfolioService:
         on: date,
         costs: float | None = None,
     ) -> Operation:
-        repositorio = self._repository_for()
-        operacao = repositorio.load(operation_id).with_events(
-            Close(leg, on, quantity, price, costs)
-        )
-        repositorio.save(operacao)
+        with self._lock:
+            repositorio = self._repository_for()
+            operacao = repositorio.load(operation_id).with_events(
+                Close(leg, on, quantity, price, costs)
+            )
+            repositorio.save(operacao)
         return operacao
 
     def exercise(
         self, operation_id: str, leg: int, quantity: int, on: date, costs: float | None = None
     ) -> Operation:
-        return self._exercer(operation_id, leg, quantity, on, costs, Side.BUY)
+        with self._lock:
+            return self._exercer(operation_id, leg, quantity, on, costs, Side.BUY)
 
     def assign(
         self, operation_id: str, leg: int, quantity: int, on: date, costs: float | None = None
     ) -> Operation:
-        return self._exercer(operation_id, leg, quantity, on, costs, Side.SELL)
+        with self._lock:
+            return self._exercer(operation_id, leg, quantity, on, costs, Side.SELL)
 
     def open_operations(self) -> PortfolioView:
         itens = self._repository_for().list()
@@ -167,20 +178,15 @@ class PortfolioService:
             ),
             unreadable=tuple(i for i in itens if isinstance(i, UnreadableFile)),
             source=marcador.source,
+            symbols=PortfolioSymbols(
+                underlyings=tuple(sorted({o.underlying for o in abertas if open_legs(o)})),
+                series=tuple(sorted(s for s, r in refs.items() if isinstance(r, OptionLegRef))),
+            ),
         )
 
     def history(self) -> tuple[OperationView, ...]:
         encerradas = [o for o in _operacoes(self._repository_for().list()) if is_closed(o)]
         return tuple(self._visao(o) for o in _recentes(encerradas))
-
-    def symbols(self) -> PortfolioSymbols:
-        pernas = [(o, e) for o in _operacoes(self._repository_for().list()) for e in open_legs(o)]
-        return PortfolioSymbols(
-            underlyings=tuple(sorted({o.underlying for o, _ in pernas})),
-            series=tuple(
-                sorted({e.ref.symbol for _, e in pernas if isinstance(e.ref, OptionLegRef)})
-            ),
-        )
 
     def average_price(self, symbol: str) -> float | None:
         for total in consolidate(_operacoes(self._repository_for().list())):
@@ -191,6 +197,10 @@ class PortfolioService:
     def process_expiries(
         self, closes: Callable[[str, date], float | None]
     ) -> tuple[ExpiryNotice, ...]:
+        with self._lock:
+            return self._vencer(closes)
+
+    def _vencer(self, closes: Callable[[str, date], float | None]) -> tuple[ExpiryNotice, ...]:
         agora = self._clock.now().astimezone(self._tz)
         repositorio = self._repository_for()
         avisos: list[ExpiryNotice] = []

@@ -1,6 +1,6 @@
 """API de mercado e WebSocket ao vivo (Task 13) — serviço de mercado falso, perfis em memória."""
 
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.inbound.web.market import router_mercado
+from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
 from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.application.ports.inbound import (
     ChainView,
@@ -19,12 +20,19 @@ from options_engine.application.ports.inbound import (
     WatchRow,
 )
 from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.domain.model.chain import RejectedSeries
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
-from options_engine.domain.model.errors import UnderlyingUnavailableError, UnknownSymbolError
+from options_engine.domain.model.errors import (
+    NoActiveProfileError,
+    UnderlyingUnavailableError,
+    UnknownSymbolError,
+)
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
-from tests.application._fakes import FakeProfileRepository
+from tests.application._fakes import FakeOperationRepository, FakeProfileRepository
+from tests.application._mercado_falso import CALENDARIO, MercadoFalso
+from tests.income._builders import make_cost_schedule
 
 AGORA = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)
 SEMANAL = date(2026, 11, 6)
@@ -113,6 +121,7 @@ class _MercadoFalso:
         default_factory=list
     )
     cadeias: list[tuple[str, frozenset[date] | None]] = field(default_factory=list)
+    carteira: list[tuple[tuple[str, ...], tuple[str, ...]]] = field(default_factory=list)
 
     def follow(
         self,
@@ -125,6 +134,7 @@ class _MercadoFalso:
     ) -> None:
         escolha = None if expiries is None else frozenset(expiries)
         self.seguindo.append((tuple(watchlist), chain_symbol, escolha))
+        self.carteira.append((tuple(portfolio_underlyings), tuple(portfolio_series)))
 
     def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]:
         return tuple(
@@ -152,14 +162,35 @@ class _MercadoFalso:
 
 
 def _cliente(
-    mercado: _MercadoFalso, *, com_perfil: bool = True, intervalo: float = 0.05
+    mercado: _MercadoFalso,
+    *,
+    com_perfil: bool = True,
+    intervalo: float = 0.05,
+    carteira: PortfolioService | None = None,
 ) -> TestClient:
     perfis = ProfileService(FakeProfileRepository(), FixedClock(AGORA), "PC-TESTE")
     if com_perfil:
         perfis.create("Hugo", "/pastas/hugo")
         perfis.open("Hugo")
-    app = create_app([router_mercado(mercado, perfis, interval_s=intervalo)])
+    app = create_app([router_mercado(mercado, perfis, portfolio=carteira, interval_s=intervalo)])
     return TestClient(app)
+
+
+def _carteira(
+    repositorio_de: Callable[[], FakeOperationRepository] | None = None,
+) -> PortfolioService:
+    """Carteira real; sem ``repositorio_de``, um repositório em memória fixo."""
+    fixo = FakeOperationRepository()
+    ids = iter(f"op{i:06d}" for i in range(1, 100))
+    return PortfolioService(
+        repositorio_de or (lambda: fixo),
+        FixedClock(AGORA),
+        [make_cost_schedule()],
+        lambda: next(ids),
+        B3_UTC_OFFSET,
+        market=MercadoFalso(),
+        calendar=CALENDARIO,
+    )
 
 
 def test_status_traz_a_fonte_o_cadastro_e_a_faixa_dos_cotahist() -> None:
@@ -329,3 +360,36 @@ def test_sem_perfil_aberto_as_cotacoes_vem_vazias_com_o_motivo() -> None:
         cotacoes = ws.receive_json()
     assert cotacoes["dados"] == []
     assert "perfil" in cotacoes["motivo"]
+
+
+def test_carteira_vai_no_ao_vivo_so_quando_muda_e_entra_na_assinatura() -> None:
+    mercado = _MercadoFalso()
+    carteira = _carteira()
+    carteira.add_stock("PETR4", 100, 28.0, NOVEMBRO)
+    with _cliente(mercado, intervalo=0.02, carteira=carteira).websocket_connect(
+        "/api/ao-vivo"
+    ) as ws:
+        assert [ws.receive_json()["tipo"] for _ in range(3)] == ["status", "cotacoes", "carteira"]
+        carteira.add_stock("VALE3", 100, 60.0, NOVEMBRO)
+        mudou = ws.receive_json()
+    assert mudou["tipo"] == "carteira"
+    assert sorted(o["ativo"] for o in mudou["dados"]["operacoes"]) == ["PETR4", "VALE3"]
+    assert mercado.carteira[0] == (("PETR4",), ())
+    assert mercado.carteira[-1] == (("PETR4", "VALE3"), ())
+
+
+def test_carteira_que_nao_abre_manda_o_motivo_no_lugar() -> None:
+    def sem_perfil() -> FakeOperationRepository:
+        raise NoActiveProfileError("nenhum perfil aberto")
+
+    with _cliente(_MercadoFalso(), carteira=_carteira(sem_perfil)).websocket_connect(
+        "/api/ao-vivo"
+    ) as ws:
+        ws.receive_json()
+        ws.receive_json()
+        carteira = ws.receive_json()
+    assert carteira == {
+        "tipo": "carteira",
+        "erro": "NoActiveProfileError",
+        "mensagem": "nenhum perfil aberto",
+    }

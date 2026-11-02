@@ -13,17 +13,25 @@ sem essa validação divergiria do contrato do port sem nenhum ganho.
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from options_engine.application.ports.outbound import UnreadableFile
 from options_engine.domain.model.errors import (
     DuplicateProfileError,
     InvalidDomainValueError,
     ProfileLockedError,
     UnknownProfileError,
+    UnknownRecordError,
     UnknownSymbolError,
 )
 from options_engine.domain.model.market import MarketSnapshot
 from options_engine.domain.model.profile import Profile, ProfileEntry
+from options_engine.domain.portfolio.model import Operation
 
-__all__ = ["FakeMarketData", "FakeProfileRepository", "FakeTradingCalendar"]
+__all__ = [
+    "FakeMarketData",
+    "FakeOperationRepository",
+    "FakeProfileRepository",
+    "FakeTradingCalendar",
+]
 
 
 @dataclass(slots=True)
@@ -106,3 +114,22 @@ class FakeProfileRepository:
 
     def release_lock(self, name: str, machine: str) -> None:
         self.released.append((name, machine))
+
+
+@dataclass
+class FakeOperationRepository:
+    """Operações de um perfil em memória; ``ilegiveis`` entram na lista como arquivos ruins."""
+
+    operacoes: dict[str, Operation] = field(default_factory=dict)
+    ilegiveis: tuple[UnreadableFile, ...] = ()
+
+    def list(self) -> tuple[Operation | UnreadableFile, ...]:
+        return (*self.operacoes.values(), *self.ilegiveis)
+
+    def save(self, operation: Operation) -> None:
+        self.operacoes[operation.id] = operation
+
+    def load(self, operation_id: str) -> Operation:
+        if operation_id not in self.operacoes:
+            raise UnknownRecordError(operation_id)
+        return self.operacoes[operation_id]

@@ -19,6 +19,7 @@ from options_engine.adapters.inbound.web.app import Lifespan, create_app
 from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
 from options_engine.adapters.inbound.web.builder import router_montador
 from options_engine.adapters.inbound.web.market import router_mercado
+from options_engine.adapters.inbound.web.portfolio import router_carteira
 from options_engine.adapters.inbound.web.profiles import router_perfis
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET, StaticHolidayCalendar
 from options_engine.adapters.outbound.b3files import (
@@ -36,6 +37,7 @@ from options_engine.adapters.outbound.clock import SystemClock
 from options_engine.adapters.outbound.cost_schedules import StaticCostScheduleTable
 from options_engine.adapters.outbound.fallback_market import FallbackMarket
 from options_engine.adapters.outbound.storage import JsonProfileRepository
+from options_engine.adapters.outbound.storage.operations import JsonOperationRepository
 from options_engine.adapters.outbound.storage.simulations import JsonSimulationRepository
 from options_engine.adapters.outbound.tryd import (
     BridgeProcess,
@@ -48,9 +50,11 @@ from options_engine.adapters.outbound.tryd.settings import PORTA_PONTE
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
 from options_engine.application.use_cases.market_view import MarketViewService
+from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.application.use_cases.simulations import SimulationService
 from options_engine.application.use_cases.strategy_builder import StrategyBuilderService
+from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.errors import DomainError
 
 __all__ = ["MACHINE_CONFIG_NAME", "MARKET_DIR_NAME", "build_web_app"]
@@ -115,12 +119,23 @@ def build_web_app(
         cotahist_range=lambda: _cotahist_range(library),
         lots=lambda symbol: _lot(loader, symbol),
     )
+    schedules = StaticCostScheduleTable.from_packaged_data().schedules
+    portfolio = PortfolioService(
+        lambda: JsonOperationRepository(profiles.active_folder()),
+        clock,
+        schedules,
+        lambda: uuid.uuid4().hex,
+        B3_UTC_OFFSET,
+        market=market,
+        calendar=calendar,
+    )
     builder = StrategyBuilderService(
         market,
         calendar,
         B3_UTC_OFFSET,
-        schedules=StaticCostScheduleTable.from_packaged_data().schedules,
+        schedules=schedules,
         lots=lambda symbol: _lot(loader, symbol),
+        portfolio_average=portfolio.average_price,
     )
     simulations = SimulationService(
         lambda: JsonSimulationRepository(profiles.active_folder()), clock, lambda: uuid.uuid4().hex
@@ -135,8 +150,18 @@ def build_web_app(
     routers = [
         router_perfis(profiles),
         router_arquivos_b3(library, importer),
-        router_mercado(market_view, profiles),
+        router_mercado(
+            market_view,
+            profiles,
+            portfolio=portfolio,
+            closes=lambda symbol, day: _close(loader, symbol, day),
+        ),
         router_montador(builder, simulations),
+        router_carteira(
+            portfolio,
+            closes=lambda symbol, day: _close(loader, symbol, day),
+            terms=lambda symbol, underlying: _terms(loader, symbol, underlying),
+        ),
     ]
     lifespan = _lifespan(profiles, client, process, importer)
     return create_app(routers, static_dir, lifespan=lifespan)
@@ -145,6 +170,17 @@ def build_web_app(
 def _lot(loader: LibraryLoader, symbol: str) -> int | None:
     loaded = loader.load()
     return None if isinstance(loaded, str) else loaded.lot(symbol)
+
+
+def _close(loader: LibraryLoader, symbol: str, day: date) -> float | None:
+    """Fechamento do ativo no pregão, pelos COTAHIST importados; sem o arquivo do dia, None."""
+    loaded = loader.load()
+    return None if isinstance(loaded, str) else dict(loaded.closes(symbol)).get(day)
+
+
+def _terms(loader: LibraryLoader, symbol: str, underlying: str) -> OptionTerms | str:
+    loaded = loader.load()
+    return loaded if isinstance(loaded, str) else loaded.option_terms(symbol, underlying)
 
 
 def _ponte_src_dir() -> Path:

@@ -106,6 +106,14 @@ class ExpiryNotice:
 
 
 @dataclass(frozen=True, slots=True)
+class PortfolioSymbols:
+    """O que a carteira aberta precisa assinar: os ativos das operações e as séries."""
+
+    underlyings: tuple[str, ...]
+    series: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class PortfolioView:
     """``source``: de onde vieram os preços de zerar (a saúde menos fresca da consulta)."""
 
@@ -113,14 +121,7 @@ class PortfolioView:
     totals: tuple[AssetView, ...]
     unreadable: tuple[UnreadableFile, ...]
     source: DataSource
-
-
-@dataclass(frozen=True, slots=True)
-class PortfolioSymbols:
-    """O que a carteira aberta precisa assinar: os ativos das operações e as séries."""
-
-    underlyings: tuple[str, ...]
-    series: tuple[str, ...]
+    symbols: PortfolioSymbols
 
 
 @runtime_checkable
@@ -154,8 +155,6 @@ class PortfolioUseCase(Protocol):
     def open_operations(self) -> PortfolioView: ...
 
     def history(self) -> tuple[OperationView, ...]: ...
-
-    def symbols(self) -> PortfolioSymbols: ...
 
     def average_price(self, symbol: str) -> float | None: ...
 

@@ -13,16 +13,18 @@ from fastapi.testclient import TestClient
 from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.outbound.b3_calendar import StaticHolidayCalendar
 from options_engine.adapters.outbound.b3files.library import B3FileLibrary
+from options_engine.adapters.outbound.b3files.loaded import LibraryLoader
 from options_engine.application.ports.outbound import CadastroFreshness
 from options_engine.config.web_app import (
     MARKET_DIR_NAME,
+    _close,
     _cotahist_range,
     _freshness,
     _lifespan,
     build_web_app,
 )
-from tests.adapters._mercado import FIXTURE, biblioteca, relogio
-from tests.data.cotahist.build_fixture import INSTRUMENTS_NAME, REFERENCE_SESSION
+from tests.adapters._mercado import FIXTURE, biblioteca, cadastro_com_objetos, relogio
+from tests.data.cotahist.build_fixture import INSTRUMENTS_NAME, NOVEMBRO, REFERENCE_SESSION
 
 CALENDARIO = StaticHolidayCalendar.from_packaged_data()
 
@@ -221,3 +223,35 @@ def test_app_com_downloads_expoe_a_importacao_automatica(tmp_path: Path) -> None
     with TestClient(app) as cliente:
         corpo = cliente.get("/api/mercado/arquivos/automatico").json()
     assert corpo == {"pasta": str(downloads), "eventos": []}
+
+
+def test_carteira_do_app_usa_o_cadastro_e_os_cotahist_da_biblioteca(tmp_path: Path) -> None:
+    biblioteca(tmp_path / "config" / MARKET_DIR_NAME, cadastro=cadastro_com_objetos())
+    pasta = tmp_path / "perfil-hugo"
+    pasta.mkdir()
+    venda = {
+        "ativo": "PETR4",
+        "nome": "call vendida",
+        "data": REFERENCE_SESSION.isoformat(),
+        "pernas": [
+            {"ticker": "PETRK300", "lado": "venda", "execucoes": [{"quantidade": 100, "preco": 1}]}
+        ],
+    }
+    with _app(tmp_path / "config") as cliente:
+        assert cliente.post("/api/perfis", json={"nome": "Hugo", "pasta": str(pasta)}).is_success
+        assert cliente.post("/api/perfis/Hugo/abrir", json={"forcar": False}).is_success
+        assert cliente.post("/api/carteira/operacoes", json=venda).status_code == 201
+        carteira = cliente.get("/api/carteira").json()
+    assert carteira["fonte"] == "fim_de_dia"  # sem ponte: os preços de zerar são do COTAHIST
+    (perna,) = carteira["operacoes"][0]["pernas"]
+    assert (perna["vencimento"], perna["strike"]) == (NOVEMBRO.isoformat(), 30.0)
+    assert perna["marca"]["preco"] is not None
+    assert len(list((pasta / "operacoes").iterdir())) == 1
+
+
+def test_fechamento_do_pregao_vem_dos_cotahist_importados(tmp_path: Path) -> None:
+    loader = LibraryLoader(biblioteca(tmp_path / "mercado"))
+    assert _close(loader, "PETR4", REFERENCE_SESSION) == 30.0
+    assert _close(loader, "PETR4", date(2026, 11, 19)) is None
+    vazio = LibraryLoader(B3FileLibrary(tmp_path / "vazia", relogio()))
+    assert _close(vazio, "PETR4", REFERENCE_SESSION) is None

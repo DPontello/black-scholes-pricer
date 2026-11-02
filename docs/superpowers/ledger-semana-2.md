@@ -176,3 +176,21 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - Ruling: put americana fica sem teórico (sem fórmula fechada, ADR-0002), em vez de mostrar o valor da europeia. Ação sem lado de zerar também fica sem teórico.
 - `PortfolioService.symbols()` (os ativos e as séries abertas, para a assinatura) e `average_price(symbol)` (o médio das ações compradas no perfil).
 - Montador: `StrategyBuilderService(..., portfolio_average=)`. A ação "da carteira" sem preço digitado usa o preço médio do perfil, com a origem nova `preco_medio` ("preço médio da carteira" na tela). Sem ações no perfil, o erro pede o preço médio. A ligação com a carteira na composição fica para a Task 13.
+
+## 2026-11-02: Task 13 — API da carteira e WebSocket
+
+- `router_carteira(portfolio, closes=, terms=)` em `adapters/inbound/web/portfolio.py`:
+  - `GET /api/carteira`: roda o vencimento (pó e avisos) e devolve as operações abertas a mercado, os totais por ativo, os avisos, os arquivos ilegíveis e a fonte;
+  - `GET /api/carteira/historico`: as encerradas, com o resultado realizado e os eventos;
+  - `POST /api/carteira/operacoes` (registrar, 201), `POST /api/carteira/acoes` (à mão, 201);
+  - `POST /api/carteira/operacoes/{id}/encerrar`, `/exercer` e `/atribuir`.
+  As gravações devolvem só o `{"id"}`: a tela recarrega pela carteira (REST ou WebSocket).
+- Erros: os de regra (fechar mais do que o aberto, ações livres insuficientes, exercício no lado errado, série fora do cadastro, arquivo ilegível) saem em 422 e os de operação desconhecida ou sem perfil em 404, pelo mapeamento que já existia. Não precisou de entrada nova no `errors.py`.
+- Ruling: o registro manda só o ticker. Os termos da série (tipo, strike, vencimento, estilo) vêm do cadastro (`LoadedLibrary.option_terms`), com o ativo-objeto do cadastro ou, sem ele, o da operação. Série fora do cadastro é recusada com o motivo.
+- Ruling **para o autor conferir**: o fechamento do vencimento vem só dos COTAHIST importados (`_close` na composição). Até importar o arquivo do dia, a perna fica "aguardando o fechamento". O último `ULT` do Tryd depois das 18h (a outra fonte que a spec admite) fica para depois.
+- WebSocket `/api/ao-vivo`: a mensagem `{"tipo": "carteira", "dados": ...}` tem o mesmo corpo do `GET /api/carteira` e sai só quando muda. Sem perfil ou com a pasta fora do ar, sai `{"tipo": "carteira", "erro", "mensagem"}`, como a cadeia. A cada ciclo a carteira roda o vencimento e a marcação, e os ativos e as séries abertas entram no `follow`.
+- `PortfolioView.symbols` substituiu o `symbols()` da Task 12: a assinatura sai da mesma leitura da pasta que a marcação.
+- `PortfolioService` ganhou uma trava nas gravações (registro, ações, encerramento, exercício, atribuição e vencimento): o pó gravado pelo WebSocket e uma gravação pela API leem, mudam e regravam o mesmo arquivo.
+- Risco: cada ciclo do WebSocket lê a pasta de operações duas vezes (vencimento e marcação). Com poucas dezenas de arquivos pequenos, no disco, é desprezível; numa pasta de nuvem que não guarda os arquivos no PC pode pesar. Conferir no ponta a ponta (Task 15).
+- Composição: `PortfolioService` sobre `JsonOperationRepository(profiles.active_folder())`, e o montador recebe `portfolio.average_price`. Teste da composição: venda registrada pela API do app montado, marcada pelo COTAHIST da fixture (`fim_de_dia`, sem ponte).
+- Gates: 4926 testes (cobertura 97,9%), mypy, ruff e import-linter. O frontend não mudou nesta tarefa.
