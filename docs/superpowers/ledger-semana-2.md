@@ -135,3 +135,13 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
   - o pó não tem custo.
 - Ruling: ações livres = ações compradas nas operações sem ação "da carteira", menos as calls vendidas delas, menos as calls vendidas das operações "da carteira". A put protetora não prende ação.
 - Gates: 4854 testes (cobertura 97,8%; `domain/portfolio` em 99-100%), mypy, ruff e import-linter.
+
+## 2026-11-02: Task 10 — repositório das operações
+
+- `JsonOperationRepository(folder)`: `list()`, `save(operation)` e `load(id)`.
+  - Arquivo `operacoes/<AAAA-MM-DD>_<ATIVO>_<id8>.json` (data de criação), `"versao": 1`, escrita atômica, regravado a cada evento; continua um arquivo por operação.
+  - JSON em português, legível à mão: pernas `opcao` (tipo, strike, vencimento, estilo `americana`/`europeia`) e `acao` (origem); eventos `abertura`, `encerramento` (com `custo_medio` só na ação da carteira), `exercicio`, `atribuicao` e `po`.
+- Ruling: o arquivo é ilegível quando o JSON está quebrado, a versão é desconhecida, falta campo, o tipo de evento é desconhecido **ou o domínio recusa os eventos** (por exemplo, pó numa perna de ação). Nesse caso é listado com o motivo e **nunca sobrescrito**: `save` de uma operação cujo arquivo está ilegível levanta `UnreadableRecordError`.
+- Ruling: o `load` procura pelo prefixo de 8 caracteres e confere o id inteiro dentro do arquivo, então dois ids com o mesmo começo não se confundem. Id fora de `[0-9A-Za-z_-]{8,64}` não vira nome de arquivo.
+- `UnreadableFile` passou para `application/ports/outbound.py`, compartilhado com as simulações.
+- Gates: 4869 testes (cobertura 97,8%; `storage/operations` em 99%), mypy, ruff e import-linter.

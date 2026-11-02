@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.inbound import BuilderRequest
+from options_engine.application.ports.outbound import UnreadableFile
 
 __all__ = [
     "SavedSimulation",
@@ -12,12 +13,6 @@ __all__ = [
     "SimulationUseCase",
     "UnreadableFile",
 ]
-
-
-@dataclass(frozen=True, slots=True)
-class UnreadableFile:
-    path: str
-    reason: str
 
 
 @dataclass(frozen=True, slots=True)

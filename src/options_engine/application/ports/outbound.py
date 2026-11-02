@@ -37,6 +37,7 @@ __all__ = [
     "QuoteBoardPort",
     "RandomSource",
     "TradingCalendar",
+    "UnreadableFile",
 ]
 
 
@@ -152,6 +153,14 @@ class LiveFeedPort(Protocol):
 @runtime_checkable
 class MarketPort(QuoteBoardPort, LiveFeedPort, OptionChainPort, Protocol):
     """Tudo o que o serviço de mercado consome: cotações, assinatura e cadeia."""
+
+
+@dataclass(frozen=True, slots=True)
+class UnreadableFile:
+    """Arquivo do perfil que não deu para ler: aparece na lista com o motivo, nunca é apagado."""
+
+    path: str
+    reason: str
 
 
 @dataclass(frozen=True, slots=True)
