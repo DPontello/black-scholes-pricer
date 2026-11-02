@@ -152,14 +152,14 @@ def test_acoes_a_mao_sao_uma_operacao_de_uma_perna_sem_custo_estimado() -> None:
     assert visao.realized == 0.0
 
 
-def test_atribuicao_com_acao_da_carteira_tira_as_acoes_pelo_preco_medio_do_perfil() -> None:
+def test_atribuicao_com_acao_da_carteira_tira_as_acoes_pelo_preco_medio_delas() -> None:
     repositorio = FakeOperationRepository()
     servico = _servico(repositorio)
     primeiro = servico.add_stock("PETR4", 300, 28.0, D1)
     segundo = servico.add_stock("PETR4", 100, 32.0, D2)
     coberta = servico.register(_coberta_da_carteira(200))
     atribuida = servico.assign(coberta.id, 0, 200, NOVEMBRO, costs=0.0)
-    # Venda = strike + prêmio = 33; custo = o médio das 400 ações do perfil = 29.
+    # Venda = strike + prêmio = 33; custo = o médio das 200 que saem (150 a 28 e 50 a 32) = 29.
     assert atribuida.events[-1] == Close(1, NOVEMBRO, 200, 33.0, costs=0.0, cost_basis=29.0)
     assert leg_states(atribuida)[1].realized == 800.0
     # Saem na proporção das livres de cada operação: o médio de quem fica não muda.
@@ -179,6 +179,31 @@ def test_sobra_da_divisao_vai_para_a_operacao_mais_antiga() -> None:
     servico.assign(coberta.id, 0, 100, NOVEMBRO, costs=0.0)
     saidas = [repositorio.operacoes[lote.id].events[-1] for lote in lotes]
     assert [s.quantity for s in saidas if isinstance(s, TransferOut)] == [34, 33, 33]
+    venda = repositorio.operacoes[coberta.id].events[-1]
+    assert isinstance(venda, Close) and venda.cost_basis is not None
+    assert venda.cost_basis == pytest.approx((34 * 28.0 + 33 * 30.0 + 33 * 32.0) / 100, abs=1e-12)
+
+
+def test_acoes_presas_a_call_da_propria_operacao_ficam_fora_do_custo() -> None:
+    # A soma dos resultados tem de bater com o total real: o custo é o das ações que saem.
+    repositorio = FakeOperationRepository()
+    servico = _servico(repositorio)
+    a_mao = servico.add_stock("PETR4", 100, 28.0, D1)
+    servico.register(
+        RegisterOperation(
+            "PETR4",
+            "coberta comprando",
+            D1,
+            (_perna(32.0, _V, Fill(100, 1.0, costs=0.0)),),
+            RegisterStock(_C, StockOrigin.COMPRA, (Fill(100, 32.0, costs=0.0),)),
+        )
+    )
+    assert servico.average_price("PETR4") == 28.0
+    coberta = servico.register(_coberta_da_carteira(100))
+    atribuida = servico.assign(coberta.id, 0, 100, NOVEMBRO, costs=0.0)
+    assert atribuida.events[-1] == Close(1, NOVEMBRO, 100, 33.0, costs=0.0, cost_basis=28.0)
+    assert repositorio.operacoes[a_mao.id].events[-1] == TransferOut(0, NOVEMBRO, 100, coberta.id)
+    assert servico.average_price("PETR4") is None  # as que sobraram cobrem a call da operação
 
 
 def test_atribuicao_da_carteira_sem_acoes_livres_e_recusada_sem_gravar() -> None:

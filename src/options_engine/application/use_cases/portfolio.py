@@ -189,10 +189,9 @@ class PortfolioService:
         return tuple(self._visao(o) for o in _recentes(encerradas))
 
     def average_price(self, symbol: str) -> float | None:
-        for total in consolidate(_operacoes(self._repository_for().list())):
-            if total.symbol == symbol and total.side is Side.BUY:
-                return total.average_price
-        return None
+        livres = _livres(_operacoes(self._repository_for().list()), symbol)
+        total = sum(n for _, _, n, _ in livres)
+        return fsum(media * n for _, _, n, media in livres) / total if total else None
 
     def process_expiries(
         self, closes: Callable[[str, date], float | None]
@@ -272,18 +271,13 @@ class PortfolioService:
             nova = apply_exercise(operacao, leg, quantity, on, costs=costs)
             repositorio.save(nova)
             return nova
-        operacoes = _operacoes(repositorio.list())
-        lotes = _lotes_livres(operacoes, operacao, quantity)
-        (acoes,) = [
-            t
-            for t in consolidate(operacoes)
-            if t.symbol == operacao.underlying and t.side is Side.BUY
-        ]
-        nova = apply_exercise(
-            operacao, leg, quantity, on, costs=costs, portfolio_average=acoes.average_price
-        )
+        lotes = _lotes_livres(_operacoes(repositorio.list()), operacao, quantity)
+        # O custo é o das ações que de fato saem: a soma dos resultados bate com o total real.
+        custo = fsum(media * n for _, _, n, media in lotes) / quantity
+        nova = apply_exercise(operacao, leg, quantity, on, costs=costs, portfolio_average=custo)
         fontes = [
-            fonte.with_events(TransferOut(perna, on, n, operacao.id)) for fonte, perna, n in lotes
+            fonte.with_events(TransferOut(perna, on, n, operacao.id))
+            for fonte, perna, n, _ in lotes
         ]
         # A operação antes das fontes: se a gravação parar no meio, repetir é recusado (a perna já
         # foi atribuída) em vez de tirar as ações duas vezes.
@@ -322,35 +316,48 @@ def _exige_acoes_livres(existentes: Sequence[Operation], operacao: Operation) ->
         )
 
 
-def _lotes_livres(
-    operacoes: Sequence[Operation], destino: Operation, quantidade: int
-) -> list[tuple[Operation, int, int]]:
-    """De onde saem as ações "da carteira": ``(operação, perna da ação, quantidade)``.
-
-    Na proporção das ações livres de cada operação (maiores restos, em ordem de criação no
-    empate): o preço médio de cada uma, e assim o do perfil, não muda com a venda.
-    """
-    simbolo = destino.underlying
-    livres: list[tuple[Operation, int, int]] = []
+def _livres(
+    operacoes: Sequence[Operation], simbolo: str, exceto: str | None = None
+) -> list[tuple[Operation, int, int, float]]:
+    """As ações livres por operação, em ordem de criação: ``(operação, perna, quantidade,
+    preço médio)``. As que cobrem uma call vendida da própria operação ficam de fora."""
+    livres: list[tuple[Operation, int, int, float]] = []
     for fonte in sorted(operacoes, key=lambda o: (o.created_on, o.id)):
-        n = free_shares((fonte,), simbolo) if fonte.id != destino.id else 0
+        n = free_shares((fonte,), simbolo) if fonte.id != exceto else 0
         if n:
-            perna = next(
-                e.index
+            acoes = next(
+                e
                 for e in leg_states(fonte)
                 if isinstance(e.ref, StockLegRef)
                 and e.ref.symbol == simbolo
                 and e.ref.origin is StockOrigin.COMPRA
                 and e.side is Side.BUY
             )
-            livres.append((fonte, perna, n))
-    total = sum(n for _, _, n in livres)
+            livres.append((fonte, acoes.index, n, acoes.average_price))
+    return livres
+
+
+def _lotes_livres(
+    operacoes: Sequence[Operation], destino: Operation, quantidade: int
+) -> list[tuple[Operation, int, int, float]]:
+    """De onde saem as ações "da carteira": ``(operação, perna, quantidade, preço médio)``.
+
+    Na proporção das ações livres de cada operação (maiores restos, em ordem de criação no
+    empate): o preço médio de cada uma não muda com a venda.
+    """
+    simbolo = destino.underlying
+    livres = _livres(operacoes, simbolo, exceto=destino.id)
+    total = sum(n for _, _, n, _ in livres)
     if total < quantidade:
         raise InvalidDomainValueError(
             f"{simbolo}: faltam {quantidade - total} ações livres na carteira para a atribuição"
         )
-    cotas = [quantidade * n // total for _, _, n in livres]
-    restos = [quantidade * n % total for _, _, n in livres]
+    cotas = [quantidade * n // total for _, _, n, _ in livres]
+    restos = [quantidade * n % total for _, _, n, _ in livres]
     for i in sorted(range(len(livres)), key=lambda i: -restos[i])[: quantidade - sum(cotas)]:
         cotas[i] += 1
-    return [(fonte, perna, c) for (fonte, perna, _), c in zip(livres, cotas, strict=True) if c]
+    return [
+        (fonte, perna, c, media)
+        for (fonte, perna, _, media), c in zip(livres, cotas, strict=True)
+        if c
+    ]

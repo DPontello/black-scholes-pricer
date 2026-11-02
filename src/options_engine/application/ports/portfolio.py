@@ -156,7 +156,9 @@ class PortfolioUseCase(Protocol):
 
     def history(self) -> tuple[OperationView, ...]: ...
 
-    def average_price(self, symbol: str) -> float | None: ...
+    def average_price(self, symbol: str) -> float | None:
+        """O médio das ações livres do ativo (as que uma venda "da carteira" usaria)."""
+        ...
 
     def process_expiries(
         self, closes: Callable[[str, date], float | None]

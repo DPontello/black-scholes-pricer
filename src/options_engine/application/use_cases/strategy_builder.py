@@ -323,7 +323,8 @@ def _stock(
         medio = portfolio_average(underlying)
         if medio is None:
             raise InvalidDomainValueError(
-                f"ação da carteira: nenhuma ação de {underlying} no perfil; informe o preço médio"
+                f"ação da carteira: nenhuma ação livre de {underlying} no perfil; "
+                "informe o preço médio"
             )
         preco, origem = medio, LegPriceOrigin.PRECO_MEDIO
     else:

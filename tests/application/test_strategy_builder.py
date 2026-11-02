@@ -188,7 +188,7 @@ def test_acao_da_carteira_sem_preco_digitado_usa_o_preco_medio_do_perfil() -> No
     assert analise.stock is not None
     assert (analise.stock.price, analise.stock.price_origin) == (28.5, LegPriceOrigin.PRECO_MEDIO)
     medios.clear()
-    with pytest.raises(InvalidDomainValueError, match="nenhuma ação de PETR4 no perfil"):
+    with pytest.raises(InvalidDomainValueError, match="nenhuma ação livre de PETR4 no perfil"):
         servico.analyze(_pedido(perna, acao=BuilderStockInput(_COMPRA, 100, StockOrigin.CARTEIRA)))
 
 
