@@ -237,3 +237,20 @@ def test_serie_ausente_com_outra_rejeitada_continua_fora_da_cadeia() -> None:
     mercado = MercadoFalso(chains={"PETR4": cadeia(rejeitadas=(rejeitada,))})
     with pytest.raises(UnderlyingUnavailableError, match="fora da cadeia"):
         _servico(mercado).analyze(_pedido(BuilderLegInput("PETRK999", _COMPRA, 100)))
+
+
+def test_perda_maxima_liquida_da_venda_coberta_e_no_ativo_a_zero() -> None:
+    # Achado com os arquivos reais: o líquido só no eixo do gráfico (0,5 a 1,5 x spot) dava uma
+    # perda máxima líquida menor que a bruta.
+    analise = _servico().analyze(
+        _pedido(
+            BuilderLegInput("PETRK320", _VENDA, 100),
+            acao=BuilderStockInput(_COMPRA, 100, StockOrigin.COMPRA),
+            modelo="venda_coberta",
+        )
+    )
+    vencimento = analise.at_expiry
+    assert vencimento is not None and vencimento.max_loss is not None
+    assert vencimento.net_max_loss == pytest.approx(
+        vencimento.max_loss - vencimento.setup_costs, abs=1e-9
+    )

@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Sequence
 from datetime import tzinfo
+from math import inf, nextafter
 from typing import Final
 
 from options_engine.application.ports.inbound import (
@@ -165,7 +166,20 @@ class StrategyBuilderService:
             )
             for i, s in enumerate(eixo)
         )
-        no_vencimento = _at_expiry(estrutura, liquidos, snapshot, tau, smile) if completa else None
+        no_vencimento = (
+            _at_expiry(
+                estrutura,
+                [
+                    net_result_breakdown(estrutura, s, tabela, stock_already_held=held)
+                    for s in _extreme_candidates(snapshot.spot, eixo, pernas)
+                ],
+                snapshot,
+                tau,
+                smile,
+            )
+            if completa
+            else None
+        )
         hoje, sem_hoje = (
             self._today(estrutura, quotes, eixo, snapshot, tau, smile, market)
             if completa
@@ -296,6 +310,25 @@ def _axis(spot: float, strikes: Sequence[float], breakevens: Sequence[float]) ->
     # Strikes e breakevens no eixo: a curva é linear por partes e as quinas a tornam exata.
     pontos = {*linspace(0.5 * spot, 1.5 * spot, _AXIS_POINTS), *strikes, *breakevens}
     return tuple(sorted(p for p in pontos if p >= 0.0))
+
+
+def _extreme_candidates(
+    spot: float, eixo: Sequence[float], pernas: Sequence[StrategyLeg]
+) -> tuple[float, ...]:
+    """Onde o líquido pode ter extremo: o eixo, o ativo a zero, cada strike e logo acima dele (onde
+    o custo de exercício entra) e a cauda depois do último strike."""
+    strikes = [leg.terms.strike for leg in pernas]
+    return tuple(
+        sorted(
+            {
+                0.0,
+                *eixo,
+                *strikes,
+                *(nextafter(k, inf) for k in strikes),
+                2.0 * max([spot, *strikes]),
+            }
+        )
+    )
 
 
 def _at_expiry(
