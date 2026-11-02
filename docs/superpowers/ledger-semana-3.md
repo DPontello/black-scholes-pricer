@@ -34,3 +34,14 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - `ProfileService.set_book_settings` e `PUT /api/perfil/book`; `GET /api/perfil` e as outras rotas de perfil devolvem o `book` já resolvido.
 - Ruling: o corpo do `PUT` é `{preset, valores?}`. Sem `valores`, valem os padrões do preset: é assim que a tela troca de preset e "volta ao padrão" sem copiar a tabela da spec no frontend. Com `valores`, eles são gravados como vieram, no preset escolhido.
 - Gates: 5007 testes (cobertura 98,17%), mypy, ruff e import-linter. Frontend sem mudança (o tipo `Perfil` ganha o `book` na Task 10).
+
+## 2026-11-02: Task 4 — item do book, contexto de vol e a família Renda
+
+- `domain/book/model.py`: `Metric(key, label, value, unit)` com `MetricUnit`, `BookLeg`, `BookStock`, `BookItem` (família, chave do modelo, ativo, vencimento, du, pernas, ação, critério, números, porquê e rótulos), `BookLabel`, `BookExclusion`, `FamilyResult` (itens só EXECUTAVEL, referências, exclusões), `best_per_structure` (os 5 melhores por estrutura, desempate por ativo, vencimento e strikes) e `passes_liquidity`.
+- `VolContext`, `vol_context` e `end_of_day_context` ficaram em `domain/analytics/volatility.py`, e não em `domain/book`: a aba Análise (Task 11) usa o mesmo contexto. O do fim de dia é o último pregão do histórico contra as IVs dos anteriores.
+- `domain/book/renda.py`: `renda_items(ranking, settings, contexts)` converte o ranking da Sprint 5. Critério: anualizado líquido na venda coberta e na put coberta, retorno sobre o risco líquido nas travas; números de apoio: prêmio, probabilidade de exercício, delta da vendida, dias úteis e o IV rank quando há contexto.
+- Ruling: a família do item é o `Family` dos modelos do montador (mesmos quatro valores), em vez de um `BookFamily` repetido.
+- Ruling: o porquê é um molde com `{chave}` das métricas do item, e quem mostra formata os números (decisão 8 da Sprint 3: conversão de exibição só no adapter). O item recusa um porquê que cite métrica que ele não tem.
+- Ruling: os filtros de liquidez do preset valem só para o que entra no book (todas as pernas, como na spec); as referências não passam por eles, porque sem book completo não há spread a medir e elas seriam sempre descartadas. Por isso o `BookService` pede o ranking sem `min_trades` e sem `max_spread_pct`. Reprovar na liquidez é filtro, não exclusão (como a faixa de delta).
+- Ruling: vencimento no próprio pregão (0 du) fica fora do book em todas as famílias.
+- Gates: 5025 testes (cobertura 98,22%; `domain/book` em 100%), mypy, ruff e import-linter. Frontend sem mudança.

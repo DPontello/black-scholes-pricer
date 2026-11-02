@@ -25,10 +25,13 @@ __all__ = [
     "DailyVol",
     "ExpiryVol",
     "HorizonVol",
+    "VolContext",
     "VolRegime",
+    "end_of_day_context",
     "iv_at_horizon",
     "iv_percentile",
     "iv_rank",
+    "vol_context",
     "vol_regime",
 ]
 
@@ -180,3 +183,55 @@ def vol_regime(iv: float, hv: float, rank: float | None) -> tuple[VolRegime, boo
     if rank <= LOW_RANK and iv <= hv:
         return VolRegime.BAIXA, False
     return VolRegime.NEUTRA, False
+
+
+@dataclass(frozen=True, slots=True)
+class VolContext:
+    """IV 30 e HV 21 de um ativo, o rank e o percentil da IV contra o histórico, e o regime;
+    ``regime_from_hv`` quando não havia rank e o regime saiu da margem sobre a HV."""
+
+    underlying: str
+    iv30: float
+    hv21: float
+    iv_rank: float | None
+    iv_percentile: float | None
+    regime: VolRegime
+    regime_from_hv: bool
+    extrapolated: bool = False
+
+
+def vol_context(
+    underlying: str,
+    iv30: float,
+    hv21: float,
+    history: Sequence[float],
+    *,
+    extrapolated: bool = False,
+) -> VolContext:
+    """Contexto da IV de hoje contra ``history`` (as IVs dos pregões anteriores, em ordem)."""
+    rank = iv_rank(history, iv30)
+    regime, from_hv = vol_regime(iv30, hv21, rank)
+    return VolContext(
+        underlying,
+        iv30,
+        hv21,
+        rank,
+        iv_percentile(history, iv30),
+        regime,
+        from_hv,
+        extrapolated,
+    )
+
+
+def end_of_day_context(underlying: str, history: Sequence[DailyVol]) -> VolContext | str:
+    """Contexto do último pregão do histórico contra os anteriores; senão o motivo."""
+    if not history:
+        return f"{underlying}: sem histórico de IV"
+    hoje = history[-1]
+    dia = hoje.session.isoformat()
+    if hoje.iv30 is None:
+        return f"{underlying}: sem IV 30 no pregão {dia} (sem smile no spot)"
+    if hoje.hv21 is None:
+        return f"{underlying}: sem HV 21 no pregão {dia} (histórico curto)"
+    anteriores = [d.iv30 for d in history[:-1] if d.iv30 is not None]
+    return vol_context(underlying, hoje.iv30, hoje.hv21, anteriores, extrapolated=hoje.extrapolated)
