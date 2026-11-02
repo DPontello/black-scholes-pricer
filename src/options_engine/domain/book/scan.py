@@ -228,13 +228,15 @@ def book_legs(legs: Iterable[PricedLeg]) -> tuple[BookLeg, ...]:
 @dataclass(frozen=True, slots=True)
 class Outcome:
     """Resultado no vencimento em moeda: ``net_premium`` > 0 é crédito; extremos líquidos de
-    custos e IR (ADR-0005), ``None`` = ilimitado; perda como valor <= 0."""
+    custos e IR (ADR-0005), ``None`` = ilimitado; perda como valor <= 0. ``net_at_target``: o
+    líquido com o ativo no alvo pedido."""
 
     net_premium: float
     breakevens: tuple[float, ...]
     net_max_gain: float | None
     net_max_loss: float | None
     probability_of_profit: float
+    net_at_target: float | None = None
 
 
 def evaluate(
@@ -246,6 +248,7 @@ def evaluate(
     *,
     stock: StockLeg | None = None,
     stock_already_held: bool = False,
+    target: float | None = None,
 ) -> Outcome:
     estrutura = _strategy(template_key, legs, stock)
     breakevens, maximo, minimo = expiry_summary(estrutura)
@@ -266,6 +269,13 @@ def evaluate(
             time_to_expiry=expiry.time_to_expiry,
             rate=chain.underlying.risk_free_rate,
             vol=Volatility(vol, _BASE),
+        ),
+        net_at_target=(
+            None
+            if target is None
+            else net_result_breakdown(
+                estrutura, target, schedule, stock_already_held=stock_already_held
+            ).net
         ),
     )
 

@@ -57,3 +57,13 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - Ruling: a put americana fica fora da varredura com o motivo, como no painel de renda: o delta dela, que escolhe a faixa, não tem a aproximação europeia (ADR-0002).
 - Exclusões repetidas (a mesma perna sem preço em várias combinações) aparecem uma vez só.
 - Checagens (combinado com o autor em 02/11: o gate completo fica para o fim da semana): ruff, mypy, import-linter e as suítes do book, da renda e do montador. A última suíte inteira (fim da Task 5, antes do combinado) deu 5042 testes, 98,27%.
+
+## 2026-11-02: Task 6 — família Direcionais
+
+- `domain/book/direcionais.py`: `cheap_options` (sem visão) e `directional_items` (com visão), com `DirectionalView(underlying, direction, target, expiry)` e `Direction` (alta, baixa).
+- Sem visão: calls e puts com delta (módulo) de 0,30 a 0,60 (faixa da spec, não a do preset), IV da própria série abaixo da HV 21 e IV rank até 30%; critério `(HV 21 - IV da série) / HV 21`; rótulo "não direcional". Ruling: sem IV rank (histórico curto) a lista fica vazia, porque a regra da spec exige o rank.
+- Com visão: compra a seco e travas de débito, com a comprada do strike no dinheiro até antes do alvo e a vendida no alvo ou depois, de 1 a 3 strikes de largura. Critério: resultado líquido no alvo sobre o risco líquido (débito + custos), com o alvo avaliado pelo `net_result_breakdown` (o `evaluate` da varredura ganhou o `target`). Probabilidade de chegar ao alvo pela lognormal com a vol do smile no spot, a mesma da probabilidade de lucro do montador.
+- Conferido à mão, sem custos, alvo 33: a call 30 e a trava 30/34 têm critério `(300 - débito) / débito`, breakeven `30 + débito / 100` e resultado no alvo `300 - débito`.
+- Ruling: alvo do lado errado do spot e vencimento sem séries com 1 du são recusados com `InvalidDomainValueError` e o motivo (a API devolve 422); não viram uma lista vazia.
+- Ruling: o risco máximo do preset vale nas duas (são estruturas sem ação).
+- Checagens: ruff, mypy, import-linter e as suítes do book (58 testes, `domain/book` em 99%).
