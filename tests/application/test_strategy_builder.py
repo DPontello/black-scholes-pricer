@@ -1,5 +1,7 @@
 """``StrategyBuilderService`` com mercado falso: PETR4 a 30, vol 0,30, pregão de 23/10."""
 
+from datetime import date
+
 import pytest
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
@@ -254,3 +256,42 @@ def test_perda_maxima_liquida_da_venda_coberta_e_no_ativo_a_zero() -> None:
     assert vencimento.net_max_loss == pytest.approx(
         vencimento.max_loss - vencimento.setup_costs, abs=1e-9
     )
+
+
+# ---------------------------------------------------------------------------
+# Sugestão das pernas de um modelo pronto a partir da cadeia
+# ---------------------------------------------------------------------------
+
+
+def test_sugere_a_venda_coberta_um_strike_acima_com_a_acao() -> None:
+    pedido = _servico().suggest("PETR4", "venda_coberta", NOVEMBRO)
+    assert pedido == BuilderRequest(
+        "PETR4",
+        (BuilderLegInput("PETRK320", _VENDA, 100),),
+        BuilderStockInput(_COMPRA, 100, StockOrigin.COMPRA),
+        "venda_coberta",
+    )
+
+
+def test_sugere_o_straddle_no_strike_que_tem_call_e_put_e_a_borboleta_com_o_corpo_dobrado() -> None:
+    mercado = _com(serie("PETRK310", 31.0))  # 31 só tem call: o straddle não pode usá-lo
+    straddle = _servico(mercado).suggest("PETR4", "straddle_comprado", NOVEMBRO)
+    assert [(p.symbol, p.side) for p in straddle.legs] == [
+        ("PETRK300", _COMPRA),
+        ("PETRW300", _COMPRA),
+    ]
+    borboleta = _servico().suggest("PETR4", "borboleta_comprada", NOVEMBRO)
+    assert [(p.symbol, p.quantity) for p in borboleta.legs] == [
+        ("PETRK280", 100),
+        ("PETRK300", 200),
+        ("PETRK320", 100),
+    ]
+
+
+def test_sugestao_sem_series_do_vencimento_ou_modelo_desconhecido() -> None:
+    with pytest.raises(UnderlyingUnavailableError, match="2026-12-18"):
+        _servico().suggest("PETR4", "compra_call", date(2026, 12, 18))
+    with pytest.raises(InvalidDomainValueError, match="calendario"):
+        _servico().suggest("PETR4", "calendario", NOVEMBRO)
+    with pytest.raises(InvalidStrategyError, match="strikes"):
+        _servico().suggest("PETR4", "iron_condor_vendido", NOVEMBRO)  # 3 strikes só

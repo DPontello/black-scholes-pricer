@@ -132,3 +132,22 @@ def test_simulacao_ilegivel_aparece_na_lista(tmp_path: Path) -> None:
 def test_perfil_com_pasta_vazia_e_recusado() -> None:
     resposta = _cliente(None).post("/api/perfis", json={"nome": "Teste", "pasta": ""})
     assert (resposta.status_code, resposta.json()["erro"]) == (422, "InvalidDomainValueError")
+
+
+def test_sugestao_de_modelo_devolve_o_pedido_para_analisar() -> None:
+    cliente = _cliente(None)
+    resposta = cliente.get(
+        "/api/montador/sugestao",
+        params={"ativo": "petr4", "modelo": "venda_coberta", "vencimento": "2026-11-19"},
+    )
+    assert resposta.json() == {
+        "ativo": "PETR4",
+        "pernas": [{"ticker": "PETRK320", "lado": "venda", "quantidade": 100, "preco": None}],
+        "acao": {"lado": "compra", "quantidade": 100, "origem": "compra", "preco": None},
+        "modelo": "venda_coberta",
+    }
+    assert cliente.post("/api/montador/analise", json=resposta.json()).status_code == 200
+    invalido = cliente.get(
+        "/api/montador/sugestao", params={"ativo": "PETR4", "modelo": "x", "vencimento": "amanha"}
+    )
+    assert (invalido.status_code, invalido.json()["erro"]) == (422, "RequisicaoInvalida")

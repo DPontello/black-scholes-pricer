@@ -415,6 +415,10 @@ class BuilderAnalysis:
 
 @runtime_checkable
 class StrategyBuilderUseCase(Protocol):
+    """``suggest``: as pernas de um modelo pronto com as séries da cadeia (100 x proporção)."""
+
     def templates(self) -> tuple[Template, ...]: ...
+
+    def suggest(self, underlying: str, template_key: str, expiry: date) -> BuilderRequest: ...
 
     def analyze(self, request: BuilderRequest) -> BuilderAnalysis: ...

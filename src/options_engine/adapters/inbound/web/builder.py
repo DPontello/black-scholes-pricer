@@ -1,5 +1,6 @@
 """Router do montador: modelos prontos, análise de uma estrutura e simulações salvas."""
 
+from datetime import date
 from typing import Annotated, Final, Literal
 
 from fastapi import APIRouter, Response
@@ -324,6 +325,10 @@ def router_montador(builder: StrategyBuilderUseCase, simulations: SimulationUseC
     @router.get("/montador/modelos")
     def modelos() -> list[ModeloOut]:
         return [_modelo_out(m) for m in builder.templates()]
+
+    @router.get("/montador/sugestao")
+    def sugestao(ativo: str, modelo: str, vencimento: date) -> AnaliseIn:
+        return _pedido_out(builder.suggest(normalize_ticker(ativo), modelo, vencimento))
 
     @router.post("/montador/analise")
     def analise(corpo: AnaliseIn) -> AnaliseOut:

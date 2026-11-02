@@ -1,12 +1,13 @@
 """``StrategyBuilderService``: a estrutura montada com os preços da cadeia e o resultado dela."""
 
 from collections.abc import Callable, Sequence
-from datetime import tzinfo
+from datetime import date, tzinfo
 from math import inf, nextafter
 from typing import Final
 
 from options_engine.application.ports.inbound import (
     BuilderAnalysis,
+    BuilderLegInput,
     BuilderLegView,
     BuilderRequest,
     BuilderStockInput,
@@ -29,7 +30,7 @@ from options_engine.domain.model.chain import (
     executable_premium,
 )
 from options_engine.domain.model.conventions import DayCountConvention, TimeToExpiry, Volatility
-from options_engine.domain.model.enums import Side, StockOrigin
+from options_engine.domain.model.enums import OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import (
     InvalidDomainValueError,
     UnderlyingUnavailableError,
@@ -37,7 +38,7 @@ from options_engine.domain.model.errors import (
 )
 from options_engine.domain.model.market import MarketSnapshot
 from options_engine.domain.model.strategy import StockLeg, Strategy, StrategyLeg
-from options_engine.domain.model.templates import TEMPLATES, Template, template
+from options_engine.domain.model.templates import TEMPLATES, Template, suggest_strikes, template
 from options_engine.domain.pricing.smile import (
     SeriesMarket,
     VolSmile,
@@ -61,6 +62,7 @@ from options_engine.domain.simulation.valuation import (
 __all__ = ["StrategyBuilderService"]
 
 _BASE: Final = DayCountConvention.BUSINESS_252
+_QUANTIDADE_PADRAO: Final = 100
 _AXIS_POINTS: Final = 101
 _ORIGEM: Final = {
     PriceQuality.EXECUTAVEL: LegPriceOrigin.EXECUTAVEL,
@@ -87,6 +89,40 @@ class StrategyBuilderService:
 
     def templates(self) -> tuple[Template, ...]:
         return TEMPLATES
+
+    def suggest(self, underlying: str, template_key: str, expiry: date) -> BuilderRequest:
+        modelo = _template(template_key)
+        chain = self._market.get_chain(underlying)
+        do_vencimento = [q for q in chain.quotes if q.contract.terms.expiry == expiry]
+        if not do_vencimento:
+            raise UnderlyingUnavailableError(f"{underlying}: sem séries no vencimento {expiry}")
+        tipos = {perna.option_type for perna in modelo.legs}
+        # Straddle e collar precisam de call e put no mesmo strike: só os strikes com os dois.
+        strikes = set.intersection(
+            *(
+                {
+                    q.contract.terms.strike
+                    for q in do_vencimento
+                    if q.contract.terms.option_type is t
+                }
+                for t in tipos
+            )
+        )
+        sugeridos = suggest_strikes(modelo, sorted(strikes), chain.underlying.spot)
+        pernas = tuple(
+            BuilderLegInput(
+                _serie(do_vencimento, perna.option_type, strike),
+                perna.side,
+                _QUANTIDADE_PADRAO * perna.ratio,
+            )
+            for perna, strike in zip(modelo.legs, sugeridos, strict=True)
+        )
+        acao = (
+            None
+            if modelo.stock is None
+            else BuilderStockInput(modelo.stock, _QUANTIDADE_PADRAO, StockOrigin.COMPRA)
+        )
+        return BuilderRequest(underlying, pernas, acao, template_key)
 
     def analyze(self, request: BuilderRequest) -> BuilderAnalysis:
         if not request.legs and request.stock is None:
@@ -299,11 +335,22 @@ def _strategy(chave: str | None, pernas: Sequence[StrategyLeg], acao: StockLeg |
     acoes = [] if acao is None else [acao]
     if chave is None:
         return Strategy.create("estrutura livre", pernas, acoes)
+    return _template(chave).build(pernas, acao)
+
+
+def _template(chave: str) -> Template:
     try:
-        modelo = template(chave)
+        return template(chave)
     except KeyError:
         raise InvalidDomainValueError(f"modelo desconhecido: {chave!r}") from None
-    return modelo.build(pernas, acao)
+
+
+def _serie(quotes: Sequence[OptionQuote], option_type: OptionType, strike: float) -> str:
+    return min(
+        q.contract.symbol
+        for q in quotes
+        if q.contract.terms.option_type is option_type and q.contract.terms.strike == strike
+    )
 
 
 def _axis(spot: float, strikes: Sequence[float], breakevens: Sequence[float]) -> tuple[float, ...]:
