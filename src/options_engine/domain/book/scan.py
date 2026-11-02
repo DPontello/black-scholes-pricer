@@ -11,7 +11,12 @@ from dataclasses import dataclass
 from datetime import date
 from math import log, sqrt
 
-from options_engine.domain.book.model import BookExclusion, BookLeg, passes_liquidity
+from options_engine.domain.book.model import (
+    BookExclusion,
+    BookLabel,
+    BookLeg,
+    passes_liquidity,
+)
 from options_engine.domain.book.presets import BookSettings
 from options_engine.domain.income.costs import CostSchedule
 from options_engine.domain.income.net_result import extreme_spots, net_result_breakdown
@@ -42,6 +47,7 @@ __all__ = [
     "PricedLeg",
     "ScannedExpiry",
     "ScannedSeries",
+    "approximation_labels",
     "book_legs",
     "evaluate",
     "keeps_liquidity",
@@ -211,6 +217,16 @@ def keeps_liquidity(legs: Iterable[PricedLeg], settings: BookSettings) -> bool:
     )
 
 
+def approximation_labels(legs: Iterable[PricedLeg]) -> tuple[BookLabel, ...]:
+    """A marca da ADR-0002: o delta que escolheu a call americana é o da fórmula europeia."""
+    americana = any(
+        leg.series.option_type is OptionType.CALL
+        and leg.series.quote.contract.terms.exercise_style is ExerciseStyle.AMERICAN
+        for leg in legs
+    )
+    return (BookLabel.CALL_AMERICANA_COMO_EUROPEIA,) if americana else ()
+
+
 def book_legs(legs: Iterable[PricedLeg]) -> tuple[BookLeg, ...]:
     return tuple(
         BookLeg(
@@ -228,14 +244,15 @@ def book_legs(legs: Iterable[PricedLeg]) -> tuple[BookLeg, ...]:
 @dataclass(frozen=True, slots=True)
 class Outcome:
     """Resultado no vencimento em moeda: ``net_premium`` > 0 é crédito; extremos líquidos de
-    custos e IR (ADR-0005), ``None`` = ilimitado; perda como valor <= 0. ``net_at_target``: o
-    líquido com o ativo no alvo pedido."""
+    custos e IR (ADR-0005), ``None`` = ilimitado; perda como valor <= 0. ``setup_costs``: as
+    ordens da montagem. ``net_at_target``: o líquido com o ativo no alvo pedido."""
 
     net_premium: float
     breakevens: tuple[float, ...]
     net_max_gain: float | None
     net_max_loss: float | None
     probability_of_profit: float
+    setup_costs: float
     net_at_target: float | None = None
 
 
@@ -270,6 +287,7 @@ def evaluate(
             rate=chain.underlying.risk_free_rate,
             vol=Volatility(vol, _BASE),
         ),
+        setup_costs=liquidos[0].setup,
         net_at_target=(
             None
             if target is None

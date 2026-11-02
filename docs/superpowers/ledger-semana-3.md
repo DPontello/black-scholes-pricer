@@ -67,3 +67,13 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - Ruling: alvo do lado errado do spot e vencimento sem séries com 1 du são recusados com `InvalidDomainValueError` e o motivo (a API devolve 422); não viram uma lista vazia.
 - Ruling: o risco máximo do preset vale nas duas (são estruturas sem ação).
 - Checagens: ruff, mypy, import-linter e as suítes do book (58 testes, `domain/book` em 99%).
+
+## 2026-11-02: Task 7 — família Proteção
+
+- `domain/book/protecao.py`: `protection_items(chain, position, settings, schedule, business_days)` com `ProtectedPosition(underlying, quantity, average_price, hypothetical)`. Put protetora e collar (a call vendida na faixa de delta do preset), critério custo mensal equivalente `custo líquido / valor da posição x 21 / du`, do menor para o maior (o collar de crédito vem antes). Números: custo em R$ e em % da posição, piso e teto em R$ e em % do spot.
+- Conferido à mão, sem custos: put 28 com custo `ask x 100` e mensal `custo / 3000 x 21 / du`; collar 28/32 com custo `(ask da put - bid da call) x 100`, negativo (crédito) e primeiro da lista.
+- Ruling: a put vai do piso do preset (`protection_floor x spot`) até o strike no dinheiro; put dentro do dinheiro não entra (é cara e não é proteção, é aposta de baixa).
+- Ruling: as opções cobrem o lote inteiro de 100 da posição (250 ações viram 200 protegidas); posição menor que 100 vira exclusão com o motivo.
+- Ruling: o custo da proteção conta só as ordens de opção, também na posição hipotética: a pergunta é quanto custa proteger, não quanto custa comprar a ação. A ação do item vai ao montador como "da carteira" na posição real e como compra na hipotética.
+- Junto: a marca da ADR-0002 (call americana escolhida pelo delta europeu) agora rotula os itens de Volatilidade, Direcionais e Proteção, como já fazia na Renda; o resultado da varredura passou a trazer o custo da montagem.
+- Checagens: ruff, mypy, import-linter e as suítes do book (65 testes, `domain/book` em 98% ou mais por módulo).

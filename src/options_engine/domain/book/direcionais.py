@@ -27,6 +27,7 @@ from options_engine.domain.book.scan import (
     PricedLeg,
     ScannedExpiry,
     ScannedSeries,
+    approximation_labels,
     book_legs,
     evaluate,
     keeps_liquidity,
@@ -224,7 +225,7 @@ def _barata(
             "(desconto de {desconto_vol}) com IV rank de {iv_rank}: opção barata pela vol, "
             "sem visão de direção."
         ),
-        labels=(BookLabel.NAO_DIRECIONAL,),
+        labels=(BookLabel.NAO_DIRECIONAL, *approximation_labels(pernas)),
     )
 
 
@@ -286,4 +287,5 @@ def _com_visao(
         ),
         metrics=tuple(apoio),
         reason=frase,
+        labels=approximation_labels(pernas),
     )

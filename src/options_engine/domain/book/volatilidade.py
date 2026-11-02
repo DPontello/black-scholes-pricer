@@ -26,6 +26,7 @@ from options_engine.domain.book.scan import (
     PricedLeg,
     ScannedExpiry,
     ScannedSeries,
+    approximation_labels,
     book_legs,
     evaluate,
     keeps_liquidity,
@@ -326,7 +327,7 @@ class _Montador:
             criterion=criterio,
             metrics=(*apoio, *vol),
             reason=abertura + frase,
-            labels=(*_rotulos(contexto), *rotulos),
+            labels=(*_rotulos(contexto), *rotulos, *approximation_labels(pernas)),
         )
 
 
