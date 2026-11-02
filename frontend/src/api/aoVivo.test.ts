@@ -9,6 +9,8 @@ const VAZIO: EstadoAoVivo = {
   motivoCotacoes: null,
   cadeia: null,
   cadeiaIndisponivel: null,
+  carteira: null,
+  carteiraIndisponivel: null,
 };
 
 test("status e cotações do app entram no estado", () => {
@@ -49,4 +51,24 @@ test("cadeia que não sai troca a cadeia anterior pelo motivo, e a que sai limpa
 
 test("erro de pedido do próprio frontend não mexe no estado", () => {
   expect(aplicar(VAZIO, { tipo: "erro", erro: "RequisicaoInvalida", mensagem: "x" })).toBe(VAZIO);
+});
+
+test("a carteira do ao vivo entra no estado, e o motivo dela a substitui", () => {
+  const dados = {
+    fonte: "fim_de_dia" as const,
+    operacoes: [],
+    totais: [],
+    avisos: [],
+    ilegiveis: [],
+  };
+  const comCarteira = aplicar(VAZIO, { tipo: "carteira", dados });
+  expect(comCarteira.carteira).toEqual(dados);
+  const semPasta = aplicar(comCarteira, {
+    tipo: "carteira",
+    erro: "ProfileFolderUnavailableError",
+    mensagem: "pasta do perfil fora do ar",
+  });
+  expect(semPasta.carteira).toBeNull();
+  expect(semPasta.carteiraIndisponivel?.mensagem).toBe("pasta do perfil fora do ar");
+  expect(aplicar(semPasta, { tipo: "carteira", dados }).carteiraIndisponivel).toBeNull();
 });

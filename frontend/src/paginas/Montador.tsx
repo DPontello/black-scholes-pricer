@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import type { EstadoAoVivo, SeguirCadeia, Serie } from "../api/aoVivo";
+import { rascunhoDaAnalise } from "../api/carteira";
 import { ErroApi } from "../api/cliente";
 import {
   type Analise,
@@ -20,7 +21,7 @@ import { GraficoPayoff } from "../componentes/GraficoPayoff";
 import { ResumoEstrutura } from "../componentes/ResumoEstrutura";
 import { TabelaCadeia } from "../componentes/TabelaCadeia";
 import { TabelaPernas } from "../componentes/TabelaPernas";
-import { formatarData, formatarInstante } from "../formatacao";
+import { formatarData, formatarInstante, hojeNaB3 } from "../formatacao";
 
 const FAMILIAS: Record<Modelo["familia"], string> = {
   renda: "Renda",
@@ -44,6 +45,7 @@ function mensagem(erro: unknown, padrao: string): string {
 
 export function Montador({ aoVivo, seguirCadeia }: Props) {
   const [busca, setBusca] = useSearchParams();
+  const navegar = useNavigate();
   const ativo = busca.get("ativo") ?? aoVivo.cotacoes[0]?.ativo ?? null;
   const [vencimentos, setVencimentos] = useState<string[] | null>(null);
   const [pedido, setPedido] = useState<PedidoAnalise>(vazio(ativo));
@@ -286,7 +288,15 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
             <button type="button" disabled={vazia || nome.trim() === ""} onClick={() => void salvar()}>
               Salvar simulação
             </button>
-            <button type="button" disabled title="Chega com a Carteira, na segunda metade da semana">
+            <button
+              type="button"
+              disabled={vazia}
+              onClick={() =>
+                navegar("/carteira", {
+                  state: { registro: rascunhoDaAnalise(pedido, analise, hojeNaB3()) },
+                })
+              }
+            >
               Registrar como executada
             </button>
           </div>

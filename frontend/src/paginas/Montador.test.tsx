@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, test, vi } from "vitest";
 
 import type { Cadeia, EstadoAoVivo } from "../api/aoVivo";
@@ -66,6 +66,8 @@ const AO_VIVO: EstadoAoVivo = {
   motivoCotacoes: null,
   cadeia: CADEIA,
   cadeiaIndisponivel: null,
+  carteira: null,
+  carteiraIndisponivel: null,
 };
 
 function api(analise: unknown = analiseCoberta()) {
@@ -142,7 +144,7 @@ test("erro de forma do modelo aparece com a saída de montar sem o modelo", asyn
   expect(screen.getByRole("button", { name: "Montar sem o modelo" })).toBeTruthy();
 });
 
-test("salvar simulação manda o nome e o pedido; registrar fica para a carteira", async () => {
+test("salvar simulação manda o nome e o pedido", async () => {
   const fetch = api({ corpo: analiseCoberta() });
   montar();
   fireEvent.change(await screen.findByLabelText("Modelo pronto"), {
@@ -155,9 +157,44 @@ test("salvar simulação manda o nome e o pedido; registrar fica para a carteira
   fireEvent.click(screen.getByRole("button", { name: "Salvar simulação" }));
   await waitFor(() => expect(corpos(fetch, "/api/simulacoes").length).toBe(1));
   expect(corpos(fetch, "/api/simulacoes")[0]).toEqual({ nome: "coberta nov", ...SUGESTAO });
-  expect(
-    (screen.getByRole("button", { name: "Registrar como executada" }) as HTMLButtonElement).disabled,
-  ).toBe(true);
+});
+
+function Sonda() {
+  const local = useLocation();
+  return <pre data-testid="estado">{JSON.stringify(local.state)}</pre>;
+}
+
+test("registrar como executada leva à carteira com as pernas e os preços da análise", async () => {
+  api({ corpo: analiseCoberta() });
+  render(
+    <MemoryRouter initialEntries={["/montador?ativo=PETR4"]}>
+      <Routes>
+        <Route path="/montador" element={<Montador aoVivo={AO_VIVO} seguirCadeia={vi.fn()} />} />
+        <Route path="/carteira" element={<Sonda />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+  const registrar = (await screen.findByRole("button", {
+    name: "Registrar como executada",
+  })) as HTMLButtonElement;
+  expect(registrar.disabled).toBe(true);
+  fireEvent.change(await screen.findByLabelText("Modelo pronto"), {
+    target: { value: "venda_coberta" },
+  });
+  await screen.findByText(/Você paga/);
+  fireEvent.click(registrar);
+  const estado = JSON.parse((await screen.findByTestId("estado")).textContent ?? "null") as {
+    registro: { nome: string; pernas: unknown[]; acao: unknown };
+  };
+  expect(estado.registro.nome).toBe("venda coberta");
+  expect(estado.registro.pernas).toEqual([
+    { ticker: "PETRK541", lado: "venda", execucoes: [{ quantidade: 100, preco: 1.72, custos: null }] },
+  ]);
+  expect(estado.registro.acao).toEqual({
+    lado: "compra",
+    origem: "compra",
+    execucoes: [{ quantidade: 100, preco: 52.52, custos: null }],
+  });
 });
 
 test("o modelo usa o primeiro mensal, e o vencimento pode ser trocado", async () => {

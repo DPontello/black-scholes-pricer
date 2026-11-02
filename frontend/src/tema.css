@@ -442,3 +442,70 @@ button.link {
   list-style: none;
   padding-left: 0;
 }
+
+.painel-carteira {
+  margin: 0.75rem 0;
+  padding: 0.8rem 1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.painel-carteira h2 {
+  margin-top: 0;
+}
+
+.campos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.execucoes {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.execucao {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.execucao input,
+.tabela-registro input {
+  width: 7rem;
+}
+
+.teorico {
+  color: var(--atencao);
+}
+
+.acoes-operacao {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+
+.detalhe-operacao > td {
+  background: var(--painel);
+}
+
+.eventos {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  color: var(--texto-secundario);
+}
+
+.tabela-totais {
+  margin-top: 1rem;
+}
+
+.tabela-totais caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 0.25rem;
+}

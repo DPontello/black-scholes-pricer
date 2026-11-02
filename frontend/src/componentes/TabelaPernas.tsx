@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-
 import type {
   AcaoPedido,
   Analise,
@@ -9,6 +7,7 @@ import type {
   PernaPedido,
 } from "../api/montador";
 import { formatarPreco } from "../formatacao";
+import { CampoPreco } from "./CampoPreco";
 
 const ORIGEM: Record<OrigemPreco, string> = {
   executavel: "book",
@@ -23,45 +22,6 @@ type Props = {
   analise: Analise | null;
   onMudar: (pedido: PedidoAnalise) => void;
 };
-
-function numero(texto: string): number | null {
-  const valor = Number(texto.replace(",", "."));
-  return texto.trim() === "" || !Number.isFinite(valor) ? null : valor;
-}
-
-function emTexto(valor: number | null): string {
-  return valor === null ? "" : String(valor).replace(".", ",");
-}
-
-// Guarda o texto digitado: "1," ainda não é número, e o campo não pode engolir a vírgula.
-function CampoPreco({
-  rotulo,
-  valor,
-  placeholder,
-  onMudar,
-}: {
-  rotulo: string;
-  valor: number | null;
-  placeholder: string;
-  onMudar: (v: number | null) => void;
-}) {
-  const [texto, setTexto] = useState(emTexto(valor));
-  useEffect(() => {
-    setTexto((atual) => (numero(atual) === valor ? atual : emTexto(valor)));
-  }, [valor]);
-  return (
-    <input
-      aria-label={rotulo}
-      inputMode="decimal"
-      placeholder={placeholder}
-      value={texto}
-      onChange={(e) => {
-        setTexto(e.target.value);
-        onMudar(numero(e.target.value));
-      }}
-    />
-  );
-}
 
 function SeletorLado({ valor, onMudar, rotulo }: { valor: Lado; onMudar: (l: Lado) => void; rotulo: string }) {
   return (

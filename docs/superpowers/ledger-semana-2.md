@@ -194,3 +194,19 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - Risco: cada ciclo do WebSocket lê a pasta de operações duas vezes (vencimento e marcação). Com poucas dezenas de arquivos pequenos, no disco, é desprezível; numa pasta de nuvem que não guarda os arquivos no PC pode pesar. Conferir no ponta a ponta (Task 15).
 - Composição: `PortfolioService` sobre `JsonOperationRepository(profiles.active_folder())`, e o montador recebe `portfolio.average_price`. Teste da composição: venda registrada pela API do app montado, marcada pelo COTAHIST da fixture (`fim_de_dia`, sem ponte).
 - Gates: 4926 testes (cobertura 97,9%), mypy, ruff e import-linter. O frontend não mudou nesta tarefa.
+
+## 2026-11-02: Task 14 — frontend da Carteira
+
+- `api/carteira.ts`: os tipos da API, as chamadas (carteira, histórico, registrar, ações, encerrar, exercer, atribuir) e `rascunhoDaAnalise`, que converte o pedido e a análise do montador no rascunho do registro (preço da análise em cada perna; ação "da carteira" sem execução).
+- `aoVivo.ts`: a mensagem `carteira` entra no estado (`carteira` e `carteiraIndisponivel`).
+- `paginas/Carteira.tsx` (rota `/carteira`, no lugar do "em breve"):
+  - uma linha por operação, que se abre nas pernas, com o preço de zerar; sem ele, o teórico rotulado e o motivo;
+  - abaixo, o total por ativo e o total executável, que deixa de fora (e conta) as posições sem preço de zerar;
+  - aba Histórico com o resultado realizado e os eventos;
+  - avisos de vencimento: "registre o exercício" abre o diálogo na perna vencida, e "aguardando o fechamento" pede o COTAHIST do dia;
+  - arquivos ilegíveis listados;
+  - fica com a carteira mais recente, a do WebSocket ou a da API depois de uma gravação.
+- Componentes: `FormOperacao` (várias execuções por perna, ação comprada junto ou "da carteira", custos em branco estimados), `DialogoEncerrar` (parcial, com o preço de zerar sugerido), `DialogoExercicio` (exercício na comprada, atribuição na vendida, data do vencimento sugerida) e `AdicionarAcoes`. O `CampoPreco` saiu da `TabelaPernas` para ser compartilhado.
+- Montador: "Registrar como executada" leva à Carteira com o formulário preenchido pela análise. O usuário confere com a nota antes de registrar.
+- Conferido na tela, numa pasta temporária com a fixture da B3 e sem a ponte: trava com a perna sem oferta mostrando o teórico, coberta "da carteira" atribuída pelo diálogo (venda 32,55 contra o médio 28,50, e as ações à mão de 200 para 100) e o formulário vindo do montador com a série, o prêmio e a ação.
+- Gates: frontend com 69 testes, `tsc` e build. O backend não mudou nesta tarefa.
