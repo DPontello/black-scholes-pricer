@@ -25,6 +25,7 @@ from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.market import MarketSnapshot
 from options_engine.domain.model.profile import Profile, ProfileEntry
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
+from options_engine.domain.portfolio.model import Operation
 
 __all__ = [
     "CadastroFreshness",
@@ -32,6 +33,7 @@ __all__ = [
     "LiveFeedPort",
     "MarketDataPort",
     "MarketPort",
+    "OperationRepository",
     "OptionChainPort",
     "ProfileRepository",
     "QuoteBoardPort",
@@ -256,3 +258,15 @@ class ProfileRepository(Protocol):
     def acquire_lock(self, name: str, machine: str, now: datetime, force: bool) -> None: ...
 
     def release_lock(self, name: str, machine: str) -> None: ...
+
+
+@runtime_checkable
+class OperationRepository(Protocol):
+    """Operações de UM perfil. ``load`` levanta ``UnknownRecordError``; ``save`` de operação cujo
+    arquivo está ilegível levanta ``UnreadableRecordError`` (nunca sobrescreve)."""
+
+    def list(self) -> tuple[Operation | UnreadableFile, ...]: ...
+
+    def save(self, operation: Operation) -> None: ...
+
+    def load(self, operation_id: str) -> Operation: ...

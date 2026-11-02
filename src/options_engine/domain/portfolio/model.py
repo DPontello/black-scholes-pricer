@@ -3,7 +3,9 @@ eventos (``leg_states``); nada é guardado já somado.
 
 Preço médio ponderado por perna (IN RFB 1.585/2015, art. 60, § 2º). Exercício e atribuição fecham
 a perna da opção sem resultado próprio: o prêmio vai para o preço da ação (``exercise.py``). Pó
-realiza o prêmio inteiro: ganho do lançador, perda do titular (art. 60, § 3º).
+realiza o prêmio inteiro: ganho do lançador, perda do titular (art. 60, § 3º). Transferência tira
+ações de uma operação para outra que as usou "da carteira": sai pelo preço médio, sem resultado,
+porque quem vende é a operação de destino.
 """
 
 from dataclasses import dataclass, replace
@@ -26,6 +28,7 @@ __all__ = [
     "Operation",
     "OptionLegRef",
     "StockLegRef",
+    "TransferOut",
     "leg_states",
 ]
 
@@ -91,7 +94,17 @@ class Expired:
     on: date
 
 
-Event = Open | Close | Exercise | Assignment | Expired
+@dataclass(frozen=True, slots=True)
+class TransferOut:
+    """``to_operation``: o id da operação que vendeu estas ações "da carteira"."""
+
+    leg: int
+    on: date
+    quantity: int
+    to_operation: str
+
+
+Event = Open | Close | Exercise | Assignment | Expired | TransferOut
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +246,21 @@ def _virar_po(estado: _Estado, ref: LegRef) -> None:
     _baixar(estado, estado.quantidade)
 
 
+def _transferir(estado: _Estado, ref: LegRef, evento: TransferOut) -> None:
+    _exige_quantidade(evento.quantity)
+    if not evento.to_operation.strip():
+        raise InvalidDomainValueError("transferência precisa da operação de destino")
+    if not isinstance(ref, StockLegRef) or _da_carteira(ref) or estado.lado is not Side.BUY:
+        raise InvalidDomainValueError(
+            f"transferência só sai de ação comprada na operação; {ref.symbol!r} não é"
+        )
+    if evento.quantity > estado.quantidade:
+        raise InvalidDomainValueError(
+            f"{ref.symbol!r}: transfere {evento.quantity} com {estado.quantidade} em aberto"
+        )
+    _baixar(estado, evento.quantity)
+
+
 def leg_states(operation: Operation) -> tuple[LegState, ...]:
     estados = [_Estado() for _ in operation.legs]
     for evento in operation.events:
@@ -248,6 +276,8 @@ def leg_states(operation: Operation) -> tuple[LegState, ...]:
                 _exercer(estado, ref, evento)
             case Expired():
                 _virar_po(estado, ref)
+            case TransferOut():
+                _transferir(estado, ref, evento)
     return tuple(
         LegState(i, ref, e.lado, e.quantidade, e.media, fsum(e.realizado))
         for i, (ref, e) in enumerate(zip(operation.legs, estados, strict=True))

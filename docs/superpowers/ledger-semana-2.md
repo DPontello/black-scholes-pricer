@@ -145,3 +145,17 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - Ruling: o `load` procura pelo prefixo de 8 caracteres e confere o id inteiro dentro do arquivo, então dois ids com o mesmo começo não se confundem. Id fora de `[0-9A-Za-z_-]{8,64}` não vira nome de arquivo.
 - `UnreadableFile` passou para `application/ports/outbound.py`, compartilhado com as simulações.
 - Gates: 4869 testes (cobertura 97,8%; `storage/operations` em 99%), mypy, ruff e import-linter.
+
+## 2026-11-02: Task 11 — serviço da carteira
+
+- Contrato em `application/ports/portfolio.py` (como as simulações, fora do `inbound.py`): `PortfolioUseCase`, `RegisterOperation` (pernas com execuções `Fill`, ação opcional `RegisterStock`), `OperationView`, `PortfolioView` e `ExpiryNotice`. `OperationRepository` em `ports/outbound.py`.
+- `PortfolioService(repository_for, clock, schedules, new_id, market_timezone)`: o repositório é pedido a cada chamada (perfil trocado, pasta trocada). Sem `calendar`: o vencimento já é dia de pregão, e "encerrado" é depois das 18h do dia no fuso da B3 ou qualquer dia seguinte.
+- `register`: cada perna de opção precisa de execução. A ação `COMPRA` precisa de execução. A ação "da carteira" é comprada, sem execução, e exige ações livres para as calls vendidas da operação (`free_shares` das outras).
+- `add_stock`: operação "ações à mão" de uma perna de ação, custo 0 (a compra é anterior ao app; o preço médio informado já é o custo).
+- `exercise`/`assign` conferem o lado da perna; `open_operations` traz as abertas (mais recentes primeiro), os totais por ativo e os arquivos ilegíveis; `history` traz as encerradas com o resultado realizado.
+- `process_expiries(closes)`: grava o pó das pernas fora do dinheiro estrito uma vez só (a perna zerada não volta) e devolve os avisos "registre o exercício" e "aguardando o fechamento". Os avisos não entram no `PortfolioView`; a API (Task 13) junta os dois.
+- Ruling: evento novo `TransferOut` (JSON `transferencia`, com a operação de destino). Na atribuição de call com ação "da carteira", as ações saem das operações que as têm livres, sem resultado ali, porque quem vende é a operação de destino. Sem isso o lucro da ação contaria duas vezes ou as ações ficariam no perfil depois de entregues.
+- Ruling **para o autor conferir**: o custo da venda "da carteira" é o **preço médio de todas as ações do ativo no perfil** (spec §3.2, "pelo preço médio dela"). As ações saem **na proporção das livres de cada operação** (maiores restos; no empate, a mais antiga), para o médio de cada operação e o do perfil não mudarem com a venda, como na regra do preço médio. O arredondamento por ação inteira pode mexer centavos: 100 ações de lotes de 100 a 28, 30 e 32 saem 34/33/33, e o médio das que ficam vai de 30,00 a 30,01. A alternativa seria tirar por ordem de compra (FIFO), que muda o médio de quem fica.
+- Ruling: a operação de destino é gravada antes das fontes. Se a gravação parar no meio (nuvem fora do ar), repetir a atribuição é recusado (a perna já foi atribuída) em vez de tirar as ações duas vezes.
+- `domain/portfolio/exercise.py`: `takes_portfolio_shares(operation, leg, quantity)`, a mesma regra que o `apply_exercise` usa para saber se a ação sai "da carteira".
+- Gates: 4898 testes (cobertura 97,8%; `use_cases/portfolio` em 100%), mypy, ruff e import-linter.

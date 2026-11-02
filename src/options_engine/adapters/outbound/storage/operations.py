@@ -33,6 +33,7 @@ from options_engine.domain.portfolio.model import (
     Operation,
     OptionLegRef,
     StockLegRef,
+    TransferOut,
 )
 
 __all__ = ["JsonOperationRepository"]
@@ -143,6 +144,13 @@ def _evento_json(evento: Event) -> dict[str, object]:
             return {"tipo": tipo, **base, "quantidade": evento.quantity, "custos": evento.costs}
         case Expired():
             return {"tipo": "po", **base}
+        case TransferOut():
+            return {
+                "tipo": "transferencia",
+                **base,
+                "quantidade": evento.quantity,
+                "para": evento.to_operation,
+            }
 
 
 def _para_json(operation: Operation) -> dict[str, object]:
@@ -204,6 +212,8 @@ def _evento(dados: Any) -> Event:
             return Assignment(perna, dia, int(dados["quantidade"]), _custos(dados["custos"]))
         case "po":
             return Expired(perna, dia)
+        case "transferencia":
+            return TransferOut(perna, dia, int(dados["quantidade"]), str(dados["para"]))
     raise ValueError(f"tipo de evento desconhecido: {dados['tipo']!r}")
 
 

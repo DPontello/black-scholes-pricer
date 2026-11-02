@@ -14,7 +14,7 @@ from options_engine.domain.model.errors import (
     UnreadableRecordError,
 )
 from options_engine.domain.portfolio.exercise import apply_exercise
-from options_engine.domain.portfolio.model import Close, Expired, Open, Operation
+from options_engine.domain.portfolio.model import Close, Expired, Open, Operation, TransferOut
 from tests.portfolio._builders import D1, D2, D3, acao, call, operacao, put
 
 ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
@@ -194,3 +194,12 @@ def test_ida_e_volta_de_call_comprada_exercida(tmp_path: Path) -> None:
     exercida = apply_exercise(comprada, 0, 100, D3, costs=1.2)
     repositorio.save(exercida)
     assert repositorio.load(exercida.id) == exercida
+
+
+def test_ida_e_volta_da_transferencia(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    a_mao = operacao(
+        [acao()], [Open(0, D1, Side.BUY, 500, 28.0), TransferOut(0, D3, 100, ID)], id_="d" * 32
+    )
+    repositorio.save(a_mao)
+    assert repositorio.load(a_mao.id) == a_mao

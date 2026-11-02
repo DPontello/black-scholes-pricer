@@ -23,6 +23,7 @@ from options_engine.domain.portfolio.model import (
     Operation,
     OptionLegRef,
     StockLegRef,
+    TransferOut,
     leg_states,
 )
 
@@ -54,7 +55,7 @@ def is_closed(operation: Operation) -> bool:
 
 
 def _custo(evento: Event, ref: LegRef, schedules: Sequence[CostSchedule]) -> float:
-    if isinstance(evento, Expired):
+    if isinstance(evento, Expired | TransferOut):
         return 0.0
     if evento.costs is not None:
         return evento.costs

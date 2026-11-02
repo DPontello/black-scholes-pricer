@@ -13,6 +13,7 @@ from options_engine.domain.portfolio.model import (
     Expired,
     Open,
     Operation,
+    TransferOut,
 )
 from options_engine.domain.portfolio.positions import (
     is_closed,
@@ -141,3 +142,23 @@ def test_custos_estimados_de_po_exercicio_e_acao() -> None:
     assert realized_result(exercida, [tabela]) == pytest.approx(
         -exercicio - ordem_de_acao, abs=1e-9
     )
+
+
+def test_transferencia_tira_acoes_pelo_preco_medio_sem_resultado() -> None:
+    a_mao = operacao([acao()], [Open(0, D1, _C, 500, 28.0), TransferOut(0, D3, 100, "coberta")])
+    (acoes,) = open_legs(a_mao)
+    assert (acoes.quantity, acoes.average_price, acoes.realized) == (400, 28.0, 0.0)
+
+
+@pytest.mark.parametrize(
+    ("pernas", "eventos", "motivo"),
+    [
+        ([acao()], [Open(0, D1, _C, 100, 28.0), TransferOut(0, D3, 200, "x")], "aberto"),
+        ([call(32.0)], [Open(0, D1, _C, 100, 1.0), TransferOut(0, D3, 100, "x")], "ação comprada"),
+        ([acao()], [Open(0, D1, _V, 100, 28.0), TransferOut(0, D3, 100, "x")], "ação comprada"),
+        ([acao()], [Open(0, D1, _C, 100, 28.0), TransferOut(0, D3, 100, " ")], "destino"),
+    ],
+)
+def test_transferencia_impossivel(pernas: list[object], eventos: list[object], motivo: str) -> None:
+    with pytest.raises(InvalidDomainValueError, match=motivo):
+        operacao(pernas, eventos)  # type: ignore[arg-type]

@@ -8,6 +8,7 @@ from options_engine.domain.portfolio.exercise import (
     StockMovement,
     apply_exercise,
     stock_from_option,
+    takes_portfolio_shares,
 )
 from options_engine.domain.portfolio.model import Assignment, Close, Exercise, Open
 from options_engine.domain.portfolio.positions import is_closed, leg_states, open_legs
@@ -57,6 +58,19 @@ def test_venda_coberta_com_acao_da_carteira_usa_o_custo_medio_dela() -> None:
         apply_exercise(coberta, 0, 100, D3)
     atribuida = apply_exercise(coberta, 0, 100, D3, portfolio_average=29.0)
     assert leg_states(atribuida)[1].realized == pytest.approx(400.0, abs=1e-9)
+
+
+def test_so_a_acao_que_sai_sem_as_proprias_vem_da_carteira() -> None:
+    da_carteira = operacao(
+        [call(32.0), acao(StockOrigin.CARTEIRA), put(28.0)],
+        [Open(0, D1, _V, 100, 1.00), Open(2, D1, _V, 100, 0.50)],
+    )
+    assert takes_portfolio_shares(da_carteira, 0, 100)
+    assert not takes_portfolio_shares(da_carteira, 2, 100)  # a put atribuída faz entrar ações
+    propria = operacao(
+        [call(32.0), acao()], [Open(1, D1, _C, 100, 30.0), Open(0, D1, _V, 100, 1.00)]
+    )
+    assert not takes_portfolio_shares(propria, 0, 100)
 
 
 def test_call_comprada_exercida_cria_a_perna_de_acao_com_o_premio_no_custo() -> None:
