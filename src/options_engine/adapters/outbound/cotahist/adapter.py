@@ -52,6 +52,11 @@ from options_engine.adapters.outbound.cotahist.parser import (
     MARKET_SPOT,
     CotahistRecord,
 )
+from options_engine.adapters.outbound.cotahist.series_rules import (
+    link_underlying,
+    record_rejection,
+    series_root,
+)
 from options_engine.adapters.outbound.cotahist.session import SessionData, load_session_data
 from options_engine.adapters.outbound.cotahist.volatility import realized_volatility
 from options_engine.domain.model.chain import OptionChain, OptionQuote, RejectedSeries
@@ -64,18 +69,7 @@ from options_engine.domain.model.market import MarketSnapshot
 __all__ = ["CotahistOptionChainAdapter"]
 
 _END_OF_SESSION = time(18, 0)
-_ROOT_LENGTH = 4
 _OPTION_TYPES = {MARKET_CALL: OptionType.CALL, MARKET_PUT: OptionType.PUT}
-
-
-def _raiz(simbolo: str) -> str:
-    return simbolo[:_ROOT_LENGTH]
-
-
-def _classe(especificacao: str) -> str:
-    """Primeiro termo do ESPECI (``"PN N2"`` -> ``"PN"``); vazio se não houver."""
-    termos = especificacao.split()
-    return termos[0].upper() if termos else ""
 
 
 def _ou_none(valor: float) -> float | None:
@@ -146,7 +140,7 @@ class CotahistOptionChainAdapter:
         for registro in self._data.records:
             if registro.market not in _OPTION_TYPES:
                 continue
-            if _raiz(registro.symbol) != _raiz(underlying_symbol):
+            if series_root(registro.symbol) != series_root(underlying_symbol):
                 continue
             vinculo = self._vinculo(registro)
             if isinstance(vinculo, RejectedSeries):
@@ -243,29 +237,8 @@ class CotahistOptionChainAdapter:
     # Séries
     # ------------------------------------------------------------------
 
-    def _candidatos(self, registro: CotahistRecord) -> list[str]:
-        """Ativos-objeto do pregão com a raiz da série, em ordem alfabética."""
-        return sorted(s for s in self._spot_records if _raiz(s) == _raiz(registro.symbol))
-
     def _vinculo(self, registro: CotahistRecord) -> str | RejectedSeries:
-        """Ativo-objeto da série: cadastro, raiz única ou classe do ESPECI; senão rejeitada."""
-        info = self._instruments.get(registro.symbol)
-        if info is not None and info.underlying_symbol is not None:
-            return info.underlying_symbol
-        candidatos = self._candidatos(registro)
-        if len(candidatos) == 1:
-            return candidatos[0]
-        classe = _classe(registro.specification)
-        mesma_classe = [
-            c for c in candidatos if _classe(self._spot_records[c].specification) == classe
-        ]
-        if len(mesma_classe) == 1:
-            return mesma_classe[0]
-        return RejectedSeries(
-            registro.symbol,
-            f"vínculo com o ativo-objeto ambíguo: raiz {_raiz(registro.symbol)!r} em "
-            f"{candidatos!r} e especificação {registro.specification!r}",
-        )
+        return link_underlying(registro, self._spot_records, self._instruments)
 
     def _serie(self, registro: CotahistRecord, simbolo: str) -> OptionQuote | RejectedSeries:
         info = self._instruments.get(registro.symbol)
@@ -299,19 +272,4 @@ class CotahistOptionChainAdapter:
             return "série ausente do cadastro de instrumentos"
         if info.exercise_style is None:
             return "sem estilo de exercício no cadastro (OptnStyle vazio ou desconhecido)"
-        if registro.strike_correction != 0:
-            return f"strike corrigido por índice (INDOPC={registro.strike_correction})"
-        if registro.expiry < self._session:
-            return f"vencimento {registro.expiry.isoformat()} anterior ao pregão"
-        if (
-            registro.best_bid > 0.0
-            and registro.best_ask > 0.0
-            and registro.best_bid > registro.best_ask
-        ):
-            return (
-                f"book cruzado na fonte: oferta de compra {registro.best_bid} > "
-                f"venda {registro.best_ask}"
-            )
-        if registro.strike <= 0.0:
-            return "strike zero na fonte"
-        return None
+        return record_rejection(registro, self._session)

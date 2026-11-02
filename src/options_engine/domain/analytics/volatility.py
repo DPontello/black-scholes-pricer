@@ -6,6 +6,7 @@ direto não preserva a variância acumulada entre os vencimentos.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum, unique
 from math import isfinite, sqrt
 from typing import Final
@@ -21,6 +22,7 @@ __all__ = [
     "MIN_EXPIRY_BUSINESS_DAYS",
     "RANK_MIN_SESSIONS",
     "RANK_WINDOW_SESSIONS",
+    "DailyVol",
     "ExpiryVol",
     "HorizonVol",
     "VolRegime",
@@ -67,6 +69,27 @@ class HorizonVol:
 
     vol: float
     extrapolated: bool
+
+
+@dataclass(frozen=True, slots=True)
+class DailyVol:
+    """Fechamento, IV de 30 dias úteis e HV de 21 de um pregão; ``None`` quando não deu para
+    calcular (sem smile no spot, histórico curto)."""
+
+    session: date
+    close: float
+    iv30: float | None
+    extrapolated: bool
+    hv21: float | None
+
+    def __post_init__(self) -> None:
+        _exige_vol("fechamento", self.close)
+        if self.iv30 is not None:
+            _exige_vol("IV 30", self.iv30)
+        elif self.extrapolated:
+            raise InvalidDomainValueError("IV 30 ausente não pode ser marcada como extrapolada")
+        if self.hv21 is not None:
+            _exige_vol("HV 21", self.hv21)
 
 
 def iv_at_horizon(

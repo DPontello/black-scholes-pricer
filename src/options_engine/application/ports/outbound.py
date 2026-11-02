@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Protocol, runtime_checkable
 
+from options_engine.domain.analytics.volatility import DailyVol
 from options_engine.domain.model.chain import OptionChain, OptionQuote
 from options_engine.domain.model.market import MarketSnapshot
 from options_engine.domain.model.profile import Profile, ProfileEntry
@@ -41,6 +42,7 @@ __all__ = [
     "RandomSource",
     "TradingCalendar",
     "UnreadableFile",
+    "VolHistoryPort",
 ]
 
 
@@ -292,3 +294,11 @@ class OperationRepository(Protocol):
     def save(self, operation: Operation) -> None: ...
 
     def load(self, operation_id: str) -> Operation: ...
+
+
+@runtime_checkable
+class VolHistoryPort(Protocol):
+    """Fechamento, IV de 30 dias úteis e HV de 21 por pregão de fim de dia, do mais antigo ao mais
+    recente; ou o motivo (``str``) de não haver histórico: sem COTAHIST, ativo desconhecido."""
+
+    def history(self, symbol: str) -> tuple[DailyVol, ...] | str: ...

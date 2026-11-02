@@ -1,10 +1,13 @@
 """IV no prazo de 30 dias úteis, IV rank, percentil e regime de vol, contra contas feitas à mão."""
 
+from datetime import date
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 from options_engine.domain.analytics.volatility import (
+    DailyVol,
     ExpiryVol,
     HorizonVol,
     VolRegime,
@@ -189,6 +192,19 @@ def test_regime_com_rank(iv: float, hv: float, rank: float, regime: VolRegime) -
 )
 def test_regime_sem_rank_pela_margem_de_10_por_cento(iv: float, regime: VolRegime) -> None:
     assert vol_regime(iv, 0.30, None) == (regime, True)
+
+
+def test_pregao_do_historico_valida_os_numeros() -> None:
+    dia = date(2026, 10, 23)
+    assert DailyVol(dia, 30.0, None, False, None).iv30 is None
+    with pytest.raises(InvalidDomainValueError):
+        DailyVol(dia, 0.0, 0.30, False, 0.25)
+    with pytest.raises(InvalidDomainValueError):
+        DailyVol(dia, 30.0, float("nan"), False, 0.25)
+    with pytest.raises(InvalidDomainValueError):
+        DailyVol(dia, 30.0, 0.30, False, -0.1)
+    with pytest.raises(InvalidDomainValueError, match="extrapolada"):
+        DailyVol(dia, 30.0, None, True, 0.25)
 
 
 def test_regime_com_entrada_invalida() -> None:
