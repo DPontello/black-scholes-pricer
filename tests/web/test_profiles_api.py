@@ -13,6 +13,17 @@ from options_engine.adapters.outbound.storage.profiles import JsonProfileReposit
 from options_engine.application.use_cases.profiles import ProfileService
 
 AGORA = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)  # 09:00 em Brasília
+BOOK_MODERADO = {
+    "preset": "moderado",
+    "delta_min": 0.15,
+    "delta_max": 0.35,
+    "negocios_min": 10,
+    "spread_max": 0.20,
+    "risco_max": 3000.0,
+    "vencimentos": 2,
+    "piso_protecao": 0.90,
+    "perda_ilimitada": False,
+}
 
 
 def _cliente(config: Path, maquina: str = "PC-SALA") -> TestClient:
@@ -37,7 +48,12 @@ def test_cria_e_lista_perfil(tmp_path: Path) -> None:
 
     r = cliente.post("/api/perfis", json={"nome": "Hugo", "pasta": pasta})
     assert r.status_code == 201
-    assert r.json() == {"nome": "Hugo", "ativos": ["PETR4", "VALE3"], "cdi_anual": 0.15}
+    assert r.json() == {
+        "nome": "Hugo",
+        "ativos": ["PETR4", "VALE3"],
+        "cdi_anual": 0.15,
+        "book": BOOK_MODERADO,
+    }
 
     r = cliente.get("/api/perfis")
     assert (r.status_code, r.json()) == (200, [{"nome": "Hugo", "pasta": pasta}])
@@ -70,7 +86,12 @@ def test_abrir_perfil_devolve_o_perfil_e_ele_vira_o_ativo(tmp_path: Path) -> Non
 
     r = cliente.post("/api/perfis/Hugo/abrir", json={"forcar": False})
     assert r.status_code == 200
-    esperado = {"nome": "Hugo", "ativos": ["PETR4", "VALE3"], "cdi_anual": 0.15}
+    esperado = {
+        "nome": "Hugo",
+        "ativos": ["PETR4", "VALE3"],
+        "cdi_anual": 0.15,
+        "book": BOOK_MODERADO,
+    }
     assert r.json() == esperado
     assert cliente.get("/api/perfil").json() == esperado
 
@@ -129,7 +150,12 @@ def test_ativos_sao_normalizados_sem_repeticao_e_ficam_gravados(tmp_path: Path) 
 
     r = cliente.put("/api/perfil/ativos", json={"ativos": [" petr4", "bbas3", "PETR4"]})
     assert r.status_code == 200
-    esperado = {"nome": "Hugo", "ativos": ["PETR4", "BBAS3"], "cdi_anual": 0.15}
+    esperado = {
+        "nome": "Hugo",
+        "ativos": ["PETR4", "BBAS3"],
+        "cdi_anual": 0.15,
+        "book": BOOK_MODERADO,
+    }
     assert r.json() == esperado
     assert cliente.get("/api/perfil").json() == esperado
 
@@ -176,3 +202,71 @@ def test_fechar_devolve_204_sem_corpo_e_solta_a_trava(tmp_path: Path) -> None:
 def test_fechar_sem_perfil_aberto_tambem_devolve_204(tmp_path: Path) -> None:
     r = _cliente(tmp_path / "config.json").post("/api/perfil/fechar")
     assert r.status_code == 204
+
+
+def _aberto(tmp_path: Path) -> tuple[TestClient, Path]:
+    config = tmp_path / "config.json"
+    cliente = _cliente(config)
+    cliente.post("/api/perfis", json={"nome": "Hugo", "pasta": _pasta(tmp_path)})
+    cliente.post("/api/perfis/Hugo/abrir", json={"forcar": False})
+    return cliente, config
+
+
+def _valores(**mudancas: object) -> dict[str, object]:
+    return {k: v for k, v in BOOK_MODERADO.items() if k != "preset"} | mudancas
+
+
+def test_trocar_o_preset_do_book_salva_os_padroes_dele(tmp_path: Path) -> None:
+    cliente, config = _aberto(tmp_path)
+
+    r = cliente.put("/api/perfil/book", json={"preset": "arrojado"})
+    assert r.status_code == 200
+    assert r.json()["book"] == {
+        "preset": "arrojado",
+        "delta_min": 0.25,
+        "delta_max": 0.45,
+        "negocios_min": 3,
+        "spread_max": 0.35,
+        "risco_max": 10000.0,
+        "vencimentos": 3,
+        "piso_protecao": 0.85,
+        "perda_ilimitada": True,
+    }
+    outro = _cliente(config)
+    assert outro.post("/api/perfis/Hugo/abrir", json={"forcar": False}).json() == r.json()
+
+
+def test_valores_editados_do_book_ficam_salvos_e_voltar_ao_padrao_os_descarta(
+    tmp_path: Path,
+) -> None:
+    cliente, _ = _aberto(tmp_path)
+
+    r = cliente.put(
+        "/api/perfil/book", json={"preset": "moderado", "valores": _valores(negocios_min=50)}
+    )
+    assert r.json()["book"] == BOOK_MODERADO | {"negocios_min": 50}
+    assert cliente.get("/api/perfil").json()["book"]["negocios_min"] == 50
+
+    r = cliente.put("/api/perfil/book", json={"preset": "moderado"})
+    assert r.json()["book"] == BOOK_MODERADO
+
+
+def test_book_com_faixa_invalida_devolve_422_e_nao_grava(tmp_path: Path) -> None:
+    cliente, _ = _aberto(tmp_path)
+
+    r = cliente.put(
+        "/api/perfil/book", json={"preset": "moderado", "valores": _valores(delta_min=0.5)}
+    )
+    assert (r.status_code, r.json()["erro"]) == (422, "InvalidDomainValueError")
+    assert cliente.get("/api/perfil").json()["book"] == BOOK_MODERADO
+
+
+def test_book_com_preset_desconhecido_e_requisicao_invalida(tmp_path: Path) -> None:
+    cliente, _ = _aberto(tmp_path)
+    r = cliente.put("/api/perfil/book", json={"preset": "agressivo"})
+    assert (r.status_code, r.json()["erro"]) == (422, "RequisicaoInvalida")
+
+
+def test_book_sem_perfil_aberto_devolve_404(tmp_path: Path) -> None:
+    r = _cliente(tmp_path / "config.json").put("/api/perfil/book", json={"preset": "moderado"})
+    assert (r.status_code, r.json()["erro"]) == (404, "NoActiveProfileError")

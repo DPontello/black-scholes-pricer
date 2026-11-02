@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.domain.book.presets import BookSettings
 from options_engine.domain.income.costs import REFERENCE_POSITION_SHARES
 from options_engine.domain.income.metrics import IncomeStructure
 from options_engine.domain.income.ranking import IncomeRanking, RankingCriterion
@@ -191,7 +192,8 @@ class ProfileUseCase(Protocol):
 
     ``open`` trava o perfil para este PC (outro PC com trava recente →
     ``ProfileLockedError``, a menos que ``force``); ``close`` solta a trava.
-    ``active`` e ``set_watchlist`` exigem perfil aberto (``NoActiveProfileError``).
+    ``active``, ``set_watchlist`` e ``set_book_settings`` exigem perfil aberto
+    (``NoActiveProfileError``).
     """
 
     def list(self) -> tuple[ProfileEntry, ...]: ...
@@ -205,6 +207,8 @@ class ProfileUseCase(Protocol):
     def active_folder(self) -> Path: ...
 
     def set_watchlist(self, tickers: Sequence[str]) -> Profile: ...
+
+    def set_book_settings(self, settings: BookSettings) -> Profile: ...
 
     def close(self) -> None: ...
 

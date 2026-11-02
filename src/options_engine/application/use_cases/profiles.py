@@ -11,6 +11,7 @@ from datetime import timedelta, timezone, tzinfo
 from pathlib import Path
 
 from options_engine.application.ports.outbound import Clock, ProfileRepository
+from options_engine.domain.book.presets import BookSettings
 from options_engine.domain.model.errors import (
     InvalidDomainValueError,
     NoActiveProfileError,
@@ -96,11 +97,12 @@ class ProfileService:
             key, current = self._require_active()
             # `dict.fromkeys` remove repetidos mantendo a ordem da primeira ocorrência.
             watchlist = tuple(dict.fromkeys(normalize_ticker(ticker) for ticker in tickers))
-            updated = replace(current, watchlist=watchlist)
-            # Grava antes de trocar o ativo: se a gravação falha, nada mudou em memória.
-            self._repository.save(key, updated)
-            self._active = (key, updated)
-            return updated
+            return self._save(key, replace(current, watchlist=watchlist))
+
+    def set_book_settings(self, settings: BookSettings) -> Profile:
+        with self._lock:
+            key, current = self._require_active()
+            return self._save(key, replace(current, book=settings))
 
     def close(self) -> None:
         with self._lock:
@@ -109,6 +111,12 @@ class ProfileService:
             key = self._active[0]
             self._active = None
             self._repository.release_lock(key, self._machine_name)
+
+    def _save(self, key: str, updated: Profile) -> Profile:
+        # Grava antes de trocar o ativo: se a gravação falha, nada mudou em memória.
+        self._repository.save(key, updated)
+        self._active = (key, updated)
+        return updated
 
     def _require_active(self) -> tuple[str, Profile]:
         if self._active is None:

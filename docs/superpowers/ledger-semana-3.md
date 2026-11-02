@@ -26,3 +26,11 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - Ruling: vencimento fora da cobertura do calendário (2028) fica fora do pregão, sem derrubá-lo; ativo com registros divergentes no pregão fica sem esse pregão (o adapter o dá como indisponível); com arquivos sobrepostos, vale o primeiro na ordem da biblioteca (o mais antigo), como nos fechamentos do `session.py`.
 - Nota: a fixture sintética tem opções só no pregão de referência (o plano fala em "17 pregões", que não existem nela). Os testes de vários pregões usam COTAHIST sintéticos montados no `tmp_path`, com book em três pregões.
 - Gates: 4979 testes (cobertura 98,15%; `vol_history`, `series_rules`, `adapter` e `domain/analytics` em 100%), mypy, ruff e import-linter. Frontend sem mudança.
+
+## 2026-11-02: Task 3 — presets do book no domínio e no perfil
+
+- `domain/book/presets.py`: `BookPreset` (Conservador, Moderado, Arrojado) e `BookSettings` com os valores da spec §3.2 em `BookSettings.default(preset)`; faixas validadas (delta de 0 a 1 com mínimo <= máximo, negócios >= 0, vencimentos >= 1, spread e risco > 0, piso em (0, 1]).
+- `Profile.book: BookSettings | None = None` e `Profile.book_settings`, que devolve o Moderado quando o perfil não tem o campo. O `perfil.json` só ganha a chave `book` depois que o usuário escolhe um preset; perfil antigo é lido sem erro.
+- `ProfileService.set_book_settings` e `PUT /api/perfil/book`; `GET /api/perfil` e as outras rotas de perfil devolvem o `book` já resolvido.
+- Ruling: o corpo do `PUT` é `{preset, valores?}`. Sem `valores`, valem os padrões do preset: é assim que a tela troca de preset e "volta ao padrão" sem copiar a tabela da spec no frontend. Com `valores`, eles são gravados como vieram, no preset escolhido.
+- Gates: 5007 testes (cobertura 98,17%), mypy, ruff e import-linter. Frontend sem mudança (o tipo `Perfil` ganha o `book` na Task 10).

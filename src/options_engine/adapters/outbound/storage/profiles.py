@@ -6,7 +6,8 @@ Dois níveis de arquivo, por desenho:
   [{"nome": ..., "pasta": ...}]}`` — quais perfis este PC conhece e onde
   moram;
 - na pasta do perfil (que pode ser nuvem ou pendrive e viaja entre PCs):
-  ``perfil.json`` com os dados e ``perfil.lock`` com a trava de uso.
+  ``perfil.json`` com os dados e ``perfil.lock`` com a trava de uso. O campo ``book`` do
+  ``perfil.json`` é opcional: os perfis gravados antes da semana 3 não o têm.
 
 O nome do perfil é só a chave do cadastro: nunca vira nome de pasta ou de
 arquivo (a pasta é a que o usuário escolheu), então não há o que sanitizar
@@ -18,6 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from options_engine.adapters.outbound.storage.json_files import write_json_atomic
+from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.errors import (
     DuplicateProfileError,
     InvalidDomainValueError,
@@ -237,18 +239,76 @@ def _read_profile(path: Path) -> Profile | None:
         raise _invalid(path, "campo 'cdi_anual' ausente ou não é número")
     try:
         # O arquivo pode ter sido editado à mão: a normalização é de quem monta o perfil.
-        return Profile(name, tuple(normalize_ticker(t) for t in tickers), float(cdi))
+        return Profile(
+            name,
+            tuple(normalize_ticker(t) for t in tickers),
+            float(cdi),
+            _book_from_json(data.get("book"), path),
+        )
     except InvalidDomainValueError as erro:
         raise _invalid(path, str(erro)) from erro
 
 
-def _profile_to_json(profile: Profile) -> dict[str, object]:
+_BOOK_NUMBERS = ("delta_min", "delta_max", "spread_max", "risco_max", "piso_protecao")
+_BOOK_INTEGERS = ("negocios_min", "vencimentos")
+
+
+def _book_from_json(raw: object, path: Path) -> BookSettings | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise _invalid(path, "campo 'book' não é objeto")
+    presets = {p.value: p for p in BookPreset}
+    preset = raw.get("preset")
+    if not (isinstance(preset, str) and preset in presets):
+        raise _invalid(path, f"preset do book {preset!r} desconhecido")
+    for chave in _BOOK_NUMBERS:
+        valor = raw.get(chave)
+        if isinstance(valor, bool) or not isinstance(valor, int | float):
+            raise _invalid(path, f"campo 'book.{chave}' ausente ou não é número")
+    for chave in _BOOK_INTEGERS:
+        valor = raw.get(chave)
+        if isinstance(valor, bool) or not isinstance(valor, int):
+            raise _invalid(path, f"campo 'book.{chave}' ausente ou não é inteiro")
+    if not isinstance(raw.get("perda_ilimitada"), bool):
+        raise _invalid(path, "campo 'book.perda_ilimitada' ausente ou não é booleano")
+    return BookSettings(
+        preset=presets[preset],
+        delta_min=float(raw["delta_min"]),
+        delta_max=float(raw["delta_max"]),
+        min_trades=raw["negocios_min"],
+        max_spread_pct=float(raw["spread_max"]),
+        max_risk=float(raw["risco_max"]),
+        expiries=raw["vencimentos"],
+        protection_floor=float(raw["piso_protecao"]),
+        allow_unlimited_loss=raw["perda_ilimitada"],
+    )
+
+
+def _book_to_json(book: BookSettings) -> dict[str, object]:
     return {
+        "preset": book.preset.value,
+        "delta_min": book.delta_min,
+        "delta_max": book.delta_max,
+        "negocios_min": book.min_trades,
+        "spread_max": book.max_spread_pct,
+        "risco_max": book.max_risk,
+        "vencimentos": book.expiries,
+        "piso_protecao": book.protection_floor,
+        "perda_ilimitada": book.allow_unlimited_loss,
+    }
+
+
+def _profile_to_json(profile: Profile) -> dict[str, object]:
+    data: dict[str, object] = {
         "versao": _SCHEMA_VERSION,
         "nome": profile.name,
         "ativos": list(profile.watchlist),
         "cdi_anual": profile.cdi_annual,
     }
+    if profile.book is not None:
+        data["book"] = _book_to_json(profile.book)
+    return data
 
 
 def _read_lock(path: Path) -> tuple[str, datetime] | None:
