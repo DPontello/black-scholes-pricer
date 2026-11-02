@@ -66,3 +66,27 @@ Branch `feat/app-semana-2`, a partir da `development` (`4bafb73`).
 - Ruling: o serviço não recebe o CDI do perfil, porque a taxa vem do snapshot da cadeia, que o mercado já monta com o CDI. A probabilidade usa a vol do smile no spot; sem ela, a vol de referência da cadeia.
 - `application/use_cases/_freshness.least_fresh` passa a ser compartilhado pelo serviço de mercado e pelo montador. O `tests/application/_mercado_falso.py` é o mercado falso novo; o teste do serviço de mercado segue com o dele.
 - Gates: 4772 testes (cobertura 97,6%; `strategy_builder` em 100%), mypy, ruff e import-linter.
+
+## 2026-11-01: Task 7 — API do montador, simulações e pasta do perfil
+
+- API:
+  - `GET /api/montador/modelos`;
+  - `POST /api/montador/analise` (corpo: `ativo`, `pernas` com `ticker`/`lado`/`quantidade`/`preco?`, no máximo 8, `acao?` com `lado`/`quantidade`/`origem`/`preco?`, e `modelo?`);
+  - `GET /api/simulacoes`, `POST /api/simulacoes` (201), `GET /api/simulacoes/{id}` e `DELETE /api/simulacoes/{id}` (204).
+
+  Lado em português (`compra`/`venda`). Gregas: `theta_dia_util` (theta / 252, porque o tau do montador é em dias úteis) e `vega_ponto` (vega / 100).
+- Simulações: `application/ports/simulations.py` (`SavedSimulation`, `UnreadableFile`, `SimulationRepository`, `SimulationUseCase`), `SimulationService` e `JsonSimulationRepository`. A simulação guarda o pedido, não a análise: ao reabrir, a análise sai com os preços do momento.
+  - Arquivo `simulacoes/<id>.json` na pasta do perfil, `"versao": 1`, escrita atômica. Ilegível é listado e preservado.
+  - Pasta do perfil fora do ar: `ProfileFolderUnavailableError`, e nada é criado.
+  - Erros novos no domínio: `UnknownRecordError` (404) e `UnreadableRecordError` (422).
+- FIXED (achado de 31/10): `ProfileService.create` recusa pasta vazia ou relativa ("caminho completo, a partir do disco ou da raiz"). Antes, pasta `""` gravava o `perfil.json` na pasta de onde o app foi aberto. `ProfileUseCase.active_folder()` dá a pasta do perfil aberto.
+- Bug achado no teste ponta a ponta com os arquivos reais, FIXED (Task 6): a perda máxima líquida da venda coberta saía -2.456 contra -5.080 de bruta. O líquido só era calculado no eixo do gráfico (0,5 a 1,5 × spot), e a perda máxima fica com o ativo a zero. Os extremos líquidos passam a ser procurados também no zero, em cada strike, logo acima de cada strike (onde entra o custo de exercício) e na cauda.
+- Ponta a ponta (APPDATA e perfil temporários, arquivos de 28/10, sem ponte): venda coberta de PETR4 com a PETRK541 (52,91, americana) vendida a 1,72 e a ação comprada a 52,52 (ask):
+  - caixa de -5.080, breakeven 50,80;
+  - ganho máximo de 211 (líquido 183,43, com IR de 25,77);
+  - perda máxima de -5.080 (líquida -5.081,81);
+  - probabilidade de 68%; delta de 47,9;
+  - os dois avisos de americana.
+
+  A simulação foi gravada na pasta do perfil.
+- Gates: 4804 testes (cobertura 97,7%; os módulos novos em 100%), mypy, ruff e import-linter.

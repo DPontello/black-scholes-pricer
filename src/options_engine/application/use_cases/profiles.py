@@ -8,9 +8,14 @@ import threading
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import timedelta, timezone, tzinfo
+from pathlib import Path
 
 from options_engine.application.ports.outbound import Clock, ProfileRepository
-from options_engine.domain.model.errors import NoActiveProfileError
+from options_engine.domain.model.errors import (
+    InvalidDomainValueError,
+    NoActiveProfileError,
+    UnknownProfileError,
+)
 from options_engine.domain.model.profile import Profile, ProfileEntry, normalize_ticker
 
 __all__ = ["ProfileService"]
@@ -53,6 +58,11 @@ class ProfileService:
         return self._repository.list_profiles()
 
     def create(self, name: str, folder: str) -> Profile:
+        if not folder.strip() or not Path(folder).anchor:
+            raise InvalidDomainValueError(
+                f"a pasta do perfil precisa ser um caminho completo, a partir do disco ou da raiz; "
+                f"recebido {folder!r}"
+            )
         return self._repository.create(name, folder)
 
     def open(self, name: str, force: bool = False) -> Profile:
@@ -72,6 +82,14 @@ class ProfileService:
     def active(self) -> Profile:
         with self._lock:
             return self._require_active()[1]
+
+    def active_folder(self) -> Path:
+        with self._lock:
+            key = self._require_active()[0]
+        for entry in self._repository.list_profiles():
+            if entry.name == key:
+                return Path(entry.folder)
+        raise UnknownProfileError(f"perfil {key!r} sumiu da configuração deste PC")
 
     def set_watchlist(self, tickers: Sequence[str]) -> Profile:
         with self._lock:

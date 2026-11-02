@@ -29,7 +29,9 @@ __all__ = [
     "ProfileLockedError",
     "UnderlyingUnavailableError",
     "UnknownProfileError",
+    "UnknownRecordError",
     "UnknownSymbolError",
+    "UnreadableRecordError",
     "UnsupportedExerciseStyleError",
 ]
 
@@ -176,3 +178,14 @@ class UnknownProfileError(DomainError):
 
 class NoActiveProfileError(DomainError):
     """Operação que exige perfil ativo, sem nenhum selecionado."""
+
+
+class UnknownRecordError(DomainError):
+    """Simulação ou operação que não existe na pasta do perfil."""
+
+
+class UnreadableRecordError(DomainError):
+    """Arquivo do perfil ilegível (JSON quebrado, versão desconhecida, campo faltando).
+
+    Nunca é apagado nem sobrescrito: a mensagem diz o caminho para o usuário conferir.
+    """

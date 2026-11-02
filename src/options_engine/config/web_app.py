@@ -6,6 +6,7 @@ import contextlib
 import logging
 import platform
 import threading
+import uuid
 from collections.abc import AsyncIterator, Sequence
 from datetime import date
 from pathlib import Path
@@ -16,6 +17,7 @@ from fastapi import FastAPI
 import options_ponte
 from options_engine.adapters.inbound.web.app import Lifespan, create_app
 from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
+from options_engine.adapters.inbound.web.builder import router_montador
 from options_engine.adapters.inbound.web.market import router_mercado
 from options_engine.adapters.inbound.web.profiles import router_perfis
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET, StaticHolidayCalendar
@@ -31,8 +33,10 @@ from options_engine.adapters.outbound.b3files.downloads import (
 from options_engine.adapters.outbound.b3files.end_of_day import EndOfDayMarket
 from options_engine.adapters.outbound.b3files.loaded import LibraryLoader
 from options_engine.adapters.outbound.clock import SystemClock
+from options_engine.adapters.outbound.cost_schedules import StaticCostScheduleTable
 from options_engine.adapters.outbound.fallback_market import FallbackMarket
 from options_engine.adapters.outbound.storage import JsonProfileRepository
+from options_engine.adapters.outbound.storage.simulations import JsonSimulationRepository
 from options_engine.adapters.outbound.tryd import (
     BridgeProcess,
     LiveBoard,
@@ -45,6 +49,8 @@ from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
 from options_engine.application.use_cases.market_view import MarketViewService
 from options_engine.application.use_cases.profiles import ProfileService
+from options_engine.application.use_cases.simulations import SimulationService
+from options_engine.application.use_cases.strategy_builder import StrategyBuilderService
 from options_engine.domain.model.errors import DomainError
 
 __all__ = ["MACHINE_CONFIG_NAME", "MARKET_DIR_NAME", "build_web_app"]
@@ -109,6 +115,16 @@ def build_web_app(
         cotahist_range=lambda: _cotahist_range(library),
         lots=lambda symbol: _lot(loader, symbol),
     )
+    builder = StrategyBuilderService(
+        market,
+        calendar,
+        B3_UTC_OFFSET,
+        schedules=StaticCostScheduleTable.from_packaged_data().schedules,
+        lots=lambda symbol: _lot(loader, symbol),
+    )
+    simulations = SimulationService(
+        lambda: JsonSimulationRepository(profiles.active_folder()), clock, lambda: uuid.uuid4().hex
+    )
     process = None
     if bridge:
         command, cwd = default_bridge_command(
@@ -120,6 +136,7 @@ def build_web_app(
         router_perfis(profiles),
         router_arquivos_b3(library, importer),
         router_mercado(market_view, profiles),
+        router_montador(builder, simulations),
     ]
     lifespan = _lifespan(profiles, client, process, importer)
     return create_app(routers, static_dir, lifespan=lifespan)

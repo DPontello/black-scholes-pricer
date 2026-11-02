@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
 from math import isfinite
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.outbound import CadastroFreshness
@@ -200,6 +201,8 @@ class ProfileUseCase(Protocol):
     def open(self, name: str, force: bool = False) -> Profile: ...
 
     def active(self) -> Profile: ...
+
+    def active_folder(self) -> Path: ...
 
     def set_watchlist(self, tickers: Sequence[str]) -> Profile: ...
 
