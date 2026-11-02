@@ -190,7 +190,7 @@ Documentação completa em [`docs/`](docs/):
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
 | 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` |
-| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semana 1 (prazo 2026-11-30) |
+| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1 e 2 feitas (prazo 2026-11-30) |
 
 ### App de opções (em construção)
 
@@ -199,6 +199,9 @@ ordens: você executa no home broker e registra a operação no app.
 
 - **Desenho:** [`docs/superpowers/specs/2026-10-28-app-opcoes-design.md`](docs/superpowers/specs/2026-10-28-app-opcoes-design.md).
 - **Plano da semana 1:** [`docs/superpowers/plans/2026-10-28-app-semana-1-base.md`](docs/superpowers/plans/2026-10-28-app-semana-1-base.md).
+- **Semana 2 (montador e carteira):** [desenho](docs/superpowers/specs/2026-10-31-semana-2-montador-carteira-design.md),
+  [plano](docs/superpowers/plans/2026-10-31-app-semana-2-montador-carteira.md) e
+  [ledger](docs/superpowers/ledger-semana-2.md).
 - **Estado e como retomar:** [`docs/superpowers/HANDOFF-2026-10-28.md`](docs/superpowers/HANDOFF-2026-10-28.md).
 - **Ponte do Tryd (RTD → TCP local):** [`src/options_ponte/README.md`](src/options_ponte/README.md).
   No Linux, o ambiente Wine é montado por [`scripts/linux/preparar_ponte_wine.sh`](scripts/linux/preparar_ponte_wine.sh).
@@ -216,6 +219,14 @@ configuração fica em `%APPDATA%\PainelOpcoes` (Windows) ou `~/.config/painel-o
 A cadeia ao vivo precisa só do Cadastro de Instrumentos; o COTAHIST é opcional (fim de dia e
 histórico). Os arquivos da B3 baixados para a pasta Downloads entram sozinhos
 (`--sem-downloads` desliga).
+No **Montador**, a estrutura sai de um dos 18 modelos prontos ou perna a perna, pela
+cadeia: payoff no vencimento e hoje, gregas, breakevens, máximos brutos e líquidos de custos e
+IR, a grade de cenários e a probabilidade de lucro. As simulações ficam salvas na pasta do
+perfil. Na **Carteira** ficam as operações executadas na corretora: o registro (também direto
+do montador), as ações que você já tem, o encerramento, o exercício e a atribuição pela regra
+da Receita, o pó automático depois do vencimento e o P&L pelo preço de zerar, ao vivo ou do fim
+de dia. Cada perfil grava a carteira na própria pasta, um arquivo JSON por operação.
+
 Para desenvolver a tela, `npm --prefix frontend run dev` (proxy para o app na 8765) e
 `npm --prefix frontend run verificar` (TypeScript + Vitest).
 
