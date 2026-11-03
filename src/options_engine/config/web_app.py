@@ -124,6 +124,7 @@ def build_web_app(
         B3_UTC_OFFSET,
         freshness=lambda: _freshness(library, calendar, clock),
         cotahist_range=lambda: _cotahist_range(library),
+        cotahist_age=lambda: _cotahist_age(library, calendar, clock),
         lots=lambda symbol: _lot(loader, symbol),
     )
     schedules = StaticCostScheduleTable.from_packaged_data().schedules
@@ -330,3 +331,16 @@ def _cotahist_range(library: B3FileLibrary) -> tuple[date, date] | None:
     if not starts or not ends:
         return None
     return min(starts), max(ends)
+
+
+def _cotahist_age(library: B3FileLibrary, calendar: TradingCalendar, clock: Clock) -> int | None:
+    """Idade do último pregão do COTAHIST em dias úteis; ``None`` sem COTAHIST ou sem conta."""
+    faixa = _cotahist_range(library)
+    if faixa is None:
+        return None
+    last = faixa[1]
+    today = clock.now().astimezone(B3_UTC_OFFSET).date()
+    try:
+        return calendar.business_days_between(last, today) if last < today else 0
+    except DomainError:  # data fora do calendário de feriados
+        return None

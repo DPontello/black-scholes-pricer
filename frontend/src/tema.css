@@ -239,6 +239,47 @@ input {
   color: var(--texto-secundario);
 }
 
+.pagina-arquivos {
+  max-width: 1100px;
+}
+
+.rotina-semana {
+  margin: 0.5rem 0 1rem;
+  padding: 0.8rem 1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.rotina-semana h2 {
+  margin-top: 0;
+}
+
+.rotina-semana ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.4rem;
+}
+
+.rotina-semana li + li {
+  margin-top: 0.75rem;
+}
+
+.rotina-semana p {
+  margin: 0.2rem 0 0;
+}
+
+.estado-em-dia {
+  color: var(--alta);
+}
+
+.estado-velho {
+  color: var(--atencao);
+}
+
+.estado-ausente {
+  color: var(--texto-secundario);
+}
+
 .area-soltar {
   margin: 0.5rem 0 1rem;
   padding: 1.5rem;

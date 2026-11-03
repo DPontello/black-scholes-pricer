@@ -32,7 +32,7 @@ export type StatusMercado = {
   fonte: Fonte;
   cadastro: { data: string; dias_uteis: number; velho: boolean } | null;
   cadastro_motivo: string | null;
-  cotahist: { de: string; ate: string } | null;
+  cotahist: { de: string; ate: string; dias_uteis: number | null; velho: boolean } | null;
 };
 
 export type Trava = { pc: string; desde: string };

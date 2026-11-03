@@ -43,6 +43,7 @@ class MarketViewService:
         *,
         freshness: Callable[[], CadastroFreshness | str],
         cotahist_range: Callable[[], tuple[date, date] | None],
+        cotahist_age: Callable[[], int | None] = lambda: None,
         lots: Callable[[str], int | None] = lambda _symbol: None,
     ) -> None:
         if day_count is not DayCountConvention.BUSINESS_252:
@@ -55,6 +56,7 @@ class MarketViewService:
         self._day_count = day_count
         self._freshness = freshness
         self._cotahist_range = cotahist_range
+        self._cotahist_age = cotahist_age
         self._lots = lots
 
     def follow(
@@ -150,6 +152,7 @@ class MarketViewService:
             cadastro=cadastro,
             cadastro_reason=reason,
             cotahist_range=self._cotahist_range(),
+            cotahist_business_days=self._cotahist_age(),
         )
 
 

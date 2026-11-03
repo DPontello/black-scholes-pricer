@@ -1,6 +1,6 @@
 """``MarketViewService`` com mercado falso: PETR4 a 30, sigma 0,30, pregão 2026-10-23."""
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
@@ -182,6 +182,7 @@ def _servico(
     *,
     freshness: CadastroFreshness | str = "nenhum cadastro importado",
     cotahist_range: tuple[date, date] | None = None,
+    cotahist_age: Callable[[], int | None] = lambda: None,
     lots: dict[str, int] | None = None,
 ) -> MarketViewService:
     return MarketViewService(
@@ -190,6 +191,7 @@ def _servico(
         B3_UTC_OFFSET,
         freshness=lambda: freshness,
         cotahist_range=lambda: cotahist_range,
+        cotahist_age=cotahist_age,
         lots=(lots or {}).get,
     )
 
@@ -426,6 +428,18 @@ def test_status_com_cadastro_datado_e_faixa_dos_cotahist() -> None:
     assert status.source is DataSource.ATRASADO
     assert (status.cadastro, status.cadastro_reason) == (idade, None)
     assert status.cotahist_range == faixa
+
+
+def test_status_leva_a_idade_do_cotahist() -> None:
+    assert _servico(cotahist_age=lambda: 7).status().cotahist_business_days == 7
+    sem_idade = MarketViewService(
+        _Mercado(),
+        CALENDARIO,
+        B3_UTC_OFFSET,
+        freshness=lambda: "x",
+        cotahist_range=lambda: None,
+    )
+    assert sem_idade.status().cotahist_business_days is None
 
 
 def test_status_sem_cadastro_traz_o_motivo() -> None:

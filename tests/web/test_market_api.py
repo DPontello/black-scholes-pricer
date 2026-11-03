@@ -125,6 +125,7 @@ class _MercadoFalso:
     )
     cadeias: list[tuple[str, frozenset[date] | None]] = field(default_factory=list)
     carteira: list[tuple[tuple[str, ...], tuple[str, ...]]] = field(default_factory=list)
+    idade_cotahist: int | None = 6
 
     def follow(
         self,
@@ -161,6 +162,7 @@ class _MercadoFalso:
             cadastro=CadastroFreshness(date(2026, 10, 23), 3, False),
             cadastro_reason=None,
             cotahist_range=(date(2026, 1, 2), date(2026, 10, 23)),
+            cotahist_business_days=self.idade_cotahist,
         )
 
 
@@ -201,7 +203,22 @@ def test_status_traz_a_fonte_o_cadastro_e_a_faixa_dos_cotahist() -> None:
         "fonte": "ao_vivo",
         "cadastro": {"data": "2026-10-23", "dias_uteis": 3, "velho": False},
         "cadastro_motivo": None,
-        "cotahist": {"de": "2026-01-02", "ate": "2026-10-23"},
+        "cotahist": {"de": "2026-01-02", "ate": "2026-10-23", "dias_uteis": 6, "velho": True},
+    }
+
+
+@pytest.mark.parametrize(
+    ("idade", "velho"),
+    [(5, False), (None, False)],
+    ids=["no_limite_nao_e_velho", "sem_idade_nao_e_velho"],
+)
+def test_status_do_cotahist_so_e_velho_acima_do_limite(idade: int | None, velho: bool) -> None:
+    status = _cliente(_MercadoFalso(idade_cotahist=idade)).get("/api/mercado/status").json()
+    assert status["cotahist"] == {
+        "de": "2026-01-02",
+        "ate": "2026-10-23",
+        "dias_uteis": idade,
+        "velho": velho,
     }
 
 

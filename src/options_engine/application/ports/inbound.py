@@ -288,6 +288,7 @@ class MarketStatus:
     cadastro: CadastroFreshness | None
     cadastro_reason: str | None
     cotahist_range: tuple[date, date] | None
+    cotahist_business_days: int | None = None
 
 
 @runtime_checkable
