@@ -6,6 +6,7 @@ export const AREAS: ReadonlyArray<{ caminho: string; nome: string }> = [
   { caminho: "/montador", nome: "Montador" },
   { caminho: "/book", nome: "Book" },
   { caminho: "/carteira", nome: "Carteira" },
+  { caminho: "/aprender", nome: "Aprender" },
   { caminho: "/alertas", nome: "Alertas" },
   { caminho: "/arquivos", nome: "Arquivos B3" },
 ];

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { expect, test, vi } from "vitest";
 
 import { simularFetch } from "../testes/fetchFalso";
@@ -10,7 +11,11 @@ test("a lista de perfis vem da API", async () => {
   simularFetch((url) =>
     url === "/api/perfis" ? { corpo: [{ nome: "Hugo", pasta: "G:/Meu Drive/opcoes" }] } : undefined,
   );
-  render(<Perfis onAberto={() => {}} />);
+  render(
+    <MemoryRouter>
+      <Perfis onAberto={() => {}} />
+    </MemoryRouter>,
+  );
   expect(await screen.findByText("Hugo")).toBeTruthy();
   expect(screen.getByText("G:/Meu Drive/opcoes")).toBeTruthy();
   expect(screen.getByText(/Google Drive, OneDrive, Dropbox/)).toBeTruthy();
@@ -35,7 +40,11 @@ test("perfil aberto em outro PC pede confirmação citando o PC e, confirmado, f
     return undefined;
   });
   const aberto = vi.fn();
-  render(<Perfis onAberto={aberto} />);
+  render(
+    <MemoryRouter>
+      <Perfis onAberto={aberto} />
+    </MemoryRouter>,
+  );
   fireEvent.click(await screen.findByRole("button", { name: "Abrir Hugo" }));
   expect(await screen.findByText(/aberto no PC PC-SALA desde .*Abrir mesmo assim\?/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Abrir mesmo assim" }));
@@ -57,7 +66,11 @@ test("novo perfil com nome e pasta", async () => {
     if (url === "/api/perfis") return { corpo: perfis };
     return undefined;
   });
-  render(<Perfis onAberto={() => {}} />);
+  render(
+    <MemoryRouter>
+      <Perfis onAberto={() => {}} />
+    </MemoryRouter>,
+  );
   fireEvent.click(await screen.findByRole("button", { name: "Novo perfil" }));
   fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Mãe" } });
   fireEvent.change(screen.getByLabelText("Pasta de dados"), { target: { value: "C:/OneDrive/mae" } });
@@ -75,7 +88,11 @@ test("erro da API aparece com a mensagem dela", async () => {
     if (url === "/api/perfis") return { corpo: [] };
     return undefined;
   });
-  render(<Perfis onAberto={() => {}} />);
+  render(
+    <MemoryRouter>
+      <Perfis onAberto={() => {}} />
+    </MemoryRouter>,
+  );
   fireEvent.click(await screen.findByRole("button", { name: "Novo perfil" }));
   fireEvent.change(screen.getByLabelText("Nome"), { target: { value: "Hugo" } });
   fireEvent.change(screen.getByLabelText("Pasta de dados"), { target: { value: "/p" } });

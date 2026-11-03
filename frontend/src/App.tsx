@@ -6,6 +6,7 @@ import { type Perfil, perfilAtivo } from "./api/cliente";
 import { BarraStatus } from "./componentes/BarraStatus";
 import { Shell } from "./componentes/Shell";
 import { Carteira } from "./paginas/Carteira";
+import { Aprender } from "./paginas/Aprender";
 import { ArquivosB3 } from "./paginas/ArquivosB3";
 import { Book } from "./paginas/Book";
 import { EmBreve } from "./paginas/EmBreve";
@@ -38,6 +39,7 @@ export function App() {
       <Shell status={null} perfil={null}>
         <Routes>
           <Route path="/perfis" element={<Perfis onAberto={aberto} />} />
+          <Route path="/aprender/*" element={<Aprender comPerfil={false} />} />
           <Route path="*" element={<Navigate to="/perfis" replace />} />
         </Routes>
       </Shell>
@@ -70,6 +72,7 @@ function ComPerfil({ perfil, onPerfil, onAberto }: ComPerfilProps) {
         />
         <Route path="/book" element={<Book perfil={perfil} onPerfil={onPerfil} />} />
         <Route path="/carteira" element={<Carteira aoVivo={aoVivo} />} />
+        <Route path="/aprender/*" element={<Aprender comPerfil />} />
         <Route path="/alertas" element={<EmBreve titulo="Alertas" semana={4} />} />
         <Route path="*" element={<Navigate to="/mercado" replace />} />
       </Routes>

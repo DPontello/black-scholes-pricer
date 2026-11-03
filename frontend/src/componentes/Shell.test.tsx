@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 
 import { Shell } from "./Shell";
 
-test("menu com as seis áreas", () => {
+test("menu com as sete áreas", () => {
   render(
     <MemoryRouter>
       <Shell status={null}>
@@ -12,7 +12,7 @@ test("menu com as seis áreas", () => {
       </Shell>
     </MemoryRouter>,
   );
-  for (const nome of ["Mercado", "Montador", "Book", "Carteira", "Alertas", "Arquivos B3"])
+  for (const nome of ["Mercado", "Montador", "Book", "Carteira", "Aprender", "Alertas", "Arquivos B3"])
     expect(screen.getByRole("link", { name: nome })).toBeTruthy();
 });
 
