@@ -94,7 +94,7 @@ def protection_items(
             item = pernas and _item(chain, position, schedule, vencimento, chave, pernas, lote)
             if item:
                 itens.append(item)
-    return FamilyResult.of(itens, fora, ascending=True)
+    return FamilyResult.of(itens, fora)
 
 
 def _candidatas(

@@ -21,6 +21,7 @@ from options_engine.domain.model.templates import Family
 
 __all__ = [
     "ITEMS_PER_STRUCTURE",
+    "LOWER_IS_BETTER",
     "BookExclusion",
     "BookItem",
     "BookLabel",
@@ -34,6 +35,10 @@ __all__ = [
 ]
 
 ITEMS_PER_STRUCTURE: Final = 5
+# Critério em que menor é melhor: o custo da proteção e o movimento que a compra de vol precisa.
+LOWER_IS_BETTER: Final = frozenset(
+    {"straddle_comprado", "strangle_comprado", "put_protetora", "collar"}
+)
 
 
 @unique
@@ -153,46 +158,41 @@ class FamilyResult:
 
     @classmethod
     def of(
-        cls,
-        candidates: Iterable[BookItem],
-        exclusions: Iterable[BookExclusion] = (),
-        *,
-        ascending: bool = False,
+        cls, candidates: Iterable[BookItem], exclusions: Iterable[BookExclusion] = ()
     ) -> "FamilyResult":
         """Separa por qualidade e fica com os melhores de cada estrutura pelo critério."""
         todos = tuple(candidates)
         return cls(
-            best_per_structure(
-                (c for c in todos if c.quality is PriceQuality.EXECUTAVEL), ascending=ascending
-            ),
-            best_per_structure(
-                (c for c in todos if c.quality is not PriceQuality.EXECUTAVEL), ascending=ascending
-            ),
+            best_per_structure(c for c in todos if c.quality is PriceQuality.EXECUTAVEL),
+            best_per_structure(c for c in todos if c.quality is not PriceQuality.EXECUTAVEL),
             tuple(dict.fromkeys(exclusions)),
         )
 
     @classmethod
     def combine(cls, *parts: "FamilyResult") -> "FamilyResult":
-        return cls(
-            tuple(i for p in parts for i in p.items),
-            tuple(i for p in parts for i in p.references),
-            tuple(dict.fromkeys(e for p in parts for e in p.exclusions)),
+        """Junta resultados (de vários ativos) e refaz a escolha dos melhores por estrutura."""
+        return cls.of(
+            (i for p in parts for i in (*p.items, *p.references)),
+            (e for p in parts for e in p.exclusions),
         )
 
 
 def best_per_structure(
-    items: Iterable[BookItem], *, ascending: bool = False, limit: int = ITEMS_PER_STRUCTURE
+    items: Iterable[BookItem], *, limit: int = ITEMS_PER_STRUCTURE
 ) -> tuple[BookItem, ...]:
-    """Os ``limit`` melhores de cada estrutura pelo critério (maior primeiro, salvo ``ascending``),
-    com desempate por ativo, vencimento e strikes; estruturas na ordem em que aparecem."""
+    """Os ``limit`` melhores de cada estrutura pelo critério (maior primeiro, menor nas
+    ``LOWER_IS_BETTER``), com desempate por ativo, vencimento e strikes; estruturas na ordem em
+    que aparecem."""
     por_estrutura: dict[str, list[BookItem]] = defaultdict(list)
     for item in items:
         por_estrutura[item.template_key].append(item)
-    sinal = 1.0 if ascending else -1.0
+
+    def chave(item: BookItem) -> tuple[float, tuple[str, date, tuple[float, ...]]]:
+        sinal = 1.0 if item.template_key in LOWER_IS_BETTER else -1.0
+        return sinal * item.criterion.value, item.tie_break()
+
     return tuple(
-        item
-        for grupo in por_estrutura.values()
-        for item in sorted(grupo, key=lambda i: (sinal * i.criterion.value, i.tie_break()))[:limit]
+        item for grupo in por_estrutura.values() for item in sorted(grupo, key=chave)[:limit]
     )
 
 

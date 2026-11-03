@@ -67,9 +67,7 @@ def volatility_items(
                 vendas += montador.strangles_vendidos()
         if context.regime is not VolRegime.ALTA:
             compras += montador.straddles() + montador.strangles_comprados()
-    return FamilyResult.combine(
-        FamilyResult.of(vendas, fora), FamilyResult.of(compras, ascending=True)
-    )
+    return FamilyResult.of([*vendas, *compras], fora)
 
 
 @dataclass(frozen=True, slots=True)

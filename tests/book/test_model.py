@@ -101,8 +101,21 @@ def test_cinco_melhores_por_estrutura_com_desempate_estavel() -> None:
         ("put_coberta", 0.05, "PETR4"),
         ("trava_alta_put", 0.01, "PETR4"),
     ]
-    menores = best_per_structure(puts, ascending=True, limit=2)
-    assert [i.criterion.value for i in menores] == [0.0, 0.01]
+    collars = [_item(v / 100, chave="collar", strike=20.0 + v) for v in (3, -1, 2)]
+    assert [i.criterion.value for i in best_per_structure(collars, limit=2)] == [-0.01, 0.02]
+
+
+def test_juntar_familias_refaz_os_cinco_melhores_entre_os_ativos() -> None:
+    petr = FamilyResult.of([_item(v / 100, strike=20.0 + v) for v in range(5)])
+    vale = FamilyResult.of([_item(v / 10, ativo="VALE3", strike=20.0 + v) for v in range(5)])
+    juntos = FamilyResult.combine(petr, vale)
+    assert [(i.underlying, i.criterion.value) for i in juntos.items] == [
+        ("VALE3", 0.4),
+        ("VALE3", 0.3),
+        ("VALE3", 0.2),
+        ("VALE3", 0.1),
+        ("PETR4", 0.04),
+    ]
 
 
 def test_liquidez_exige_negocios_e_spread_medido() -> None:

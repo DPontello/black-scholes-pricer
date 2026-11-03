@@ -77,3 +77,13 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - Ruling: o custo da proteção conta só as ordens de opção, também na posição hipotética: a pergunta é quanto custa proteger, não quanto custa comprar a ação. A ação do item vai ao montador como "da carteira" na posição real e como compra na hipotética.
 - Junto: a marca da ADR-0002 (call americana escolhida pelo delta europeu) agora rotula os itens de Volatilidade, Direcionais e Proteção, como já fazia na Renda; o resultado da varredura passou a trazer o custo da montagem.
 - Checagens: ruff, mypy, import-linter e as suítes do book (65 testes, `domain/book` em 98% ou mais por módulo).
+
+## 2026-11-02: Task 8 — `BookService`
+
+- `application/ports/book.py`: `BookUseCase` (`book(settings, underlyings)` e `directional(settings, view)`), `BookView(session, source, contexts, families, unavailable)`, `BookFamilyView(items, references, exclusions)`, `BookEntry(item, request)` e `UnderlyingVol(symbol, context, reason)`.
+- `application/use_cases/book.py`: `BookService(end_of_day, vol_history, income, holdings, calendar, tz, schedules)`. A cadeia é sempre a do fim de dia; a fonte do book é sempre `FIM_DE_DIA`, com o pregão da cadeia. Ativo sem cadeia vai para `unavailable` com o motivo e os outros seguem. Sem contexto de vol (sem histórico, sem IV ou HV no último pregão), Volatilidade e Direcionais dizem o motivo daquele ativo; Renda e Proteção seguem.
+- O pedido do montador de cada item é o `BuilderRequest` das simulações, sem preços: o montador reprecifica pela cadeia do momento. Conferido: o primeiro item de cada família abre no `StrategyBuilderService` sem erro e com preço em todas as pernas.
+- Ruling: em vez do `PortfolioUseCase` inteiro, o serviço recebe `holdings: Callable[[], Sequence[AssetTotal]]` (a composição passa os totais de `open_operations()`): o book só lê as ações compradas, e assim não depende do resto da carteira.
+- Ruling: os 5 melhores por estrutura são escolhidos entre todos os ativos da lista, não por ativo. A direção do critério de cada estrutura ficou num lugar só (`LOWER_IS_BETTER` em `domain/book/model.py`: compra de vol e proteção, menor é melhor), em vez de um parâmetro em cada família.
+- Ruling: com cadeias de pregões diferentes, o book mostra o mais recente.
+- Checagens: ruff, mypy, import-linter e as suítes do book e de `tests/application` (271 testes; `use_cases/book.py` em 100%).
