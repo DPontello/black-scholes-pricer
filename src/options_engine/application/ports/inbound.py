@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.domain.analytics.volatility import DailyVol, VolContext
 from options_engine.domain.book.presets import BookSettings
 from options_engine.domain.income.costs import REFERENCE_POSITION_SHARES
 from options_engine.domain.income.metrics import IncomeStructure
@@ -38,6 +39,7 @@ from options_engine.domain.model.results import Greeks, PayoffProfile, PricingRe
 from options_engine.domain.model.scenarios import SpotAxis, StressScenario, StressTestReport
 from options_engine.domain.model.strategy import Strategy
 from options_engine.domain.model.templates import Template
+from options_engine.domain.pricing.smile import SmilePoint
 from options_engine.domain.simulation.valuation import ScenarioMatrix
 
 __all__ = [
@@ -54,6 +56,8 @@ __all__ = [
     "ExpiryPoint",
     "ExpiryResult",
     "LegPriceOrigin",
+    "MarketAnalysis",
+    "MarketAnalysisUseCase",
     "MarketStatus",
     "MarketViewUseCase",
     "PriceOptionCommand",
@@ -62,8 +66,10 @@ __all__ = [
     "RankIncomeCommand",
     "RankIncomeOpportunitiesUseCase",
     "SeriesRow",
+    "SmileView",
     "StrategyBuilderUseCase",
     "StressTestUseCase",
+    "TermPoint",
     "TodayResult",
     "WatchRow",
 ]
@@ -430,3 +436,47 @@ class StrategyBuilderUseCase(Protocol):
     def suggest(self, underlying: str, template_key: str, expiry: date) -> BuilderRequest: ...
 
     def analyze(self, request: BuilderRequest) -> BuilderAnalysis: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SmileView:
+    """IV de cada série contra o strike (a série fora do dinheiro em cada strike)."""
+
+    expiry: date
+    business_days: int
+    points: tuple[SmilePoint, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TermPoint:
+    """IV no dinheiro (do smile, no spot) de um vencimento."""
+
+    expiry: date
+    business_days: int
+    vol: float
+
+
+@dataclass(frozen=True, slots=True)
+class MarketAnalysis:
+    """A aba Análise de um ativo: o histórico de fim de dia e o hoje pela cadeia do momento.
+
+    ``history_reason``: por que não há histórico (sem COTAHIST, ativo desconhecido);
+    ``today_reason``: por que não há IV 30 de hoje (nenhum vencimento com smile no spot).
+    """
+
+    symbol: str
+    spot: float
+    cdi_annual: float
+    history: tuple[DailyVol, ...]
+    history_reason: str | None
+    today: VolContext | None
+    today_reason: str | None
+    smiles: tuple[SmileView, ...]
+    term_structure: tuple[TermPoint, ...]
+    source: DataSource
+    timestamp: datetime
+
+
+@runtime_checkable
+class MarketAnalysisUseCase(Protocol):
+    def analysis(self, symbol: str) -> MarketAnalysis: ...

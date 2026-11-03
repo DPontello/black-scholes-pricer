@@ -52,6 +52,7 @@ from options_engine.adapters.outbound.tryd.settings import PORTA_PONTE
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
 from options_engine.application.use_cases.book import BookService
+from options_engine.application.use_cases.market_analysis import MarketAnalysisService
 from options_engine.application.use_cases.market_view import MarketViewService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
@@ -143,9 +144,10 @@ def build_web_app(
         lots=lambda symbol: _lot(loader, symbol),
         portfolio_average=portfolio.average_price,
     )
+    vol_history = CotahistVolHistory(loader, calendar, cdi_annual)
     book = BookService(
         end_of_day,
-        CotahistVolHistory(loader, calendar, cdi_annual),
+        vol_history,
         RankIncomeOpportunitiesService(
             chains=end_of_day,
             calendar=calendar,
@@ -176,6 +178,7 @@ def build_web_app(
             profiles,
             portfolio=portfolio,
             closes=lambda symbol, day: _close(loader, symbol, day),
+            analysis=MarketAnalysisService(market, vol_history, calendar, B3_UTC_OFFSET),
         ),
         router_montador(builder, simulations),
         router_book(book, profiles),

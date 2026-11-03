@@ -1,4 +1,4 @@
-"""Router de mercado: status, cotações, cadeia e o WebSocket ``/api/ao-vivo``.
+"""Router de mercado: status, cotações, cadeia, análise e o WebSocket ``/api/ao-vivo``.
 
 O WebSocket manda cada mensagem (``status``, ``cotacoes``, ``cadeia``, ``carteira``) só quando
 ela muda. A carteira entra na assinatura do mercado: os ativos dela depois da lista do perfil e
@@ -8,7 +8,7 @@ as séries abertas antes da cadeia.
 import asyncio
 import json
 import time
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Final
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
@@ -19,6 +19,8 @@ from starlette.websockets import WebSocketState
 from options_engine.adapters.inbound.web.portfolio import Closes, carteira_atual
 from options_engine.application.ports.inbound import (
     ChainView,
+    MarketAnalysis,
+    MarketAnalysisUseCase,
     MarketStatus,
     MarketViewUseCase,
     ProfileUseCase,
@@ -33,6 +35,107 @@ __all__ = ["INTERVALO_AO_VIVO_S", "MAX_VENCIMENTOS", "router_mercado"]
 INTERVALO_AO_VIVO_S: Final = 1.0
 MAX_VENCIMENTOS: Final = 12
 _NADA: Final = PortfolioSymbols((), ())
+
+
+class PregaoOut(BaseModel):
+    pregao: date
+    fechamento: float
+    iv30: float | None
+    extrapolada: bool
+    hv21: float | None
+
+
+class HojeOut(BaseModel):
+    iv30: float
+    hv21: float
+    iv_rank: float | None
+    iv_percentil: float | None
+    regime: str
+    regime_pela_hv: bool
+    extrapolada: bool
+
+
+class PontoSmileOut(BaseModel):
+    strike: float
+    iv: float
+    ticker: str
+
+
+class SmileOut(BaseModel):
+    vencimento: date
+    dias_uteis: int
+    pontos: list[PontoSmileOut]
+
+
+class TermoOut(BaseModel):
+    vencimento: date
+    dias_uteis: int
+    iv: float
+
+
+class AnaliseMercadoOut(BaseModel):
+    """Números crus: vols e CDI em fração anual; a taxa é a do perfil, constante no histórico."""
+
+    ativo: str
+    spot: float
+    cdi_anual: float
+    fonte: str
+    hora: datetime
+    historico: list[PregaoOut]
+    historico_motivo: str | None
+    hoje: HojeOut | None
+    hoje_motivo: str | None
+    smiles: list[SmileOut]
+    estrutura: list[TermoOut]
+
+
+def _analise_out(analise: MarketAnalysis) -> AnaliseMercadoOut:
+    hoje = analise.today
+    return AnaliseMercadoOut(
+        ativo=analise.symbol,
+        spot=analise.spot,
+        cdi_anual=analise.cdi_annual,
+        fonte=analise.source.value,
+        hora=analise.timestamp,
+        historico=[
+            PregaoOut(
+                pregao=d.session,
+                fechamento=d.close,
+                iv30=d.iv30,
+                extrapolada=d.extrapolated,
+                hv21=d.hv21,
+            )
+            for d in analise.history
+        ],
+        historico_motivo=analise.history_reason,
+        hoje=None
+        if hoje is None
+        else HojeOut(
+            iv30=hoje.iv30,
+            hv21=hoje.hv21,
+            iv_rank=hoje.iv_rank,
+            iv_percentil=hoje.iv_percentile,
+            regime=hoje.regime.value,
+            regime_pela_hv=hoje.regime_from_hv,
+            extrapolada=hoje.extrapolated,
+        ),
+        hoje_motivo=analise.today_reason,
+        smiles=[
+            SmileOut(
+                vencimento=s.expiry,
+                dias_uteis=s.business_days,
+                pontos=[
+                    PontoSmileOut(strike=p.strike, iv=p.implied_vol, ticker=p.symbol)
+                    for p in s.points
+                ],
+            )
+            for s in analise.smiles
+        ],
+        estrutura=[
+            TermoOut(vencimento=t.expiry, dias_uteis=t.business_days, iv=t.vol)
+            for t in analise.term_structure
+        ],
+    )
 
 
 class CadastroOut(BaseModel):
@@ -220,6 +323,7 @@ def router_mercado(
     portfolio: PortfolioUseCase | None = None,
     closes: Closes = lambda _symbol, _day: None,
     interval_s: float = INTERVALO_AO_VIVO_S,
+    analysis: MarketAnalysisUseCase | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["mercado"])
 
@@ -239,6 +343,12 @@ def router_mercado(
         ] = None,
     ) -> CadeiaOut:
         return _cadeia_out(market.chain(normalize_ticker(ativo), vencimentos))
+
+    if analysis is not None:
+
+        @router.get("/mercado/analise/{ativo}")
+        def analise(ativo: str) -> AnaliseMercadoOut:
+            return _analise_out(analysis.analysis(normalize_ticker(ativo)))
 
     @router.websocket("/ao-vivo")
     async def ao_vivo(websocket: WebSocket) -> None:

@@ -20,6 +20,7 @@ from options_engine.application.ports.inbound import (
     WatchRow,
 )
 from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.application.use_cases.market_analysis import MarketAnalysisService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.domain.model.chain import RejectedSeries
@@ -30,8 +31,10 @@ from options_engine.domain.model.errors import (
     UnknownSymbolError,
 )
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
+from tests.application._book_falso import HistoricosFalsos, historico
 from tests.application._fakes import FakeOperationRepository, FakeProfileRepository
 from tests.application._mercado_falso import CALENDARIO, MercadoFalso
+from tests.book._cadeias import cadeia_larga
 from tests.income._builders import make_cost_schedule
 
 AGORA = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)
@@ -393,3 +396,36 @@ def test_carteira_que_nao_abre_manda_o_motivo_no_lugar() -> None:
         "erro": "NoActiveProfileError",
         "mensagem": "nenhum perfil aberto",
     }
+
+
+def _cliente_com_analise() -> TestClient:
+    perfis = ProfileService(FakeProfileRepository(), FixedClock(AGORA), "PC-TESTE")
+    analise = MarketAnalysisService(
+        MercadoFalso(chains={"PETR4": cadeia_larga()}),
+        HistoricosFalsos({"PETR4": historico(0.30, 0.40)}),
+        CALENDARIO,
+        B3_UTC_OFFSET,
+    )
+    return TestClient(create_app([router_mercado(_MercadoFalso(), perfis, analysis=analise)]))
+
+
+def test_analise_do_ativo_devolve_os_numeros_crus() -> None:
+    r = _cliente_com_analise().get("/api/mercado/analise/petr4")
+    assert r.status_code == 200
+    corpo = r.json()
+    assert (corpo["ativo"], corpo["spot"], corpo["cdi_anual"]) == ("PETR4", 30.0, 0.15)
+    assert len(corpo["historico"]) == 101 and corpo["historico_motivo"] is None
+    assert set(corpo["historico"][-1]) == {"pregao", "fechamento", "iv30", "extrapolada", "hv21"}
+    assert corpo["hoje"]["iv_rank"] == 0.0 and corpo["hoje"]["regime"] == "baixa"
+    assert 0.29 < corpo["hoje"]["iv30"] < 0.31
+    assert [t["vencimento"] for t in corpo["estrutura"]] == ["2026-11-19", "2026-12-18"]
+    assert corpo["smiles"][0]["pontos"][0] == {
+        "strike": 26.0,
+        "iv": corpo["smiles"][0]["pontos"][0]["iv"],
+        "ticker": "PETRW260",
+    }
+
+
+def test_analise_de_ativo_desconhecido_devolve_404() -> None:
+    r = _cliente_com_analise().get("/api/mercado/analise/XPTO3")
+    assert (r.status_code, r.json()["erro"]) == (404, "UnknownSymbolError")

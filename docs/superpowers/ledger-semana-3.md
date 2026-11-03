@@ -103,3 +103,12 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - `componentes/ItemBook.tsx`: o critério, as pernas, os números, o porquê, os rótulos, o selo de preço indicativo ou teórico e "Abrir no montador", que navega para `/montador?ativo=X` com o `pedido` no estado da rota; o `Montador` o abre direto e o analisa pela cadeia do momento.
 - `api/book.ts` e `api/cliente.ts` (o `Perfil` ganhou o `book`, e `definirBook` faz o `PUT /api/perfil/book`).
 - Checagens: `tsc` e os testes do Vitest dos componentes novos e do `Montador` (19). O `verificar` e o `build` completos ficam para o fim da semana.
+
+## 2026-11-02: Task 11 — `MarketAnalysisService` e API
+
+- `application/ports/inbound.py`: `MarketAnalysisUseCase`, `MarketAnalysis(symbol, spot, cdi_annual, history, history_reason, today, today_reason, smiles, term_structure, source, timestamp)`, `SmileView(expiry, business_days, points)` e `TermPoint(expiry, business_days, vol)`.
+- `application/use_cases/market_analysis.py`: o smile de cada vencimento com pelo menos 1 du e a estrutura a termo (a vol do smile no spot) pela cadeia do momento (`MarketPort`, ao vivo se houver); a IV 30 de hoje pelo `iv_at_horizon`; o rank e o percentil contra as IVs dos pregões do histórico anteriores ao de hoje. Fonte: a menos fresca da consulta, como na cadeia.
+- `GET /api/mercado/analise/{ativo}` no router de mercado (números crus, vols e CDI em fração), ligado no `web_app` com o mesmo `CotahistVolHistory` do book.
+- Ruling: o `TermPoint` leva também o vencimento (o plano dizia `ExpiryVol`, que só tem os dias úteis): a tela mostra a data no eixo.
+- Ruling: a HV 21 de hoje é a do último pregão do histórico que a tem; sem histórico, a vol realizada que a cadeia traz, e o regime sai pela margem sobre ela, rotulado. O pregão de hoje, se já está no histórico (fim de dia), não entra na comparação do rank.
+- Checagens: ruff, mypy, import-linter e as suítes `tests/web`, `tests/application` e `tests/config/test_web_app.py` (337 testes; o serviço em 100%).
