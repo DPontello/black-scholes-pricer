@@ -48,8 +48,15 @@ ProcessSpawner = Callable[[Sequence[str], Path], ProcessHandle]
 
 
 def spawn_process(command: Sequence[str], cwd: Path) -> ProcessHandle:
-    """Executor real: ``Popen`` sem stdin (a ponte não lê do terminal do app)."""
-    return subprocess.Popen(list(command), cwd=cwd, stdin=subprocess.DEVNULL)
+    """Executor real: ``Popen`` sem stdin (a ponte não lê do terminal do app). No Windows, sem
+    janela de console: a ponte instalada é um programa de console, para o ``diagnostico`` e o
+    ``autoteste`` mostrarem o resultado, mas o app a sobe escondida."""
+    return subprocess.Popen(
+        list(command),
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
 
 
 def default_bridge_command(

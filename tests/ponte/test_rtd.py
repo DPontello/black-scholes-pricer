@@ -414,6 +414,11 @@ def test_comando_do_servidor_falso_usa_o_modulo_da_ponte() -> None:
     assert rtd.comando_servidor_falso("python", 0.5)[-1] == "0.5"
 
 
+def test_na_ponte_instalada_o_servidor_falso_e_o_proprio_executavel() -> None:
+    comando = rtd.comando_servidor_falso(r"C:\App\ponte\PonteTryd.exe", 2.0, frozen=True)
+    assert comando == [r"C:\App\ponte\PonteTryd.exe", "servidor-falso", "--segundos", "2"]
+
+
 def test_diretorio_do_pacote_e_o_src_que_contem_options_ponte() -> None:
     assert (rtd.DIRETORIO_SRC / "options_ponte" / "rtd.py").is_file()
 

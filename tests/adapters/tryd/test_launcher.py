@@ -286,6 +286,22 @@ def test_start_sem_o_executavel_nao_levanta_e_o_app_segue_sem_ponte(
     assert "distrobox" in caplog.text
 
 
+def test_spawn_process_no_windows_sobe_a_ponte_sem_janela(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recebido: dict[str, object] = {}
+
+    def popen_falso(command: list[str], **kwargs: object) -> object:
+        recebido.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(subprocess, "Popen", popen_falso)
+    spawn_process(("PonteTryd.exe", "servir"), tmp_path)
+    assert recebido["creationflags"] == 0x08000000
+    assert recebido["cwd"] == tmp_path
+
+
 def test_spawn_process_lanca_um_processo_de_verdade(tmp_path: Path) -> None:
     processo = spawn_process((sys.executable, "-c", "raise SystemExit(7)"), tmp_path)
     assert processo.wait(timeout=30) == 7
