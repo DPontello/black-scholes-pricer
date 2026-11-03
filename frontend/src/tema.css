@@ -409,14 +409,16 @@ button.link {
 
 .montador-corpo {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }
 
-@media (max-width: 1100px) {
+/* Lado a lado só com folga: cadeia (~855px, medida com a fonte do Linux; o Segoe UI do Windows pode ser mais largo)
+   + gap + 600px do resultado + menu (180px) + respiro do main. */
+@media (min-width: 1780px) {
   .montador-corpo {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 600px;
   }
 }
 
@@ -485,6 +487,7 @@ button.link {
 }
 
 .painel-carteira {
+  max-width: 900px;
   margin: 0.75rem 0;
   padding: 0.8rem 1rem;
   background: var(--painel);
@@ -519,6 +522,16 @@ button.link {
 .execucao input,
 .tabela-registro input {
   width: 7rem;
+}
+
+.tabela-registro {
+  width: auto;
+}
+
+/* O border-box global come o padding: content-box garante os caracteres do ticker visíveis. */
+.tabela-registro input.campo-ticker {
+  box-sizing: content-box;
+  width: 14ch;
 }
 
 .teorico {

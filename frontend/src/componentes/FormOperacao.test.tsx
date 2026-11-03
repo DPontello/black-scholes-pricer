@@ -43,6 +43,20 @@ test("o formulário vindo do montador traz pernas, ação e preços da análise"
   ]);
 });
 
+test("o campo da série cabe o ticker inteiro", () => {
+  simularFetch(() => ({ status: 201, corpo: { id: "op1" } }));
+  const pedido = {
+    ...PEDIDO,
+    ativo: "BOVA11",
+    pernas: [{ ticker: "BOVAK168W1", lado: "venda" as const, quantidade: 100, preco: null }],
+  };
+  const inicial = rascunhoDaAnalise(pedido, analiseCoberta(), "2026-11-04");
+  render(<FormOperacao inicial={inicial} onRegistrada={vi.fn()} onCancelar={vi.fn()} />);
+  const ticker = screen.getByLabelText("Ticker da perna 1") as HTMLInputElement;
+  expect(ticker.value).toBe("BOVAK168W1");
+  expect(ticker.classList.contains("campo-ticker")).toBe(true);
+});
+
 test("ação da carteira vai sem execução e preço faltando não sai do formulário", async () => {
   const fetch = simularFetch(() => ({ status: 201, corpo: { id: "op2" } }));
   const inicial: RascunhoOperacao = {
