@@ -95,3 +95,11 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - O `_pedido_out` do montador virou `pedido_out` público, e o `_book_out` dos perfis virou `book_out`, para o router do book não repetir as conversões.
 - Conferido com a fixture pelo app inteiro: o book de PETR4 vem do pregão de 23/10, com a IV 30 sem rank (regime pela HV) e o cache `vol_history.sqlite` gravado na biblioteca.
 - Checagens: ruff, mypy, import-linter e as suítes `tests/web` e `tests/config/test_web_app.py` (122 testes; o router do book em 100%).
+
+## 2026-11-02: Task 10 — tela do Book
+
+- `frontend/src/paginas/Book.tsx`: a rota `/book` (no lugar do "em breve") com a fonte "fim de dia (B3) do pregão DD/MM/AAAA", os ativos sem cadeia com o motivo, a tabela de vol de cada ativo (IV 30, HV 21, IV rank, percentil e regime, ou o motivo), o editor do preset, uma aba por família, as referências à parte e rotuladas, e as exclusões num bloco recolhido. A aba Direcionais tem o formulário da visão (ativo da lista, alta ou baixa, alvo e vencimento) acima das opções baratas pela vol.
+- `componentes/EditorPreset.tsx`: trocar o preset e "voltar ao padrão" mandam só o preset (a API grava os padrões); "salvar valores" manda os valores editados, com spread e piso digitados em % e enviados em fração. O perfil salvo volta ao `App`, e o book é varrido de novo porque o preset do perfil mudou.
+- `componentes/ItemBook.tsx`: o critério, as pernas, os números, o porquê, os rótulos, o selo de preço indicativo ou teórico e "Abrir no montador", que navega para `/montador?ativo=X` com o `pedido` no estado da rota; o `Montador` o abre direto e o analisa pela cadeia do momento.
+- `api/book.ts` e `api/cliente.ts` (o `Perfil` ganhou o `book`, e `definirBook` faz o `PUT /api/perfil/book`).
+- Checagens: `tsc` e os testes do Vitest dos componentes novos e do `Montador` (19). O `verificar` e o `build` completos ficam para o fim da semana.

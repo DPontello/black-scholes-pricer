@@ -509,3 +509,89 @@ button.link {
   font-weight: 600;
   padding-bottom: 0.25rem;
 }
+
+.editor-preset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem 1rem;
+  margin: 1rem 0;
+  padding: 0.8rem 1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.editor-preset label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.editor-preset input[type="number"] {
+  width: 8rem;
+}
+
+.editor-preset label.marcar {
+  flex-direction: row;
+  align-items: center;
+}
+
+.acoes-preset {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.contextos-vol caption {
+  text-align: left;
+  color: var(--texto-secundario);
+}
+
+.lista-book {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.item-book {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.8rem 1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.item-book .criterio,
+.item-book .porque {
+  margin: 0;
+}
+
+.item-book button {
+  align-self: flex-start;
+}
+
+.pernas-book,
+.rotulos {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.rotulos {
+  color: var(--atencao);
+  font-size: 0.85rem;
+}
+
+.selo-qualidade {
+  margin-left: 0.5rem;
+  color: var(--atencao);
+  font-size: 0.85rem;
+}
+
+.exclusoes summary {
+  cursor: pointer;
+  color: var(--texto-secundario);
+}
