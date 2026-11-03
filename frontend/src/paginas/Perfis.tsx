@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import {
   abrirPerfil,
@@ -123,6 +124,9 @@ export function Perfis({ onAberto }: Props) {
       <p className="dica secundario">
         Use uma pasta da sua nuvem (Google Drive, OneDrive, Dropbox) para ver a carteira em
         qualquer PC.
+      </p>
+      <p>
+        <Link to="/aprender/comece">Como usar o app</Link>
       </p>
     </section>
   );

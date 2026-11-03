@@ -342,6 +342,149 @@ button.link {
   background: var(--fundo);
 }
 
+.cabecalho-aprender {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.sub-abas {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--borda);
+}
+
+.sub-abas a {
+  padding: 0.4rem 0.9rem;
+  color: var(--texto-secundario);
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+
+.sub-abas a:hover {
+  color: var(--texto);
+}
+
+.sub-abas a.active {
+  color: var(--texto);
+  border-bottom-color: var(--compra);
+}
+
+.operacoes {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .operacoes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.lista-operacoes ul {
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.familia-lista {
+  margin: 0 0 0.25rem;
+  color: var(--texto-secundario);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lista-operacoes a {
+  display: block;
+  padding: 0.3rem 0.6rem;
+  color: var(--texto-secundario);
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.lista-operacoes a:hover {
+  color: var(--texto);
+}
+
+.lista-operacoes a[aria-current="page"] {
+  color: var(--texto);
+  background: var(--painel);
+}
+
+.operacao {
+  padding: 0.8rem 1.1rem 1.1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.operacao h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.3rem;
+}
+
+.operacao h3 {
+  margin: 1.1rem 0 0.3rem;
+  font-size: 1rem;
+}
+
+.operacao p {
+  margin: 0 0 0.5rem;
+}
+
+.operacao .etiquetas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operacao .etiquetas li {
+  padding: 0.15rem 0.7rem;
+  background: var(--fundo);
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.exemplo-operacao {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.exemplo-operacao ul {
+  margin: 0 0 0.5rem;
+  padding-left: 1.2rem;
+}
+
+.exemplo-operacao .cenarios caption {
+  text-align: left;
+  color: var(--texto-secundario);
+  padding-bottom: 0.25rem;
+}
+
+.exemplo-operacao .resumo-exemplo {
+  margin-top: 0.5rem;
+}
+
+.grafico-exemplo {
+  width: 100%;
+  height: 300px;
+}
+
+.motivo-botao {
+  margin-left: 0.5rem;
+}
+
 .vencimentos {
   display: flex;
   flex-wrap: wrap;
