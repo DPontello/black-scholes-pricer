@@ -20,7 +20,9 @@ from options_engine.adapters.outbound.b3files.library import (
     cadastro_freshness,
 )
 from options_engine.adapters.outbound.clock import FixedClock
+from options_engine.adapters.outbound.cotahist.instruments import load_instruments
 from options_engine.domain.model.errors import InvalidDomainValueError
+from tests.adapters.cotahist._bvbg import acao, opcao, pacote, xml_cadastro
 from tests.adapters.cotahist._layout import CRLF, arquivo, registro
 from tests.data.cotahist.build_fixture import COTAHIST_NAME, INSTRUMENTS_NAME
 
@@ -244,6 +246,56 @@ def test_cadastro_sem_data_no_nome_tem_data_de_referencia_nula(tmp_path: Path) -
         cadastro_freshness(lib, StaticHolidayCalendar.from_packaged_data(), date(2026, 11, 3))
         is None
     )
+
+
+def _pesquisa_pregao() -> bytes:
+    return pacote(
+        {
+            "IN261103.zip": xml_cadastro(
+                [
+                    acao("200003061028", "PETR4", "PETR"),
+                    opcao(
+                        "200002749212",
+                        "PETRC512",
+                        "PETR",
+                        tipo="CALL",
+                        strike="49.44",
+                        estilo="AMER",
+                        vencimento="2027-03-19",
+                        objeto_id="200003061028",
+                    ),
+                ]
+            )
+        }
+    )
+
+
+def test_pesquisa_pregao_entra_como_cadastro_com_a_data_do_xml(tmp_path: Path) -> None:
+    lib = _lib(tmp_path)
+    cad = lib.import_file("pesquisa-pregao.zip", _pesquisa_pregao())
+    assert (cad.kind, cad.reference_date, cad.first_date) == (
+        B3FileKind.CADASTRO,
+        date(2026, 11, 3),
+        None,
+    )
+    assert lib.latest_cadastro() == cad
+    assert load_instruments(cad.path)["PETRC512"].underlying_symbol == "PETR4"
+
+
+def test_pesquisa_pregao_guarda_so_o_csv_convertido(tmp_path: Path) -> None:
+    cad = _lib(tmp_path).import_file("pesquisa-pregao.zip", _pesquisa_pregao())
+    assert not zipfile.is_zipfile(cad.path)
+    assert cad.path.read_text(encoding="utf-8").startswith("TckrSymb;")
+
+
+def test_pesquisa_pregao_danificado_e_recusado_sem_deixar_nada(tmp_path: Path) -> None:
+    truncado = pacote({"IN261103.zip": xml_cadastro([acao("1", "PETR4", "PETR")])[:-40]})
+    with pytest.raises(B3FileRejectedError, match="danificado") as excecao:
+        _lib(tmp_path).import_file("pesquisa-pregao.zip", truncado)
+    assert "pesquisa-pregao.zip" in str(excecao.value)
+    assert str(tmp_path) not in str(excecao.value)
+    assert "/tmp" not in str(excecao.value)
+    assert not _arquivos(tmp_path / "mercado")
 
 
 def test_data_impossivel_no_nome_nao_vira_data(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ from pathlib import Path
 from options_engine.adapters.outbound.b3files.downloads import DownloadsImporter
 from options_engine.adapters.outbound.b3files.library import B3FileKind, B3FileLibrary
 from tests.adapters._mercado import AGORA, FIXTURE, relogio
+from tests.adapters.cotahist._bvbg import acao, pacote, xml_cadastro
 from tests.data.cotahist.build_fixture import COTAHIST_NAME, INSTRUMENTS_NAME
 
 _DEPOIS = AGORA.timestamp() + 3600  # baixado depois da importação feita pelo relógio do teste
@@ -36,6 +37,19 @@ def test_arquivo_da_b3_baixado_e_importado_quando_para_de_mudar(tmp_path: Path) 
     assert {f.kind for f in lib.files()} == {B3FileKind.COTAHIST, B3FileKind.CADASTRO}
     assert "pregão de 23/10/2026" in next(e for e in eventos if e.nome == COTAHIST_NAME).detalhe
     assert importador.scan() == ()  # nada novo: não reimporta
+
+
+def test_pesquisa_pregao_baixado_entra_como_cadastro(tmp_path: Path) -> None:
+    importador, lib, downloads = _montar(tmp_path)
+    conteudo = pacote({"IN261103.zip": xml_cadastro([acao("1", "PETR4", "PETR")])})
+    for nome in ("pesquisa-pregao.zip", "pesquisa-pregao (1).zip"):
+        (downloads / nome).write_bytes(conteudo)
+        os.utime(downloads / nome, (_DEPOIS, _DEPOIS))
+    importador.scan()
+    eventos = importador.scan()
+    assert {e.nome for e in eventos} == {"pesquisa-pregao.zip", "pesquisa-pregao (1).zip"}
+    assert all(e.importado and "pregão de 03/11/2026" in e.detalhe for e in eventos)
+    assert {f.kind for f in lib.files()} == {B3FileKind.CADASTRO}
 
 
 def test_ignora_o_que_nao_tem_nome_de_arquivo_da_b3(tmp_path: Path) -> None:

@@ -35,6 +35,10 @@ from typing import Final
 
 from options_engine.adapters.outbound.cotahist.errors import SourceFileError
 from options_engine.adapters.outbound.cotahist.instruments import load_instruments
+from options_engine.adapters.outbound.cotahist.instruments_xml import (
+    instruments_csv_from_xml_package,
+    is_instruments_xml_package,
+)
 from options_engine.adapters.outbound.cotahist.parser import cotahist_sessions
 from options_engine.adapters.outbound.storage.json_files import write_json_atomic
 from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
@@ -74,7 +78,8 @@ class ImportedFile:
 
     COTAHIST: ``reference_date`` é o maior pregão do arquivo e ``first_date``
     o menor (a faixa que a biblioteca cobre). CADASTRO: ``reference_date`` é
-    o ``_AAAAMMDD`` do nome (``None`` se não houver) e ``first_date`` é ``None``.
+    o ``_AAAAMMDD`` do nome (``None`` se não houver), ou a data do XML no
+    ``pesquisa-pregao.zip``, e ``first_date`` é ``None``.
     """
 
     kind: B3FileKind
@@ -115,10 +120,14 @@ class B3FileLibrary:
         if kind is None:
             raise B3FileRejectedError(
                 f"O arquivo '{nome}' foi recusado: tipo de arquivo não reconhecido. "
-                "Arraste o COTAHIST (.zip ou .txt) ou o Cadastro de Instrumentos (.csv) "
-                "baixados do site da B3. Nada foi guardado."
+                "Arraste o COTAHIST (.zip ou .txt) ou o Cadastro de Instrumentos (.csv ou o "
+                "pesquisa-pregao.zip) baixados do site da B3. Nada foi guardado."
             )
+        data_do_xml: date | None = None
+        if kind is B3FileKind.CADASTRO and is_instruments_xml_package(content):
+            data_do_xml, content = _cadastro_do_xml(nome, content)
         reference_date, first_date = _validate(kind, nome, content)
+        reference_date = data_do_xml or reference_date
         with self._lock:
             entries = self._read_entries()  # índice ilegível falha ANTES de gravar qualquer coisa
             path = self._store(kind, nome, content)
@@ -246,7 +255,9 @@ def _safe_name(name: str) -> str:
 
 def _identify(content: bytes) -> B3FileKind | None:
     if zipfile.is_zipfile(io.BytesIO(content)):
-        return B3FileKind.COTAHIST if _zip_holds_cotahist(content) else None
+        if _zip_holds_cotahist(content):
+            return B3FileKind.COTAHIST
+        return B3FileKind.CADASTRO if is_instruments_xml_package(content) else None
     if content.startswith(_COTAHIST_SIGNATURE):
         return B3FileKind.COTAHIST
     if _has_cadastro_header(content):
@@ -292,11 +303,27 @@ def _validate(kind: B3FileKind, nome: str, content: bytes) -> tuple[date | None,
         try:
             return validar(caminho, nome)
         except (SourceFileError, csv.Error, zlib.error, EOFError) as erro:
-            raise B3FileRejectedError(
-                f"O arquivo '{nome}' parece {rotulo}, mas está incompleto, danificado ou "
-                f"fora do formato ({_detail(erro, caminho, nome)}). "
-                "Baixe-o de novo no site da B3. Nada foi guardado."
-            ) from erro
+            raise _damaged(nome, rotulo, _detail(erro, caminho, nome)) from erro
+
+
+def _cadastro_do_xml(nome: str, content: bytes) -> tuple[date | None, bytes]:
+    """O ``pesquisa-pregao.zip`` convertido no CSV do cadastro: só o CSV vai para a biblioteca."""
+    with tempfile.TemporaryDirectory(prefix="painel-opcoes-") as temporario:
+        caminho = Path(temporario) / nome
+        caminho.write_bytes(content)
+        try:
+            data, texto = instruments_csv_from_xml_package(caminho)
+        except SourceFileError as erro:
+            detalhe = _detail(erro, caminho, nome)
+            raise _damaged(nome, _LABEL[B3FileKind.CADASTRO], detalhe) from erro
+    return data, texto.encode("utf-8")
+
+
+def _damaged(nome: str, rotulo: str, detalhe: str) -> B3FileRejectedError:
+    return B3FileRejectedError(
+        f"O arquivo '{nome}' parece {rotulo}, mas está incompleto, danificado ou "
+        f"fora do formato ({detalhe}). Baixe-o de novo no site da B3. Nada foi guardado."
+    )
 
 
 def _detail(erro: Exception, caminho: Path, nome: str) -> str:
