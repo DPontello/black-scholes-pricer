@@ -12,6 +12,7 @@ from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.adapters.outbound.storage.profiles import JsonProfileRepository
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.application.use_cases.profiles import ProfileService
+from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.errors import (
     DuplicateProfileError,
     InvalidDomainValueError,
@@ -199,6 +200,23 @@ def test_set_watchlist_sem_perfil_aberto_levanta() -> None:
     service, repo = make_service_with_profiles("Hugo")
     with pytest.raises(NoActiveProfileError):
         service.set_watchlist(["PETR4"])
+    assert repo.saved == []
+
+
+def test_set_book_settings_grava_e_mantem_o_resto_do_perfil() -> None:
+    service, repo = make_service_with_profiles("Hugo")
+    service.open("Hugo")
+    book = BookSettings.default(BookPreset.CONSERVADOR)
+    novo = service.set_book_settings(book)
+    assert novo == Profile("Hugo", ("PETR4", "VALE3"), 0.15, book)
+    assert service.active() == novo
+    assert repo.saved == [("Hugo", novo)]
+
+
+def test_set_book_settings_sem_perfil_aberto_levanta() -> None:
+    service, repo = make_service_with_profiles("Hugo")
+    with pytest.raises(NoActiveProfileError):
+        service.set_book_settings(BookSettings.default(BookPreset.MODERADO))
     assert repo.saved == []
 
 

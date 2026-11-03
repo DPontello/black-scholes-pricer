@@ -3,6 +3,7 @@
 import json
 import re
 import shutil
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, NoReturn
@@ -16,6 +17,7 @@ from options_engine.adapters.outbound.storage.profiles import (
 )
 from options_engine.application.ports.outbound import ProfileRepository
 from options_engine.config.composition import DEFAULT_CDI_ANNUAL
+from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.errors import (
     DuplicateProfileError,
     InvalidDomainValueError,
@@ -225,6 +227,35 @@ def test_save_grava_e_load_relê(tmp_path: Path) -> None:
     assert not list(pasta.glob("*.tmp"))
 
 
+def test_book_do_perfil_vai_e_volta_pelo_json(tmp_path: Path) -> None:
+    repo, pasta = make_repo(tmp_path)
+    book = replace(BookSettings.default(BookPreset.ARROJADO), min_trades=7, max_risk=4_500.0)
+    repo.save("Hugo", Profile("Hugo", ("PETR4",), 0.15, book))
+    assert repo.load("Hugo").book == book
+    assert json.loads((pasta / "perfil.json").read_text(encoding="utf-8"))["book"] == {
+        "preset": "arrojado",
+        "delta_min": 0.25,
+        "delta_max": 0.45,
+        "negocios_min": 7,
+        "spread_max": 0.35,
+        "risco_max": 4500.0,
+        "vencimentos": 3,
+        "piso_protecao": 0.85,
+        "perda_ilimitada": True,
+    }
+
+
+def test_perfil_antigo_sem_book_e_lido_como_moderado(tmp_path: Path) -> None:
+    repo, pasta = make_repo(tmp_path)
+    (pasta / "perfil.json").write_text(
+        '{"versao": 1, "nome": "Hugo", "ativos": ["PETR4"], "cdi_anual": 0.15}',
+        encoding="utf-8",
+    )
+    perfil = repo.load("Hugo")
+    assert perfil.book is None
+    assert perfil.book_settings == BookSettings.default(BookPreset.MODERADO)
+
+
 def test_save_com_nome_diferente_do_registrado_e_recusado(tmp_path: Path) -> None:
     repo, _ = make_repo(tmp_path)
     with pytest.raises(InvalidDomainValueError, match="Outro"):
@@ -246,6 +277,16 @@ def test_nome_nao_registrado_e_desconhecido(tmp_path: Path) -> None:
 
 # --- arquivos ilegíveis -----------------------------------------------------------------------
 
+_BOOK_OK = (
+    '{"preset": "moderado", "delta_min": 0.15, "delta_max": 0.35, "negocios_min": 10, '
+    '"spread_max": 0.2, "risco_max": 3000, "vencimentos": 2, "piso_protecao": 0.9, '
+    '"perda_ilimitada": false}'
+)
+
+
+def _com_book(book: str) -> str:
+    return '{"versao": 1, "nome": "Hugo", "ativos": [], "cdi_anual": 0.15, "book": ' + book + "}"
+
 
 @pytest.mark.parametrize(
     ("conteudo", "motivo"),
@@ -260,6 +301,12 @@ def test_nome_nao_registrado_e_desconhecido(tmp_path: Path) -> None:
         ('{"versao": 1, "nome": "Hugo", "ativos": [], "cdi_anual": 1.5}', "fração anual"),
         ('{"versao": 1, "nome": "Hugo", "ativos": ["PE-TR4"], "cdi_anual": 0.15}', "ticker"),
         ('{"versao": 1, "nome": "Hugo", "ativos": ["A", "A"], "cdi_anual": 0.15}', "repete"),
+        (_com_book("[]"), "book"),
+        (_com_book(_BOOK_OK.replace("moderado", "agressivo")), "preset"),
+        (_com_book(_BOOK_OK.replace('"risco_max": 3000', '"risco_max": "3"')), "risco_max"),
+        (_com_book(_BOOK_OK.replace('"vencimentos": 2', '"vencimentos": 2.5')), "vencimentos"),
+        (_com_book(_BOOK_OK.replace('"perda_ilimitada": false', '"perda_ilimitada": 0')), "perda"),
+        (_com_book(_BOOK_OK.replace('"delta_min": 0.15', '"delta_min": 0.5')), "delta"),
     ],
 )
 def test_perfil_json_ilegivel_acusa_com_o_caminho_no_load_e_na_adocao(

@@ -17,6 +17,7 @@ from fastapi import FastAPI
 import options_ponte
 from options_engine.adapters.inbound.web.app import Lifespan, create_app
 from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
+from options_engine.adapters.inbound.web.book import router_book
 from options_engine.adapters.inbound.web.builder import router_montador
 from options_engine.adapters.inbound.web.market import router_mercado
 from options_engine.adapters.inbound.web.portfolio import router_carteira
@@ -35,6 +36,7 @@ from options_engine.adapters.outbound.b3files.end_of_day import EndOfDayMarket
 from options_engine.adapters.outbound.b3files.loaded import LibraryLoader
 from options_engine.adapters.outbound.clock import SystemClock
 from options_engine.adapters.outbound.cost_schedules import StaticCostScheduleTable
+from options_engine.adapters.outbound.cotahist.vol_history import CotahistVolHistory
 from options_engine.adapters.outbound.fallback_market import FallbackMarket
 from options_engine.adapters.outbound.storage import JsonProfileRepository
 from options_engine.adapters.outbound.storage.operations import JsonOperationRepository
@@ -49,13 +51,17 @@ from options_engine.adapters.outbound.tryd.feed import TrydMarketFeed
 from options_engine.adapters.outbound.tryd.settings import PORTA_PONTE
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
+from options_engine.application.use_cases.book import BookService
+from options_engine.application.use_cases.market_analysis import MarketAnalysisService
 from options_engine.application.use_cases.market_view import MarketViewService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
+from options_engine.application.use_cases.rank_income import RankIncomeOpportunitiesService
 from options_engine.application.use_cases.simulations import SimulationService
 from options_engine.application.use_cases.strategy_builder import StrategyBuilderService
 from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.errors import DomainError
+from options_engine.domain.pricing.black_scholes import BlackScholesPricingModel
 
 __all__ = ["MACHINE_CONFIG_NAME", "MARKET_DIR_NAME", "build_web_app"]
 
@@ -107,9 +113,10 @@ def build_web_app(
     board = LiveBoard()
     client = TrydBridgeClient(board)
     loader = LibraryLoader(library)
+    end_of_day = EndOfDayMarket(library, cdi_annual, loader=loader)
     market = FallbackMarket(
         TrydMarketFeed(client, board, library, calendar, clock, cdi_annual, loader=loader),
-        EndOfDayMarket(library, cdi_annual, loader=loader),
+        end_of_day,
     )
     market_view = MarketViewService(
         market,
@@ -137,6 +144,22 @@ def build_web_app(
         lots=lambda symbol: _lot(loader, symbol),
         portfolio_average=portfolio.average_price,
     )
+    vol_history = CotahistVolHistory(loader, calendar, cdi_annual)
+    book = BookService(
+        end_of_day,
+        vol_history,
+        RankIncomeOpportunitiesService(
+            chains=end_of_day,
+            calendar=calendar,
+            model=BlackScholesPricingModel(),
+            cost_schedules=schedules,
+            valuation_timezone=B3_UTC_OFFSET,
+        ),
+        lambda: [vista.total for vista in portfolio.open_operations().totals],
+        calendar,
+        B3_UTC_OFFSET,
+        schedules,
+    )
     simulations = SimulationService(
         lambda: JsonSimulationRepository(profiles.active_folder()), clock, lambda: uuid.uuid4().hex
     )
@@ -155,8 +178,10 @@ def build_web_app(
             profiles,
             portfolio=portfolio,
             closes=lambda symbol, day: _close(loader, symbol, day),
+            analysis=MarketAnalysisService(market, vol_history, calendar, B3_UTC_OFFSET),
         ),
         router_montador(builder, simulations),
+        router_book(book, profiles),
         router_carteira(
             portfolio,
             closes=lambda symbol, day: _close(loader, symbol, day),

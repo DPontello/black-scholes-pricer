@@ -211,3 +211,16 @@ test("o modelo usa o primeiro mensal, e o vencimento pode ser trocado", async ()
     ).toBe(true),
   );
 });
+
+test("o pedido que vem do book abre direto e é analisado pela cadeia do momento", async () => {
+  const fetch = api({ corpo: analiseCoberta() });
+  render(
+    <MemoryRouter
+      initialEntries={[{ pathname: "/montador", search: "?ativo=PETR4", state: { pedido: SUGESTAO } }]}
+    >
+      <Montador aoVivo={AO_VIVO} seguirCadeia={vi.fn()} />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1));
+  expect(corpos(fetch, "/api/montador/analise")[0]).toEqual(SUGESTAO);
+});

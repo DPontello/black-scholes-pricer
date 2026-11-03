@@ -6,8 +6,9 @@ prêmio (a valorização da ação fica fora da base). Aceita opção americana 
 o vencimento (``expiry_pnl``).
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from math import fsum
+from math import fsum, inf, nextafter
 
 from options_engine.domain.income.costs import (
     CostSchedule,
@@ -20,7 +21,7 @@ from options_engine.domain.kernel.payoff import intrinsic
 from options_engine.domain.model.strategy import Strategy
 from options_engine.domain.simulation.valuation import expiry_pnl
 
-__all__ = ["NetResult", "net_result_at_expiry", "net_result_breakdown"]
+__all__ = ["NetResult", "extreme_spots", "net_result_at_expiry", "net_result_breakdown"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,17 @@ class NetResult:
     exercise: float
     income_tax: float
     net: float
+
+
+def extreme_spots(
+    spot: float, strikes: Iterable[float], extra: Iterable[float] = ()
+) -> tuple[float, ...]:
+    """Onde o líquido pode ter extremo: o ativo a zero, cada strike e logo acima dele (onde o custo
+    de exercício entra), a cauda depois do último strike e os pontos ``extra``."""
+    ks = list(strikes)
+    return tuple(
+        sorted({0.0, *extra, *ks, *(nextafter(k, inf) for k in ks), 2.0 * max([spot, *ks])})
+    )
 
 
 def net_result_at_expiry(

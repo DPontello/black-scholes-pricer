@@ -22,7 +22,7 @@ from options_engine.domain.model.enums import Side, StockOrigin
 from options_engine.domain.model.profile import normalize_ticker
 from options_engine.domain.model.templates import Template
 
-__all__ = ["MAX_PERNAS", "router_montador"]
+__all__ = ["MAX_PERNAS", "AnaliseIn", "pedido_out", "router_montador"]
 
 MAX_PERNAS: Final = 8
 Lado = Literal["compra", "venda"]
@@ -193,7 +193,7 @@ def _pedido(corpo: AnaliseIn) -> BuilderRequest:
     )
 
 
-def _pedido_out(pedido: BuilderRequest) -> AnaliseIn:
+def pedido_out(pedido: BuilderRequest) -> AnaliseIn:
     acao = pedido.stock
     return AnaliseIn(
         ativo=pedido.underlying,
@@ -315,7 +315,7 @@ def _simulacao_out(simulacao: SavedSimulation) -> SimulacaoOut:
         id=simulacao.id,
         nome=simulacao.name,
         criada_em=simulacao.created_at.isoformat(),
-        pedido=_pedido_out(simulacao.request),
+        pedido=pedido_out(simulacao.request),
     )
 
 
@@ -328,7 +328,7 @@ def router_montador(builder: StrategyBuilderUseCase, simulations: SimulationUseC
 
     @router.get("/montador/sugestao")
     def sugestao(ativo: str, modelo: str, vencimento: date) -> AnaliseIn:
-        return _pedido_out(builder.suggest(normalize_ticker(ativo), modelo, vencimento))
+        return pedido_out(builder.suggest(normalize_ticker(ativo), modelo, vencimento))
 
     @router.post("/montador/analise")
     def analise(corpo: AnaliseIn) -> AnaliseOut:

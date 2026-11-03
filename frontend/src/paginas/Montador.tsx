@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import type { EstadoAoVivo, SeguirCadeia, Serie } from "../api/aoVivo";
 import { rascunhoDaAnalise } from "../api/carteira";
@@ -47,14 +47,16 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
   const [busca, setBusca] = useSearchParams();
   const navegar = useNavigate();
   const ativo = busca.get("ativo") ?? aoVivo.cotacoes[0]?.ativo ?? null;
+  // O book abre um item aqui pelo estado da rota; o montador reprecifica pela cadeia do momento.
+  const doBook = (useLocation().state as { pedido?: PedidoAnalise } | null)?.pedido ?? null;
   const [vencimentos, setVencimentos] = useState<string[] | null>(null);
-  const [pedido, setPedido] = useState<PedidoAnalise>(vazio(ativo));
+  const [pedido, setPedido] = useState<PedidoAnalise>(doBook ?? vazio(ativo));
   const [analise, setAnalise] = useState<Analise | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [modelos, setModelos] = useState<Modelo[]>([]);
   const [simulacoes, setSimulacoes] = useState<Simulacao[]>([]);
   const [nome, setNome] = useState("");
-  const pendente = useRef<PedidoAnalise | null>(null);
+  const pendente = useRef<PedidoAnalise | null>(doBook);
 
   useEffect(() => {
     setPedido(pendente.current ?? vazio(ativo));

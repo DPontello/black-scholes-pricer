@@ -1,0 +1,130 @@
+# Ledger — semana 3 (Book e Análise)
+
+Plano: [`plans/2026-11-02-app-semana-3-book-analise.md`](plans/2026-11-02-app-semana-3-book-analise.md).
+Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
+
+## 2026-11-02: Task 1 — IV de 30 dias, rank, percentil e regime de vol
+
+- `domain/analytics/volatility.py`: `ExpiryVol(business_days, vol)`, `HorizonVol(vol, extrapolated)`, `iv_at_horizon` (variância total `σ² x τ` interpolada linearmente em τ = du / 252), `iv_rank`, `iv_percentile`, `VolRegime` e `vol_regime`. Constantes da spec com nome: prazo de 30 du, vencimento mínimo de 5 du, janela de 252 pregões, mínimo de 60, rank alto 50%, baixo 30% e margem de 10%.
+- Conferido à mão: 20 du a 30% e 40 du a 34% dão IV 30 de 0,327210 (a média das vols daria 0,32); 25 du a 32% e 45 du a 28% dão 0,305614. Propriedades (hypothesis): vol plana nos vencimentos dá a mesma vol no prazo, e a IV no prazo nunca sai do intervalo das vizinhas (a variância no prazo é média ponderada das duas, com pesos >= 0).
+- Ruling: o rank usa a mínima e a máxima da janela **com a IV de hoje incluída**, então fica sempre entre 0 e 1. A IV de hoje da aba Análise vem da cadeia do momento (Task 11) e pode sair do intervalo do histórico de fim de dia; sem isso o rank passaria de 100%. Se errado: uma linha em `iv_rank`.
+- Ruling: com a janela inteira na mesma IV (máxima = mínima), o rank sai `None` em vez de um número arbitrário; o percentil sai 0 (nenhum pregão abaixo). Na prática não acontece com 60 pregões reais. Se errado: nada no resultado do book, porque o regime cai na regra sem rank.
+- Ruling: o percentil conta os pregões **estritamente** abaixo da IV de hoje ("abaixo", como na spec).
+- Ruling: dois pontos com o mesmo número de dias úteis são recusados (`InvalidDomainValueError`): vencimentos distintos caem sempre em dias úteis distintos, então é erro de quem chama. Se errado: o histórico (Task 2) tem de escolher um dos dois antes.
+- A janela são os **últimos 252 valores** do histórico recebido: quem chama passa só os pregões com IV, em ordem cronológica (Task 2).
+- Gates: 4961 testes (cobertura 98,10%; `domain/analytics` em 100%), mypy, ruff e import-linter. Frontend sem mudança.
+
+## 2026-11-02: Task 2 — histórico de IV pelos COTAHIST da biblioteca
+
+- `adapters/outbound/cotahist/vol_history.py`: `CotahistVolHistory(loader, calendar, cdi_annual)` implementa o `VolHistoryPort` (novo, em `application/ports/outbound.py`) e devolve `DailyVol(session, close, iv30, extrapolated, hv21)` (novo, em `domain/analytics/volatility.py`) por pregão, do mais antigo ao mais recente, ou o motivo: sem COTAHIST, sem cadastro (motivo da biblioteca), ativo sem fechamento, arquivo ilegível.
+- A IV de cada vencimento é a do **mesmo** `build_smile` da cadeia de fim de dia, no spot; a de 30 du vem do `iv_at_horizon` da Task 1. Conferido: na fixture, a IV 30 de PETR4 em 23/10 é igual (1e-12) à calculada pela cadeia do `CotahistOptionChainAdapter` daquele pregão. A HV 21 é a `realized_volatility` que já existia, pregão a pregão.
+- Refactor: o vínculo série–ativo e as rejeições que só dependem do registro (strike corrigido, vencida, book cruzado, strike zero) saíram do adapter para `cotahist/series_rules.py` (`link_underlying`, `record_rejection`, `series_root`, `specification_class`), usadas pelo adapter e pelo histórico. Comportamento do adapter igual (os testes antigos seguem verdes).
+- **Step 0 não feito:** os arquivos reais da B3 não estão neste PC. A leitura não depende da ordem do anual: agrupa por pregão em memória só os registros da raiz do ativo pedido. Falta medir, com o anual real, o tempo e a memória da primeira leitura (o parser lê o anual em 12 a 18 s no outro PC; aqui soma o smile de até dois vencimentos por pregão).
+- Ruling: o cache `vol_history.sqlite` (raiz da biblioteca) guarda os pregões **por arquivo** (caminho, tamanho e mtime), ativo e CDI, em vez de por (pregão, ativo). Dá o que a spec pede: a segunda consulta não relê nada, um diário importado é o único arquivo lido, e trocar o CDI recalcula. Se errado: baixar de novo o anual faz relê-lo inteiro uma vez.
+- Ruling: o histórico **não exige o estilo de exercício**. As séries vencidas não estão no cadastro do dia, e o estilo não muda a IV: o smile usa a fórmula europeia em todas as séries, como na cadeia. O vínculo usa o cadastro quando a série está nele, senão a raiz única ou a classe do ESPECI, como no adapter. Se errado: séries do passado de raiz dividida (PETR3/PETR4) dependem do ESPECI das opções, premissa ainda a conferir no arquivo real (HANDOFF de 28/10).
+- Ruling: de cada lado do prazo, só o vencimento mais perto com vol no spot entra; se ele não tem book em volta do spot, vale o seguinte daquele lado. Dá o mesmo resultado de calcular todos e chamar `iv_at_horizon`, sem montar smiles que não seriam usados.
+- Ruling: vencimento fora da cobertura do calendário (2028) fica fora do pregão, sem derrubá-lo; ativo com registros divergentes no pregão fica sem esse pregão (o adapter o dá como indisponível); com arquivos sobrepostos, vale o primeiro na ordem da biblioteca (o mais antigo), como nos fechamentos do `session.py`.
+- Nota: a fixture sintética tem opções só no pregão de referência (o plano fala em "17 pregões", que não existem nela). Os testes de vários pregões usam COTAHIST sintéticos montados no `tmp_path`, com book em três pregões.
+- Gates: 4979 testes (cobertura 98,15%; `vol_history`, `series_rules`, `adapter` e `domain/analytics` em 100%), mypy, ruff e import-linter. Frontend sem mudança.
+
+## 2026-11-02: Task 3 — presets do book no domínio e no perfil
+
+- `domain/book/presets.py`: `BookPreset` (Conservador, Moderado, Arrojado) e `BookSettings` com os valores da spec §3.2 em `BookSettings.default(preset)`; faixas validadas (delta de 0 a 1 com mínimo <= máximo, negócios >= 0, vencimentos >= 1, spread e risco > 0, piso em (0, 1]).
+- `Profile.book: BookSettings | None = None` e `Profile.book_settings`, que devolve o Moderado quando o perfil não tem o campo. O `perfil.json` só ganha a chave `book` depois que o usuário escolhe um preset; perfil antigo é lido sem erro.
+- `ProfileService.set_book_settings` e `PUT /api/perfil/book`; `GET /api/perfil` e as outras rotas de perfil devolvem o `book` já resolvido.
+- Ruling: o corpo do `PUT` é `{preset, valores?}`. Sem `valores`, valem os padrões do preset: é assim que a tela troca de preset e "volta ao padrão" sem copiar a tabela da spec no frontend. Com `valores`, eles são gravados como vieram, no preset escolhido.
+- Gates: 5007 testes (cobertura 98,17%), mypy, ruff e import-linter. Frontend sem mudança (o tipo `Perfil` ganha o `book` na Task 10).
+
+## 2026-11-02: Task 4 — item do book, contexto de vol e a família Renda
+
+- `domain/book/model.py`: `Metric(key, label, value, unit)` com `MetricUnit`, `BookLeg`, `BookStock`, `BookItem` (família, chave do modelo, ativo, vencimento, du, pernas, ação, critério, números, porquê e rótulos), `BookLabel`, `BookExclusion`, `FamilyResult` (itens só EXECUTAVEL, referências, exclusões), `best_per_structure` (os 5 melhores por estrutura, desempate por ativo, vencimento e strikes) e `passes_liquidity`.
+- `VolContext`, `vol_context` e `end_of_day_context` ficaram em `domain/analytics/volatility.py`, e não em `domain/book`: a aba Análise (Task 11) usa o mesmo contexto. O do fim de dia é o último pregão do histórico contra as IVs dos anteriores.
+- `domain/book/renda.py`: `renda_items(ranking, settings, contexts)` converte o ranking da Sprint 5. Critério: anualizado líquido na venda coberta e na put coberta, retorno sobre o risco líquido nas travas; números de apoio: prêmio, probabilidade de exercício, delta da vendida, dias úteis e o IV rank quando há contexto.
+- Ruling: a família do item é o `Family` dos modelos do montador (mesmos quatro valores), em vez de um `BookFamily` repetido.
+- Ruling: o porquê é um molde com `{chave}` das métricas do item, e quem mostra formata os números (decisão 8 da Sprint 3: conversão de exibição só no adapter). O item recusa um porquê que cite métrica que ele não tem.
+- Ruling: os filtros de liquidez do preset valem só para o que entra no book (todas as pernas, como na spec); as referências não passam por eles, porque sem book completo não há spread a medir e elas seriam sempre descartadas. Por isso o `BookService` pede o ranking sem `min_trades` e sem `max_spread_pct`. Reprovar na liquidez é filtro, não exclusão (como a faixa de delta).
+- Ruling: vencimento no próprio pregão (0 du) fica fora do book em todas as famílias.
+- Gates: 5025 testes (cobertura 98,22%; `domain/book` em 100%), mypy, ruff e import-linter. Frontend sem mudança.
+
+## 2026-11-02: Task 5 — família Volatilidade
+
+- `domain/book/scan.py`: a varredura comum às famílias sobre a cadeia — os N próximos vencimentos com pelo menos 1 du (os dias úteis vêm de quem chama, pelo calendário), o smile de cada um, o delta pelo `series_risk` (o mesmo do painel de renda), o prêmio pelo lado (EXECUTAVEL, INDICATIVO ou TEORICO), a liquidez das pernas e o resultado no vencimento pelo cálculo do montador (`expiry_summary`, `net_result_breakdown` nos pontos de extremo, `probability_of_profit` com a vol do smile no spot).
+- Refactor: os pontos de extremo do líquido saíram do `StrategyBuilderService` para `domain/income/net_result.extreme_spots`, usados pelo montador e pelo book (o book soma os breakevens, onde o IR muda de inclinação). O montador continua igual (testes verdes).
+- `domain/book/volatilidade.py`: `volatility_items(chain, context, settings, schedule, business_days)`. Vol alta: iron condor vendido (vendidas na faixa de delta, compradas 1 strike mais fora), borboleta comprada (miolo no dinheiro, asas a 1 e a 2 strikes) e, com `allow_unlimited_loss`, strangle vendido. Vol baixa: straddle comprado no dinheiro e strangle comprado na faixa de delta. Neutra: as duas, rotuladas "sem sinal claro". Rótulos também para regime pela HV e IV 30 extrapolada.
+- Conferido à mão, sem custos: o iron condor W260/W280/K320/K340 da cadeia falsa tem crédito, risco `(2 - c) x 100`, ganho/risco `c / (2 - c)` e breakevens `28 - c` e `32 + c` em desvios (`|ln(BE/30)| / (IV x sqrt(du/252))`).
+- Ruling: o strangle vendido, que tem perda ilimitada, usa como critério a distância até o breakeven mais perto em desvios-padrão (maior é melhor), espelho da compra de vol; ganho/risco não existe sem perda máxima. O risco máximo do preset não se aplica a ele: quem o libera é o `allow_unlimited_loss`.
+- Ruling: estrutura com ganho máximo líquido <= 0 (custos maiores que o crédito) fica fora, como filtro.
+- Ruling: a put americana fica fora da varredura com o motivo, como no painel de renda: o delta dela, que escolhe a faixa, não tem a aproximação europeia (ADR-0002).
+- Exclusões repetidas (a mesma perna sem preço em várias combinações) aparecem uma vez só.
+- Checagens (combinado com o autor em 02/11: o gate completo fica para o fim da semana): ruff, mypy, import-linter e as suítes do book, da renda e do montador. A última suíte inteira (fim da Task 5, antes do combinado) deu 5042 testes, 98,27%.
+
+## 2026-11-02: Task 6 — família Direcionais
+
+- `domain/book/direcionais.py`: `cheap_options` (sem visão) e `directional_items` (com visão), com `DirectionalView(underlying, direction, target, expiry)` e `Direction` (alta, baixa).
+- Sem visão: calls e puts com delta (módulo) de 0,30 a 0,60 (faixa da spec, não a do preset), IV da própria série abaixo da HV 21 e IV rank até 30%; critério `(HV 21 - IV da série) / HV 21`; rótulo "não direcional". Ruling: sem IV rank (histórico curto) a lista fica vazia, porque a regra da spec exige o rank.
+- Com visão: compra a seco e travas de débito, com a comprada do strike no dinheiro até antes do alvo e a vendida no alvo ou depois, de 1 a 3 strikes de largura. Critério: resultado líquido no alvo sobre o risco líquido (débito + custos), com o alvo avaliado pelo `net_result_breakdown` (o `evaluate` da varredura ganhou o `target`). Probabilidade de chegar ao alvo pela lognormal com a vol do smile no spot, a mesma da probabilidade de lucro do montador.
+- Conferido à mão, sem custos, alvo 33: a call 30 e a trava 30/34 têm critério `(300 - débito) / débito`, breakeven `30 + débito / 100` e resultado no alvo `300 - débito`.
+- Ruling: alvo do lado errado do spot e vencimento sem séries com 1 du são recusados com `InvalidDomainValueError` e o motivo (a API devolve 422); não viram uma lista vazia.
+- Ruling: o risco máximo do preset vale nas duas (são estruturas sem ação).
+- Checagens: ruff, mypy, import-linter e as suítes do book (58 testes, `domain/book` em 99%).
+
+## 2026-11-02: Task 7 — família Proteção
+
+- `domain/book/protecao.py`: `protection_items(chain, position, settings, schedule, business_days)` com `ProtectedPosition(underlying, quantity, average_price, hypothetical)`. Put protetora e collar (a call vendida na faixa de delta do preset), critério custo mensal equivalente `custo líquido / valor da posição x 21 / du`, do menor para o maior (o collar de crédito vem antes). Números: custo em R$ e em % da posição, piso e teto em R$ e em % do spot.
+- Conferido à mão, sem custos: put 28 com custo `ask x 100` e mensal `custo / 3000 x 21 / du`; collar 28/32 com custo `(ask da put - bid da call) x 100`, negativo (crédito) e primeiro da lista.
+- Ruling: a put vai do piso do preset (`protection_floor x spot`) até o strike no dinheiro; put dentro do dinheiro não entra (é cara e não é proteção, é aposta de baixa).
+- Ruling: as opções cobrem o lote inteiro de 100 da posição (250 ações viram 200 protegidas); posição menor que 100 vira exclusão com o motivo.
+- Ruling: o custo da proteção conta só as ordens de opção, também na posição hipotética: a pergunta é quanto custa proteger, não quanto custa comprar a ação. A ação do item vai ao montador como "da carteira" na posição real e como compra na hipotética.
+- Junto: a marca da ADR-0002 (call americana escolhida pelo delta europeu) agora rotula os itens de Volatilidade, Direcionais e Proteção, como já fazia na Renda; o resultado da varredura passou a trazer o custo da montagem.
+- Checagens: ruff, mypy, import-linter e as suítes do book (65 testes, `domain/book` em 98% ou mais por módulo).
+
+## 2026-11-02: Task 8 — `BookService`
+
+- `application/ports/book.py`: `BookUseCase` (`book(settings, underlyings)` e `directional(settings, view)`), `BookView(session, source, contexts, families, unavailable)`, `BookFamilyView(items, references, exclusions)`, `BookEntry(item, request)` e `UnderlyingVol(symbol, context, reason)`.
+- `application/use_cases/book.py`: `BookService(end_of_day, vol_history, income, holdings, calendar, tz, schedules)`. A cadeia é sempre a do fim de dia; a fonte do book é sempre `FIM_DE_DIA`, com o pregão da cadeia. Ativo sem cadeia vai para `unavailable` com o motivo e os outros seguem. Sem contexto de vol (sem histórico, sem IV ou HV no último pregão), Volatilidade e Direcionais dizem o motivo daquele ativo; Renda e Proteção seguem.
+- O pedido do montador de cada item é o `BuilderRequest` das simulações, sem preços: o montador reprecifica pela cadeia do momento. Conferido: o primeiro item de cada família abre no `StrategyBuilderService` sem erro e com preço em todas as pernas.
+- Ruling: em vez do `PortfolioUseCase` inteiro, o serviço recebe `holdings: Callable[[], Sequence[AssetTotal]]` (a composição passa os totais de `open_operations()`): o book só lê as ações compradas, e assim não depende do resto da carteira.
+- Ruling: os 5 melhores por estrutura são escolhidos entre todos os ativos da lista, não por ativo. A direção do critério de cada estrutura ficou num lugar só (`LOWER_IS_BETTER` em `domain/book/model.py`: compra de vol e proteção, menor é melhor), em vez de um parâmetro em cada família.
+- Ruling: com cadeias de pregões diferentes, o book mostra o mais recente.
+- Checagens: ruff, mypy, import-linter e as suítes do book e de `tests/application` (271 testes; `use_cases/book.py` em 100%).
+
+## 2026-11-02: Task 9 — API do book
+
+- `adapters/inbound/web/book.py`: `GET /api/book` (perfil aberto, com o preset e a lista dele) e `POST /api/book/direcional` (`{ativo, direcao, alvo, vencimento}`). Cada item leva os números crus (valor e unidade) e já formatados, o porquê montado em pt-BR, os rótulos com o texto e o `pedido` no formato do `AnaliseIn` do montador (sem preços). Sem perfil: 404; alvo do lado errado: 422 com o motivo; sem COTAHIST: os ativos em `indisponiveis` com o motivo e nenhum item.
+- `config/web_app.py`: o `EndOfDayMarket` virou uma variável própria e alimenta o `BookService`, com o `CotahistVolHistory` da biblioteca, um `RankIncomeOpportunitiesService` sobre o fim de dia e as ações compradas da carteira (`open_operations().totals`).
+- O `_pedido_out` do montador virou `pedido_out` público, e o `_book_out` dos perfis virou `book_out`, para o router do book não repetir as conversões.
+- Conferido com a fixture pelo app inteiro: o book de PETR4 vem do pregão de 23/10, com a IV 30 sem rank (regime pela HV) e o cache `vol_history.sqlite` gravado na biblioteca.
+- Checagens: ruff, mypy, import-linter e as suítes `tests/web` e `tests/config/test_web_app.py` (122 testes; o router do book em 100%).
+
+## 2026-11-02: Task 10 — tela do Book
+
+- `frontend/src/paginas/Book.tsx`: a rota `/book` (no lugar do "em breve") com a fonte "fim de dia (B3) do pregão DD/MM/AAAA", os ativos sem cadeia com o motivo, a tabela de vol de cada ativo (IV 30, HV 21, IV rank, percentil e regime, ou o motivo), o editor do preset, uma aba por família, as referências à parte e rotuladas, e as exclusões num bloco recolhido. A aba Direcionais tem o formulário da visão (ativo da lista, alta ou baixa, alvo e vencimento) acima das opções baratas pela vol.
+- `componentes/EditorPreset.tsx`: trocar o preset e "voltar ao padrão" mandam só o preset (a API grava os padrões); "salvar valores" manda os valores editados, com spread e piso digitados em % e enviados em fração. O perfil salvo volta ao `App`, e o book é varrido de novo porque o preset do perfil mudou.
+- `componentes/ItemBook.tsx`: o critério, as pernas, os números, o porquê, os rótulos, o selo de preço indicativo ou teórico e "Abrir no montador", que navega para `/montador?ativo=X` com o `pedido` no estado da rota; o `Montador` o abre direto e o analisa pela cadeia do momento.
+- `api/book.ts` e `api/cliente.ts` (o `Perfil` ganhou o `book`, e `definirBook` faz o `PUT /api/perfil/book`).
+- Checagens: `tsc` e os testes do Vitest dos componentes novos e do `Montador` (19). O `verificar` e o `build` completos ficam para o fim da semana.
+
+## 2026-11-02: Task 11 — `MarketAnalysisService` e API
+
+- `application/ports/inbound.py`: `MarketAnalysisUseCase`, `MarketAnalysis(symbol, spot, cdi_annual, history, history_reason, today, today_reason, smiles, term_structure, source, timestamp)`, `SmileView(expiry, business_days, points)` e `TermPoint(expiry, business_days, vol)`.
+- `application/use_cases/market_analysis.py`: o smile de cada vencimento com pelo menos 1 du e a estrutura a termo (a vol do smile no spot) pela cadeia do momento (`MarketPort`, ao vivo se houver); a IV 30 de hoje pelo `iv_at_horizon`; o rank e o percentil contra as IVs dos pregões do histórico anteriores ao de hoje. Fonte: a menos fresca da consulta, como na cadeia.
+- `GET /api/mercado/analise/{ativo}` no router de mercado (números crus, vols e CDI em fração), ligado no `web_app` com o mesmo `CotahistVolHistory` do book.
+- Ruling: o `TermPoint` leva também o vencimento (o plano dizia `ExpiryVol`, que só tem os dias úteis): a tela mostra a data no eixo.
+- Ruling: a HV 21 de hoje é a do último pregão do histórico que a tem; sem histórico, a vol realizada que a cadeia traz, e o regime sai pela margem sobre ela, rotulado. O pregão de hoje, se já está no histórico (fim de dia), não entra na comparação do rank.
+- Checagens: ruff, mypy, import-linter e as suítes `tests/web`, `tests/application` e `tests/config/test_web_app.py` (337 testes; o serviço em 100%).
+
+## 2026-11-02: Task 12 — aba Análise no Mercado
+
+- `frontend/src/paginas/Mercado.tsx`: com um ativo escolhido, abas Cadeia e Análise. A assinatura da cadeia continua com a aba Análise aberta, para a análise usar a cadeia ao vivo.
+- `componentes/AnaliseAtivo.tsx`: cartões de IV 30 de hoje, HV 21, IV rank, percentil e regime ("histórico curto" quando vêm vazios; "pela HV" quando o regime saiu da margem), a fonte de hoje e o rótulo da taxa (o CDI do perfil, constante em todo o histórico, uma aproximação), o gráfico do histórico, o smile com a escolha do vencimento e a estrutura a termo. Sem histórico ou sem IV de hoje, o motivo, e o resto segue.
+- `componentes/GraficoVol.tsx`: o fechamento e a IV 30 contra a HV 21 no último ano (252 pregões), em dois eixos; pregão sem número fica `null` (buraco, nunca ligado) e a IV extrapolada vem marcada com um triângulo.
+- `componentes/GraficoSmile.tsx`: `GraficoSmile` (IV de cada série contra o strike, com o spot marcado) e `GraficoTermo` (IV no dinheiro contra os dias úteis).
+- Refactor: `componentes/useGrafico.ts` concentra o ciclo do ECharts (iniciar, redimensionar, descartar, redesenhar), usado pelos gráficos novos e pelo `GraficoPayoff`.
+- Checagens: `tsc` e os testes do Vitest dos componentes novos e do `GraficoPayoff`.
+
+## 2026-11-02: Task 13 — ponta a ponta e documentação
+
+- Gate completo da semana: 5096 testes Python (cobertura 98,33%), mypy strict, ruff, ruff format, import-linter; frontend com 92 testes, `tsc` e `build`.
+- Ponta a ponta com a fixture sintética pelo app inteiro (`--sem-ponte`, APPDATA temporário): o book de PETR4 do pregão de 23/10 com Renda, Volatilidade e Proteção (Direcionais sem visão vazia: sem IV rank, a regra exige o rank), uma trava de alta com put aberta no montador com o mesmo resultado do book (ganho líquido de R$ 17,78 sobre o risco de R$ 79, os 22,5% do critério), e a aba Análise com os cartões, o smile e a estrutura a termo.
+- **Não feito, depende do autor:** o ponta a ponta com os arquivos reais (anual de 2026, diário e Cadastro de 28/10), que não estavam neste PC, inclusive o vínculo das séries vencidas de PETR3/PETR4 pelo ESPECI e o tempo da primeira leitura do anual; e o teste ao vivo com o Tryd. Lista no HANDOFF de 02/11, seção 6, itens 6 e 7.
+- Documentação: HANDOFF de 02/11, ROADMAP e README.

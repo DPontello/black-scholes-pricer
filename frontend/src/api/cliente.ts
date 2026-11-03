@@ -3,7 +3,23 @@ export type Fonte = "ao_vivo" | "atrasado" | "fim_de_dia";
 
 export type EntradaPerfil = { nome: string; pasta: string };
 
-export type Perfil = { nome: string; ativos: string[]; cdi_anual: number };
+export type NomePreset = "conservador" | "moderado" | "arrojado";
+
+/** Spread e piso em fração (0,2 = 20%); risco em reais, só nas estruturas sem ação. */
+export type ValoresBook = {
+  delta_min: number;
+  delta_max: number;
+  negocios_min: number;
+  spread_max: number;
+  risco_max: number;
+  vencimentos: number;
+  piso_protecao: number;
+  perda_ilimitada: boolean;
+};
+
+export type PresetBook = ValoresBook & { preset: NomePreset };
+
+export type Perfil = { nome: string; ativos: string[]; cdi_anual: number; book: PresetBook };
 
 export type ArquivoB3 = {
   tipo: "cotahist" | "cadastro";
@@ -95,6 +111,11 @@ export async function perfilAtivo(): Promise<Perfil | null> {
 
 export function definirAtivos(ativos: string[]): Promise<Perfil> {
   return pedir("/api/perfil/ativos", json("PUT", { ativos }));
+}
+
+// Sem `valores`, a API grava os padrões do preset: é o "voltar ao padrão" e a troca de preset.
+export function definirBook(preset: NomePreset, valores?: ValoresBook): Promise<Perfil> {
+  return pedir("/api/perfil/book", json("PUT", valores === undefined ? { preset } : { preset, valores }));
 }
 
 export function listarArquivos(): Promise<ArquivoB3[]> {

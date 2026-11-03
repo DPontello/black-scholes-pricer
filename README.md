@@ -190,7 +190,7 @@ Documentação completa em [`docs/`](docs/):
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
 | 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` |
-| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1 e 2 feitas (prazo 2026-11-30) |
+| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1, 2 e 3 feitas (prazo 2026-11-30) |
 
 ### App de opções (em construção)
 
@@ -202,8 +202,9 @@ ordens: você executa no home broker e registra a operação no app.
 - **Semana 2 (montador e carteira):** [desenho](docs/superpowers/specs/2026-10-31-semana-2-montador-carteira-design.md),
   [plano](docs/superpowers/plans/2026-10-31-app-semana-2-montador-carteira.md) e
   [ledger](docs/superpowers/ledger-semana-2.md).
-- **Semana 3 (book e análise):** [desenho](docs/superpowers/specs/2026-11-02-semana-3-book-analise-design.md)
-  e [plano](docs/superpowers/plans/2026-11-02-app-semana-3-book-analise.md).
+- **Semana 3 (book e análise):** [desenho](docs/superpowers/specs/2026-11-02-semana-3-book-analise-design.md),
+  [plano](docs/superpowers/plans/2026-11-02-app-semana-3-book-analise.md) e
+  [ledger](docs/superpowers/ledger-semana-3.md).
 - **Estado e como retomar:** [`docs/superpowers/HANDOFF-2026-11-02.md`](docs/superpowers/HANDOFF-2026-11-02.md).
 - **Ponte do Tryd (RTD → TCP local):** [`src/options_ponte/README.md`](src/options_ponte/README.md).
   No Linux, o ambiente Wine é montado por [`scripts/linux/preparar_ponte_wine.sh`](scripts/linux/preparar_ponte_wine.sh).
@@ -228,6 +229,16 @@ perfil. Na **Carteira** ficam as operações executadas na corretora: o registro
 do montador), as ações que você já tem, o encerramento, o exercício e a atribuição pela regra
 da Receita, o pó automático depois do vencimento e o P&L pelo preço de zerar, ao vivo ou do fim
 de dia. Cada perfil grava a carteira na própria pasta, um arquivo JSON por operação.
+O **Book** varre a lista do perfil no fim de dia (o último COTAHIST importado) e mostra os
+5 melhores de cada estrutura nas quatro famílias: Renda (o ranking do painel de renda),
+Volatilidade (iron condor, borboleta e strangle vendido com vol alta; straddle e strangle
+comprados com vol baixa), Direcionais (opções baratas pela vol e, com a sua visão de alta ou
+baixa, compra a seco e travas de débito para o alvo) e Proteção (put protetora e collar). Cada
+item traz o critério, os números e o porquê, e abre no montador, que refaz os preços pela
+cadeia do momento. Os presets (Conservador, Moderado, Arrojado) ficam salvos no perfil, com os
+valores editados. No **Mercado**, a aba **Análise** mostra o fechamento e a IV de 30 dias úteis
+contra a HV de 21 no último ano, o IV rank e o percentil, o smile de cada vencimento e a
+estrutura a termo. O histórico de IV sai dos COTAHIST da biblioteca e fica em cache.
 
 Para desenvolver a tela, `npm --prefix frontend run dev` (proxy para o app na 8765) e
 `npm --prefix frontend run verificar` (TypeScript + Vitest).

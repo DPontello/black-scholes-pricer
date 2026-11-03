@@ -1,4 +1,4 @@
-"""Perfil do usuário do app: nome, watchlist e CDI.
+"""Perfil do usuário do app: nome, watchlist, CDI e os filtros do book.
 
 O perfil é dado do usuário, não do mercado: vive numa pasta que o usuário
 escolhe (nuvem, pendrive) e viaja entre PCs. Este módulo só diz o que é um
@@ -9,6 +9,7 @@ from collections import Counter
 from dataclasses import dataclass
 from math import isfinite
 
+from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.errors import InvalidDomainValueError
 
 __all__ = ["Profile", "ProfileEntry", "normalize_ticker"]
@@ -32,18 +33,20 @@ def normalize_ticker(raw: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Profile:
-    """Nome, watchlist e CDI anual de um perfil.
+    """Nome, watchlist, CDI anual e filtros do book de um perfil.
 
     ``watchlist`` guarda tickers JÁ normalizados (``normalize_ticker``) e sem
     repetição: o VO não normaliza em silêncio, rejeita — quem monta o perfil
     (API, leitura do arquivo) normaliza antes, e assim o que está salvo é
     igual ao que foi mostrado. ``cdi_annual`` é fração anual (0.15 = 15% a.a.)
-    e fica em ``0 <= cdi < 1``.
+    e fica em ``0 <= cdi < 1``. ``book`` é ``None`` até o usuário escolher um preset (o book
+    usa então o Moderado).
     """
 
     name: str
     watchlist: tuple[str, ...]
     cdi_annual: float
+    book: BookSettings | None = None
 
     def __post_init__(self) -> None:
         if not self.name or self.name != self.name.strip() or len(self.name) > _NOME_MAX:
@@ -70,6 +73,10 @@ class Profile:
                 f"cdi_annual deve ser finito e 0 <= cdi < 1 (fração anual); "
                 f"recebido {self.cdi_annual!r}"
             )
+
+    @property
+    def book_settings(self) -> BookSettings:
+        return self.book if self.book is not None else BookSettings.default(BookPreset.MODERADO)
 
 
 @dataclass(frozen=True, slots=True)

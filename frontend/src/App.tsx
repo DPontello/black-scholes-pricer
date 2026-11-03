@@ -7,6 +7,7 @@ import { BarraStatus } from "./componentes/BarraStatus";
 import { Shell } from "./componentes/Shell";
 import { Carteira } from "./paginas/Carteira";
 import { ArquivosB3 } from "./paginas/ArquivosB3";
+import { Book } from "./paginas/Book";
 import { EmBreve } from "./paginas/EmBreve";
 import { Mercado } from "./paginas/Mercado";
 import { Montador } from "./paginas/Montador";
@@ -67,7 +68,7 @@ function ComPerfil({ perfil, onPerfil, onAberto }: ComPerfilProps) {
           path="/montador"
           element={<Montador aoVivo={aoVivo} seguirCadeia={seguirCadeia} />}
         />
-        <Route path="/book" element={<EmBreve titulo="Book" semana={3} />} />
+        <Route path="/book" element={<Book perfil={perfil} onPerfil={onPerfil} />} />
         <Route path="/carteira" element={<Carteira aoVivo={aoVivo} />} />
         <Route path="/alertas" element={<EmBreve titulo="Alertas" semana={4} />} />
         <Route path="*" element={<Navigate to="/mercado" replace />} />
