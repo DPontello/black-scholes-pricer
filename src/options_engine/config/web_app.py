@@ -16,6 +16,7 @@ from fastapi import FastAPI
 
 import options_ponte
 from options_engine.adapters.inbound.web.app import Lifespan, create_app
+from options_engine.adapters.inbound.web.aprender import router_aprender
 from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
 from options_engine.adapters.inbound.web.book import router_book
 from options_engine.adapters.inbound.web.builder import router_montador
@@ -182,6 +183,7 @@ def build_web_app(
     importer = None if downloads_dir is None else DownloadsImporter(library, downloads_dir, clock)
     routers = [
         router_perfis(profiles),
+        router_aprender(),
         router_arquivos_b3(library, importer),
         router_mercado(
             market_view,
