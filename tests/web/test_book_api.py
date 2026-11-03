@@ -15,7 +15,7 @@ from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.domain.book.model import Metric, MetricUnit
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.errors import UnderlyingUnavailableError
-from tests.application._book_falso import servico_do_book
+from tests.application._book_falso import MontadorFalso, resultado_no_vencimento, servico_do_book
 from tests.application._fakes import FakeProfileRepository
 from tests.application._mercado_falso import MercadoFalso
 
@@ -72,6 +72,69 @@ def test_rotulos_vao_com_o_texto(tmp_path: Path) -> None:
     assert {"chave": "posicao_hipotetica", "texto": "posição hipotética de 100 ações"} in protecao[
         0
     ]["rotulos"]
+
+
+def test_item_leva_o_resultado_no_vencimento_com_os_textos_em_pt_br(tmp_path: Path) -> None:
+    montador = MontadorFalso(resultado_no_vencimento(350.11, -16433.11, 0.62))
+
+    corpo = _cliente(tmp_path, servico_do_book(builder=montador)).get("/api/book").json()
+
+    assert corpo["familias"]["renda"]["itens"][0]["resultado"] == {
+        "ganha_ate": 350.11,
+        "perde_ate": 16433.11,
+        "chance_de_lucro": 0.62,
+        "ganha_ate_texto": "R$ 350,11",
+        "perde_ate_texto": "R$ 16.433,11",
+        "chance_texto": "62,0%",
+    }
+
+
+def test_resultado_sem_limite_sai_null_com_o_texto_sem_limite(tmp_path: Path) -> None:
+    montador = MontadorFalso(resultado_no_vencimento(None, -16433.11, 0.62))
+
+    corpo = _cliente(tmp_path, servico_do_book(builder=montador)).get("/api/book").json()
+
+    resultado = corpo["familias"]["renda"]["itens"][0]["resultado"]
+    assert (resultado["ganha_ate"], resultado["ganha_ate_texto"]) == (None, "sem limite")
+    assert resultado["perde_ate_texto"] == "R$ 16.433,11"
+
+
+@pytest.mark.parametrize("ganho", [-0.01, 0.0])
+def test_ganho_maximo_que_nao_e_lucro_sai_com_o_texto_nao_da_lucro(
+    tmp_path: Path, ganho: float
+) -> None:
+    montador = MontadorFalso(resultado_no_vencimento(ganho, -16433.11, 0.0))
+
+    corpo = _cliente(tmp_path, servico_do_book(builder=montador)).get("/api/book").json()
+
+    resultado = corpo["familias"]["renda"]["itens"][0]["resultado"]
+    assert (resultado["ganha_ate"], resultado["ganha_ate_texto"]) == (ganho, "não dá lucro")
+    assert resultado["perde_ate_texto"] == "R$ 16.433,11"
+
+
+def test_perda_sem_limite_sai_null_com_o_texto_sem_limite(tmp_path: Path) -> None:
+    montador = MontadorFalso(resultado_no_vencimento(350.11, None, 0.62))
+
+    corpo = _cliente(tmp_path, servico_do_book(builder=montador)).get("/api/book").json()
+
+    resultado = corpo["familias"]["renda"]["itens"][0]["resultado"]
+    assert (resultado["perde_ate"], resultado["perde_ate_texto"]) == (None, "sem limite")
+    assert resultado["ganha_ate_texto"] == "R$ 350,11"
+
+
+def test_item_sem_resultado_sai_com_resultado_null(tmp_path: Path) -> None:
+    corpo = _cliente(tmp_path).get("/api/book").json()
+
+    assert corpo["familias"]["renda"]["itens"][0]["resultado"] is None
+
+
+def test_item_da_venda_coberta_leva_a_frase_curta(tmp_path: Path) -> None:
+    corpo = _cliente(tmp_path).get("/api/book").json()
+
+    item = next(i for i in corpo["familias"]["renda"]["itens"] if i["estrutura"] == "venda_coberta")
+    assert item["porque_curto"] == (
+        "Renda com as suas ações: recebe o prêmio e aceita vender no strike."
+    )
 
 
 def test_sem_cotahist_o_book_diz_por_que_e_nao_mostra_itens(tmp_path: Path) -> None:

@@ -17,11 +17,13 @@ from options_engine.adapters.inbound.web.profiles import book_out
 from options_engine.application.ports.book import (
     BookEntry,
     BookFamilyView,
+    BookOutcome,
     BookUseCase,
     UnderlyingVol,
 )
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.domain.book.direcionais import Direction, DirectionalView
+from options_engine.domain.book.frases import short_reason
 from options_engine.domain.book.model import BookExclusion, BookLabel, Metric, MetricUnit
 from options_engine.domain.model.enums import Side
 from options_engine.domain.model.profile import normalize_ticker
@@ -36,7 +38,7 @@ _ROTULOS: Final = {
     BookLabel.NAO_DIRECIONAL: "não direcional: opção barata pela vol",
     BookLabel.PERDA_ILIMITADA: "perda ilimitada",
     BookLabel.POSICAO_HIPOTETICA: "posição hipotética de 100 ações",
-    BookLabel.CALL_AMERICANA_COMO_EUROPEIA: "call americana avaliada como europeia (ADR-0002)",
+    BookLabel.CALL_AMERICANA_COMO_EUROPEIA: "call americana avaliada como europeia",
     BookLabel.REGIME_PELA_HV: "regime pela IV contra a HV (histórico curto para o IV rank)",
     BookLabel.IV_EXTRAPOLADA: "IV 30 extrapolada (vencimentos só de um lado dos 30 dias úteis)",
 }
@@ -71,6 +73,18 @@ class RotuloOut(BaseModel):
     texto: str
 
 
+class ResultadoOut(BaseModel):
+    """Ganho e perda líquidos de custos e IR no vencimento; ``null`` em ``ganha_ate``/``perde_ate``
+    = sem limite. A chance de lucro é bruta: o resultado sem custos nem IR."""
+
+    ganha_ate: float | None
+    perde_ate: float | None
+    chance_de_lucro: float
+    ganha_ate_texto: str
+    perde_ate_texto: str
+    chance_texto: str
+
+
 class ItemOut(BaseModel):
     familia: str
     estrutura: str
@@ -84,8 +98,10 @@ class ItemOut(BaseModel):
     criterio: MetricaOut
     numeros: list[MetricaOut]
     porque: str
+    porque_curto: str
     rotulos: list[RotuloOut]
     pedido: AnaliseIn
+    resultado: ResultadoOut | None
 
 
 class ExclusaoOut(BaseModel):
@@ -156,6 +172,34 @@ def _metrica_out(metric: Metric) -> MetricaOut:
     )
 
 
+def _reais(chave: str, valor: float | None) -> str:
+    if valor is None:
+        return "sem limite"
+    return format_metric(Metric(chave, chave, valor, MetricUnit.CURRENCY))
+
+
+def _ganha_ate_texto(ganho: float | None) -> str:
+    if ganho is not None and ganho <= 0:
+        return "não dá lucro"
+    return _reais("ganha_ate", ganho)
+
+
+def _resultado_out(resultado: BookOutcome | None) -> ResultadoOut | None:
+    if resultado is None:
+        return None
+    chance = Metric(
+        "chance_de_lucro", "Chance de lucro", resultado.probability_of_profit, MetricUnit.PERCENT
+    )
+    return ResultadoOut(
+        ganha_ate=resultado.max_gain,
+        perde_ate=resultado.max_loss,
+        chance_de_lucro=resultado.probability_of_profit,
+        ganha_ate_texto=_ganha_ate_texto(resultado.max_gain),
+        perde_ate_texto=_reais("perde_ate", resultado.max_loss),
+        chance_texto=format_metric(chance),
+    )
+
+
 def _item_out(entrada: BookEntry) -> ItemOut:
     item = entrada.item
     return ItemOut(
@@ -188,8 +232,10 @@ def _item_out(entrada: BookEntry) -> ItemOut:
         criterio=_metrica_out(item.criterion),
         numeros=[_metrica_out(m) for m in item.metrics],
         porque=item.render_reason(format_metric),
+        porque_curto=short_reason(item.template_key),
         rotulos=[RotuloOut(chave=r.value, texto=_ROTULOS[r]) for r in item.labels],
         pedido=pedido_out(entrada.request),
+        resultado=_resultado_out(entrada.outcome),
     )
 
 

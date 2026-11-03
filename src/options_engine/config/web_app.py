@@ -146,6 +146,14 @@ def build_web_app(
         portfolio_average=portfolio.average_price,
     )
     vol_history = CotahistVolHistory(loader, calendar, cdi_annual)
+    book_builder = StrategyBuilderService(
+        end_of_day,
+        calendar,
+        B3_UTC_OFFSET,
+        schedules=schedules,
+        lots=lambda symbol: _lot(loader, symbol),
+        portfolio_average=portfolio.average_price,
+    )
     book = BookService(
         end_of_day,
         vol_history,
@@ -160,6 +168,7 @@ def build_web_app(
         calendar,
         B3_UTC_OFFSET,
         schedules,
+        builder=book_builder,
     )
     simulations = SimulationService(
         lambda: JsonSimulationRepository(profiles.active_folder()), clock, lambda: uuid.uuid4().hex

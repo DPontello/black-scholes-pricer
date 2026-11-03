@@ -5,14 +5,22 @@ from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
+from options_engine.application.ports.inbound import (
+    BuilderAnalysis,
+    BuilderRequest,
+    ExpiryResult,
+    StrategyBuilderUseCase,
+)
 from options_engine.application.use_cases.book import BookService
 from options_engine.application.use_cases.rank_income import RankIncomeOpportunitiesService
 from options_engine.domain.analytics.volatility import DailyVol
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.errors import UnderlyingUnavailableError
+from options_engine.domain.model.quotes import DataSource
+from options_engine.domain.model.templates import Template
 from options_engine.domain.portfolio.positions import AssetTotal
 from options_engine.domain.pricing.black_scholes import BlackScholesPricingModel
-from tests.application._mercado_falso import CALENDARIO, PREGAO, MercadoFalso
+from tests.application._mercado_falso import CALENDARIO, INSTANTE, NOVEMBRO, PREGAO, MercadoFalso
 from tests.book._cadeias import TABELA, cadeia_larga
 
 Historicos = dict[str, tuple[DailyVol, ...] | str]
@@ -69,10 +77,65 @@ def mercado_do_book() -> MercadoDoBook:
     return MercadoDoBook(chains={"PETR4": base, "VALE3": cadeia_de("VALE3", base)})
 
 
+def resultado_no_vencimento(
+    ganho: float | None, perda: float | None, chance: float
+) -> ExpiryResult:
+    return ExpiryResult(
+        net_premium=0.0,
+        breakevens=(),
+        max_gain=ganho,
+        max_loss=perda,
+        net_max_gain=ganho,
+        net_max_loss=perda,
+        setup_costs=0.0,
+        income_tax_at_max_gain=None,
+        probability_of_profit=chance,
+    )
+
+
+class MontadorFalso:
+    """O montador que devolve sempre o mesmo resultado no vencimento, ou levanta ``erro``."""
+
+    def __init__(
+        self, at_expiry: ExpiryResult | None = None, erro: Exception | None = None
+    ) -> None:
+        self._at_expiry = at_expiry
+        self._erro = erro
+        self.pedidos: list[BuilderRequest] = []
+
+    def templates(self) -> tuple[Template, ...]:
+        raise NotImplementedError
+
+    def suggest(self, underlying: str, template_key: str, expiry: date) -> BuilderRequest:
+        raise NotImplementedError
+
+    def analyze(self, request: BuilderRequest) -> BuilderAnalysis:
+        self.pedidos.append(request)
+        if self._erro is not None:
+            raise self._erro
+        return BuilderAnalysis(
+            name="falso",
+            underlying=request.underlying,
+            expiry=NOVEMBRO,
+            business_days=19,
+            spot=30.0,
+            source=DataSource.FIM_DE_DIA,
+            timestamp=INSTANTE,
+            legs=(),
+            stock=None,
+            curve=(),
+            at_expiry=self._at_expiry,
+            today=None,
+            today_unavailable=None,
+            warnings=(),
+        )
+
+
 def servico_do_book(
     historicos: Historicos | None = None,
     carteira: Sequence[AssetTotal] = (),
     mercado: MercadoFalso | None = None,
+    builder: StrategyBuilderUseCase | None = None,
 ) -> BookService:
     mercado = mercado or mercado_do_book()
     renda = RankIncomeOpportunitiesService(
@@ -91,4 +154,5 @@ def servico_do_book(
         CALENDARIO,
         B3_UTC_OFFSET,
         (TABELA,),
+        builder=builder,
     )

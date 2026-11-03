@@ -300,4 +300,7 @@ def test_book_do_app_usa_o_fim_de_dia_e_o_historico_da_biblioteca(tmp_path: Path
     # A fixture tem opções só no pregão de referência: IV 30 sem rank, regime pela HV.
     assert contexto["iv30"] is not None and contexto["iv_rank"] is None
     assert contexto["regime_pela_hv"] is True
+    # O montador entra na fiação do book: item executável sai com o resultado no vencimento.
+    itens = [i for familia in corpo["familias"].values() for i in familia["itens"]]
+    assert any(i["resultado"] is not None for i in itens)
     assert (tmp_path / "config" / MARKET_DIR_NAME / "vol_history.sqlite").exists()

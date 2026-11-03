@@ -11,6 +11,7 @@ from datetime import date, tzinfo
 from options_engine.application.ports.book import (
     BookEntry,
     BookFamilyView,
+    BookOutcome,
     BookView,
     UnderlyingVol,
 )
@@ -20,6 +21,7 @@ from options_engine.application.ports.inbound import (
     BuilderStockInput,
     RankIncomeCommand,
     RankIncomeOpportunitiesUseCase,
+    StrategyBuilderUseCase,
 )
 from options_engine.application.ports.outbound import (
     OptionChainPort,
@@ -70,6 +72,8 @@ class BookService:
         calendar: TradingCalendar,
         valuation_timezone: tzinfo,
         schedules: Sequence[CostSchedule],
+        *,
+        builder: StrategyBuilderUseCase | None = None,
     ) -> None:
         self._eod = end_of_day
         self._history = vol_history
@@ -78,6 +82,7 @@ class BookService:
         self._calendar = calendar
         self._tz = valuation_timezone
         self._schedules = tuple(schedules)
+        self._builder = builder
 
     def book(self, settings: BookSettings, underlyings: Sequence[str]) -> BookView:
         chains: dict[str, OptionChain] = {}
@@ -118,7 +123,7 @@ class BookService:
                 UnderlyingVol(s, None, c) if isinstance(c, str) else UnderlyingVol(s, c, None)
                 for s, c in contextos.items()
             ),
-            families={f: _view(FamilyResult.combine(*p)) for f, p in partes.items()},
+            families={f: self._view(FamilyResult.combine(*p)) for f, p in partes.items()},
             unavailable=tuple(indisponiveis),
         )
 
@@ -127,7 +132,7 @@ class BookService:
         resultado = directional_items(
             chain, view, settings, self._schedule(chain), self._expiries(chain)
         )
-        return _view(resultado)
+        return self._view(resultado)
 
     def _renda(
         self,
@@ -180,27 +185,43 @@ class BookService:
                 continue
         return dias
 
+    def _view(self, resultado: FamilyResult) -> BookFamilyView:
+        return BookFamilyView(
+            items=tuple(self._entry(i, analisar=True) for i in resultado.items),
+            references=tuple(self._entry(i, analisar=False) for i in resultado.references),
+            exclusions=resultado.exclusions,
+        )
 
-def _view(resultado: FamilyResult) -> BookFamilyView:
-    return BookFamilyView(
-        items=tuple(_entry(i) for i in resultado.items),
-        references=tuple(_entry(i) for i in resultado.references),
-        exclusions=resultado.exclusions,
-    )
-
-
-def _entry(item: BookItem) -> BookEntry:
-    acao = (
-        None
-        if item.stock is None
-        else BuilderStockInput(item.stock.side, item.stock.quantity, item.stock.origin)
-    )
-    return BookEntry(
-        item,
-        BuilderRequest(
+    def _entry(self, item: BookItem, *, analisar: bool) -> BookEntry:
+        acao = (
+            None
+            if item.stock is None
+            else BuilderStockInput(item.stock.side, item.stock.quantity, item.stock.origin)
+        )
+        pedido = BuilderRequest(
             underlying=item.underlying,
             legs=tuple(BuilderLegInput(leg.symbol, leg.side, leg.quantity) for leg in item.legs),
             stock=acao,
             template=item.template_key,
-        ),
-    )
+        )
+        # Referência não é recomendação: só o que é executável ganha resultado.
+        return BookEntry(item, pedido, self._outcome(pedido) if analisar else None)
+
+    def _outcome(self, pedido: BuilderRequest) -> BookOutcome | None:
+        if self._builder is None:
+            return None
+        try:
+            analise = self._builder.analyze(pedido)
+        except DomainError:  # série sem preço, vencimento fora do calendário...
+            return None
+        no_vencimento = analise.at_expiry
+        if no_vencimento is None:
+            return None
+        perda = no_vencimento.net_max_loss
+        # ``net_max_loss`` é o pior resultado (negativo na perda); pior caso com lucro vira perda 0,
+        # nunca o lucro como perda.
+        return BookOutcome(
+            no_vencimento.net_max_gain,
+            None if perda is None else max(0.0, -perda),
+            no_vencimento.probability_of_profit,
+        )
