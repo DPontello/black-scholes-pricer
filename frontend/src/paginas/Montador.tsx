@@ -57,6 +57,8 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
   const [simulacoes, setSimulacoes] = useState<Simulacao[]>([]);
   const [nome, setNome] = useState("");
   const pendente = useRef<PedidoAnalise | null>(doBook);
+  // O Aprender abre o Montador com `?modelo=`: o modelo entra uma vez só, quando a cadeia chega.
+  const [modeloDoEndereco, setModeloDoEndereco] = useState(busca.get("modelo"));
 
   useEffect(() => {
     setPedido(pendente.current ?? vazio(ativo));
@@ -120,6 +122,24 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
     vencimentoEscolhido !== null && blocos.includes(vencimentoEscolhido)
       ? vencimentoEscolhido
       : (mensal ?? blocos[0]);
+
+  const nomeDoModeloDoEndereco = modelos.find((m) => m.chave === modeloDoEndereco)?.nome;
+
+  useEffect(() => {
+    if (modeloDoEndereco === null || modelos.length === 0) return;
+    const conhecido = modelos.some((m) => m.chave === modeloDoEndereco);
+    if (conhecido && (ativo === null || vencimentoDoModelo === undefined)) return;
+    setModeloDoEndereco(null);
+    setBusca(
+      (atual) => {
+        const nova = new URLSearchParams(atual);
+        nova.delete("modelo");
+        return nova;
+      },
+      { replace: true },
+    );
+    if (conhecido) void escolherModelo(modeloDoEndereco);
+  }, [modeloDoEndereco, modelos, ativo, vencimentoDoModelo]);
 
   async function escolherModelo(chave: string) {
     if (ativo === null || vencimentoDoModelo === undefined) return;
@@ -245,6 +265,11 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
           Limpar
         </button>
       </div>
+      {nomeDoModeloDoEndereco !== undefined && (
+        <p className="secundario" role="status">
+          {nomeDoModeloDoEndereco}: aguardando a cadeia…
+        </p>
+      )}
       {erro !== null && (
         <p className="erro" role="alert">
           {erro}{" "}

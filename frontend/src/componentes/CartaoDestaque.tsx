@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 
 import type { Familia, ItemBook } from "../api/book";
 import { formatarData, formatarDiasUteis } from "../formatacao";
+import { Ajuda } from "./Ajuda";
 import { LinhaPernas } from "./LinhaPernas";
 
 type Props = {
@@ -13,10 +14,24 @@ type Props = {
   onVerFamilia?: () => void;
 };
 
-function Numero({ rotulo, texto, classe }: { rotulo: string; texto: string; classe?: string }) {
+// O termo do glossário que explica o critério de cada família; critério sem termo fica sem "?".
+export const TERMO_DO_CRITERIO: Record<string, string> = {
+  anual_liquido: "anualizado",
+  retorno_risco: "retorno-sobre-risco",
+  ganho_risco: "ganho-perda-maximos",
+  dist_be: "empate",
+  desconto_vol: "vol-cara-barata",
+};
+
+type NumeroProps = { rotulo: string; texto: string; termo: string; classe?: string };
+
+function Numero({ rotulo, texto, termo, classe }: NumeroProps) {
   return (
     <div className="resultado-numero">
-      <span className="secundario">{rotulo}</span> <strong className={classe}>{texto}</strong>
+      <span className="secundario">
+        {rotulo} <Ajuda id={termo} />
+      </span>{" "}
+      <strong className={classe}>{texto}</strong>
     </div>
   );
 }
@@ -56,15 +71,30 @@ export function CartaoDestaque({ familia, rotulo, item, motivoVazio, onVerFamili
           <p className="numero-grande">
             <strong className="alta">{item.criterio.texto}</strong>{" "}
             <span className="secundario">{item.criterio.rotulo}</span>
+            {TERMO_DO_CRITERIO[item.criterio.chave] !== undefined && (
+              <>
+                {" "}
+                <Ajuda id={TERMO_DO_CRITERIO[item.criterio.chave] as string} />
+              </>
+            )}
           </p>
           <div className="resultado-curto">
-            <Numero rotulo="ganha até" texto={item.resultado?.ganha_ate_texto ?? "—"} />
+            <Numero
+              rotulo="ganha até"
+              texto={item.resultado?.ganha_ate_texto ?? "—"}
+              termo="ganho-perda-maximos"
+            />
             <Numero
               rotulo="perde até"
               texto={item.resultado?.perde_ate_texto ?? "—"}
+              termo="ganho-perda-maximos"
               classe={item.resultado === null ? undefined : "baixa"}
             />
-            <Numero rotulo="chance de lucro" texto={item.resultado?.chance_texto ?? "—"} />
+            <Numero
+              rotulo="chance de lucro"
+              texto={item.resultado?.chance_texto ?? "—"}
+              termo="chance-de-lucro"
+            />
           </div>
           <p className="porque-curto">{item.porque_curto}</p>
           {item.rotulos.length > 0 && (

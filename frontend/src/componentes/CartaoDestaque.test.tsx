@@ -62,10 +62,14 @@ function montar(item: ItemBook | null = itemBova(), motivoVazio = "nada passou n
   );
 }
 
-// O número pequeno é um rótulo e um valor lado a lado; o teste lê os dois juntos.
+// O número pequeno é um rótulo e um valor lado a lado; o teste lê os dois juntos, sem o "?".
 function numero(rotulo: string): string {
-  return screen.getByText(rotulo).parentElement?.textContent ?? "";
+  const copia = screen.getByText(rotulo).closest(".resultado-numero")?.cloneNode(true) as HTMLElement;
+  copia.querySelectorAll(".ajuda").forEach((ajuda) => ajuda.remove());
+  return (copia.textContent ?? "").replace(/\s+/g, " ").trim();
 }
+
+const destino = (nome: string) => screen.getByRole("link", { name: nome }).getAttribute("href");
 
 test("mostra a família, a operação, o número grande, o resultado e o porquê curto", () => {
   montar();
@@ -74,7 +78,7 @@ test("mostra a família, a operação, o número grande, o resultado e o porquê
   expect(screen.getByText("vender").parentElement?.textContent).toBe(
     "vender 100 BOVAK168W1 a 1,12 · comprar 100 BOVA11",
   );
-  expect(screen.getByText("41,2%").parentElement?.textContent).toBe("41,2% anualizado líquido");
+  expect(screen.getByText("41,2%").parentElement?.textContent).toBe("41,2% anualizado líquido ?");
   expect(numero("ganha até")).toBe("ganha até R$ 350,11");
   expect(numero("perde até")).toBe("perde até R$ 16.433,11");
   expect(numero("chance de lucro")).toBe("chance de lucro 62,0%");
@@ -101,6 +105,24 @@ test("sem resultado os três números mostram —", () => {
   expect(numero("ganha até")).toBe("ganha até —");
   expect(numero("perde até")).toBe("perde até —");
   expect(numero("chance de lucro")).toBe("chance de lucro —");
+});
+
+test("os '?' do cartão levam ao termo de cada número", () => {
+  montar();
+  expect(destino("O que é Anualizado?")).toBe("/aprender/termos#anualizado");
+  const ganhoPerda = screen.getAllByRole("link", { name: "O que é Ganho e perda máximos?" });
+  expect(ganhoPerda.map((link) => link.getAttribute("href"))).toEqual([
+    "/aprender/termos#ganho-perda-maximos",
+    "/aprender/termos#ganho-perda-maximos",
+  ]);
+  expect(destino("O que é Chance de lucro?")).toBe("/aprender/termos#chance-de-lucro");
+});
+
+test("critério sem termo no glossário fica sem '?' no número grande", () => {
+  const criterio = { ...itemBova().criterio, chave: "custo_mensal", rotulo: "custo mensal equivalente" };
+  montar(itemBova({ criterio }));
+  expect(screen.getByText("41,2%").parentElement?.textContent).toBe("41,2% custo mensal equivalente");
+  expect(screen.getAllByRole("link", { name: /^O que é/ })).toHaveLength(3);
 });
 
 test("ganho sem limite diz sem limite", () => {

@@ -1,5 +1,6 @@
 import type { Analise } from "../api/montador";
 import { formatarDelta, formatarPreco, formatarVol } from "../formatacao";
+import { Ajuda } from "./Ajuda";
 
 function reais(v: number): string {
   return `R$ ${formatarPreco(Math.abs(v))}`;
@@ -32,10 +33,20 @@ export function frase(analise: Analise): string {
   return `${caixa}; ${pior}; ${melhor}${empate}.`;
 }
 
-function Numero({ rotulo, valor, dica }: { rotulo: string; valor: string; dica?: string }) {
+type NumeroProps = { rotulo: string; valor: string; dica?: string; termo?: string };
+
+function Numero({ rotulo, valor, dica, termo }: NumeroProps) {
   return (
     <div className="numero" title={dica}>
-      <span className="secundario">{rotulo}</span>
+      <span className="secundario">
+        {rotulo}
+        {termo !== undefined && (
+          <>
+            {" "}
+            <Ajuda id={termo} />
+          </>
+        )}
+      </span>
       <strong>{valor}</strong>
     </div>
   );
@@ -53,12 +64,17 @@ export function ResumoEstrutura({ analise }: { analise: Analise }) {
       <p className="frase">{frase(analise)}</p>
       {v !== null && (
         <div className="numeros">
-          <Numero rotulo="Ganho máximo líquido" valor={maximo(v.ganho_max_liquido)} />
+          <Numero
+            rotulo="Ganho máximo líquido"
+            valor={maximo(v.ganho_max_liquido)}
+            termo="ganho-perda-maximos"
+          />
           <Numero rotulo="Perda máxima líquida" valor={maximo(v.perda_max_liquida)} />
           <Numero
             rotulo="Custos de montagem"
             valor={`R$ ${formatarPreco(v.custos_montagem)}`}
             dica="Emolumentos da B3 e corretagem, pela tabela da ADR-0005"
+            termo="custos-ir"
           />
           <Numero
             rotulo="IR estimado no ganho máximo"
@@ -69,23 +85,31 @@ export function ResumoEstrutura({ analise }: { analise: Analise }) {
             rotulo="Chance de lucro"
             valor={formatarVol(v.probabilidade)}
             dica="Probabilidade risco-neutra no vencimento, pela vol do smile no dinheiro"
+            termo="chance-de-lucro"
           />
           <Numero rotulo="Dias úteis" valor={String(analise.dias_uteis)} />
         </div>
       )}
       {gregas !== undefined && (
         <div className="numeros">
-          <Numero rotulo="Delta" valor={formatarDelta(gregas.delta)} dica="Em ações equivalentes" />
-          <Numero rotulo="Gamma" valor={formatarDelta(gregas.gamma)} />
+          <Numero
+            rotulo="Delta"
+            valor={formatarDelta(gregas.delta)}
+            dica="Em ações equivalentes"
+            termo="delta"
+          />
+          <Numero rotulo="Gamma" valor={formatarDelta(gregas.gamma)} termo="gamma" />
           <Numero
             rotulo="Theta por dia útil"
             valor={`R$ ${formatarPreco(gregas.theta_dia_util)}`}
             dica="Quanto a estrutura ganha ou perde de um dia útil para o outro, com o resto parado"
+            termo="theta"
           />
           <Numero
             rotulo="Vega por ponto"
             valor={`R$ ${formatarPreco(gregas.vega_ponto)}`}
             dica="Quanto ganha ou perde se a volatilidade subir 1 ponto"
+            termo="vega"
           />
         </div>
       )}

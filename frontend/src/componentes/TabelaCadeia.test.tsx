@@ -1,8 +1,15 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { render as renderBase, fireEvent, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { expect, test, vi } from "vitest";
 
 import type { Cadeia, Serie } from "../api/aoVivo";
 import { TabelaCadeia } from "./TabelaCadeia";
+
+// Os "?" dos rótulos são links: o componente precisa de um roteador em volta.
+function render(ui: ReactElement) {
+  return renderBase(ui, { wrapper: MemoryRouter });
+}
 
 function serie(parcial: Partial<Serie> & { ticker: string; strike: number }): Serie {
   return {
@@ -147,4 +154,16 @@ test("com onEscolherSerie, cada lado ganha o + que põe a série no montador", (
 test("sem onEscolherSerie, a cadeia não tem os botões de +", () => {
   render(<TabelaCadeia ativo="PETR4" cadeia={CADEIA} indisponivel={null} onVencimentos={nada} />);
   expect(screen.queryByRole("button", { name: /no montador/ })).toBeNull();
+});
+
+test("IV e Delta têm um '?' cada, só no lado das calls, para não repetir", () => {
+  render(<TabelaCadeia ativo="PETR4" cadeia={CADEIA} indisponivel={null} onVencimentos={nada} />);
+  const ajudas = screen.getAllByRole("link", { name: /^O que é/ });
+  expect(ajudas.map((link) => [link.getAttribute("aria-label"), link.getAttribute("href")])).toEqual([
+    ["O que é IV (vol implícita)?", "/aprender/termos#iv"],
+    ["O que é Delta?", "/aprender/termos#delta"],
+  ]);
+  const cabecalhos = screen.getAllByRole("columnheader").map((c) => c.textContent);
+  expect(cabecalhos.filter((c) => c === "IV ?")).toHaveLength(1);
+  expect(cabecalhos.filter((c) => c === "IV")).toHaveLength(1);
 });

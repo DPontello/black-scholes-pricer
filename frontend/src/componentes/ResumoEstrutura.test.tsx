@@ -1,8 +1,15 @@
-import { render, screen } from "@testing-library/react";
+import { render as renderBase, screen } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router-dom";
 import { expect, test } from "vitest";
 
 import { analiseCoberta } from "../testes/analise";
 import { frase, ResumoEstrutura } from "./ResumoEstrutura";
+
+// Os "?" dos rótulos são links: o componente precisa de um roteador em volta.
+function render(ui: ReactElement) {
+  return renderBase(ui, { wrapper: MemoryRouter });
+}
 
 test("a venda coberta em português simples", () => {
   expect(frase(analiseCoberta())).toBe(
@@ -44,4 +51,20 @@ test("melhor caso negativo diz que ainda perde, e zero diz que empata", () => {
   );
   const zero = analiseCoberta({ no_vencimento: { ...base, ganho_max: 0, breakevens: [] } });
   expect(frase(zero)).toContain("no melhor caso empata");
+});
+
+test("os rótulos com termo no glossário ganham um '?', sem repetir o mesmo termo lado a lado", () => {
+  render(<ResumoEstrutura analise={analiseCoberta()} />);
+  const destinos = screen
+    .getAllByRole("link", { name: /^O que é/ })
+    .map((link) => link.getAttribute("href")?.replace("/aprender/termos#", ""));
+  expect(destinos).toEqual([
+    "ganho-perda-maximos",
+    "custos-ir",
+    "chance-de-lucro",
+    "delta",
+    "gamma",
+    "theta",
+    "vega",
+  ]);
 });

@@ -237,3 +237,97 @@ test("o pedido que vem do book abre direto e é analisado pela cadeia do momento
   await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1));
   expect(corpos(fetch, "/api/montador/analise")[0]).toEqual(SUGESTAO);
 });
+
+// O Aprender abre o Montador só com o modelo: o ativo é o primeiro da lista do perfil.
+const COTACAO_PETR4 = {
+  ativo: "PETR4",
+  ultimo: 52.51,
+  compra: 52.5,
+  venda: 52.52,
+  fechamento_anterior: 52.0,
+  variacao_pct: 0.0098,
+  negocios: 1000,
+  volume: 1e6,
+  hora: "2026-10-28T15:00:00-03:00",
+  fonte: "ao_vivo" as const,
+  motivo: null,
+};
+
+function SondaEndereco() {
+  const { pathname, search } = useLocation();
+  return <span data-testid="endereco">{pathname + search}</span>;
+}
+
+// A análise espera a digitação parar (300 ms): com a máquina carregada, o 1 s padrão é pouco.
+const FOLGA = { timeout: 3000 };
+
+function comModeloNoEndereco(endereco: string, cadeia: Cadeia | null) {
+  const aoVivo = { ...AO_VIVO, cotacoes: [COTACAO_PETR4], cadeia };
+  const vista = render(
+    <MemoryRouter initialEntries={[endereco]}>
+      <Routes>
+        <Route path="/montador" element={<Montador aoVivo={aoVivo} seguirCadeia={vi.fn()} />} />
+      </Routes>
+      <SondaEndereco />
+    </MemoryRouter>,
+  );
+  return (nova: Cadeia) =>
+    vista.rerender(
+      <MemoryRouter initialEntries={[endereco]}>
+        <Routes>
+          <Route
+            path="/montador"
+            element={<Montador aoVivo={{ ...aoVivo, cadeia: nova }} seguirCadeia={vi.fn()} />}
+          />
+        </Routes>
+        <SondaEndereco />
+      </MemoryRouter>,
+    );
+}
+
+function sugestoes(fetch: ReturnType<typeof simularFetch>): string[] {
+  return fetch.mock.calls.map(([u]) => String(u)).filter((u) => u.includes("/api/montador/sugestao"));
+}
+
+test("?modelo= espera a cadeia ('aguardando a cadeia') e então monta o modelo, uma vez só", async () => {
+  const fetch = api({ corpo: analiseCoberta() });
+  const chegou = comModeloNoEndereco("/montador?modelo=venda_coberta", null);
+  expect((await screen.findByRole("status")).textContent).toBe("venda coberta: aguardando a cadeia…");
+  expect(sugestoes(fetch)).toEqual([]);
+  chegou(CADEIA);
+  await waitFor(() => expect(sugestoes(fetch)).toHaveLength(1), FOLGA);
+  expect(sugestoes(fetch)[0]).toContain("sugestao?ativo=PETR4&modelo=venda_coberta&vencimento=2026-11-19");
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").at(-1)).toEqual(SUGESTAO), FOLGA);
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.getByTestId("endereco").textContent).toBe("/montador");
+  chegou({ ...CADEIA, hora: "2026-10-28T18:05:00-03:00" });
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBeGreaterThan(1), FOLGA);
+  expect(sugestoes(fetch)).toHaveLength(1);
+});
+
+test("?modelo= que não cabe na cadeia mostra o erro de hoje, e o resto da tela segue", async () => {
+  simularFetch((url) => {
+    if (url === "/api/montador/modelos") return { corpo: MODELOS };
+    if (url === "/api/simulacoes") return { corpo: { simulacoes: [], ilegiveis: [] } };
+    if (url.startsWith("/api/montador/sugestao"))
+      return {
+        status: 422,
+        corpo: { erro: "InvalidStrategyError", mensagem: "faltam strikes para montar o modelo" },
+      };
+    return undefined;
+  });
+  comModeloNoEndereco("/montador?modelo=venda_coberta", CADEIA);
+  expect((await screen.findByRole("alert", {}, FOLGA)).textContent).toContain("faltam strikes para montar o modelo");
+  expect(screen.queryByRole("status")).toBeNull();
+  expect((screen.getByLabelText("Modelo pronto") as HTMLSelectElement).disabled).toBe(false);
+});
+
+test("?modelo= desconhecido é ignorado", async () => {
+  const fetch = api({ corpo: analiseCoberta() });
+  comModeloNoEndereco("/montador?modelo=xyz", CADEIA);
+  await screen.findByRole("option", { name: "venda coberta" });
+  await waitFor(() => expect(screen.getByTestId("endereco").textContent).toBe("/montador"), FOLGA);
+  expect(sugestoes(fetch)).toEqual([]);
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+});

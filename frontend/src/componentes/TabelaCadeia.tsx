@@ -9,6 +9,7 @@ import {
   formatarPreco,
   formatarVol,
 } from "../formatacao";
+import { Ajuda } from "./Ajuda";
 
 type Props = {
   ativo: string | null;
@@ -19,6 +20,7 @@ type Props = {
 };
 
 const FONTES = { ao_vivo: "Ao vivo (Tryd)", atrasado: "Atrasado", fim_de_dia: "Fim de dia (B3)" };
+const AJUDA_DA_COLUNA: Record<string, string> = { IV: "iv", Delta: "delta" };
 
 type Linha = { strike: number; call: Serie | undefined; put: Serie | undefined };
 
@@ -205,6 +207,12 @@ export function TabelaCadeia({
               {["Compra", "Venda", "Último", "IV", "Delta", "Neg."].map((c) => (
                 <th key={`call-${c}`} className="num">
                   {c}
+                  {AJUDA_DA_COLUNA[c] !== undefined && (
+                    <>
+                      {" "}
+                      <Ajuda id={AJUDA_DA_COLUNA[c] as string} />
+                    </>
+                  )}
                 </th>
               ))}
               <th className="num">Strike</th>

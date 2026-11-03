@@ -12,6 +12,7 @@ import { ErroApi, type Perfil } from "../api/cliente";
 import { CartaoDestaque } from "../componentes/CartaoDestaque";
 import { EditorPreset } from "../componentes/EditorPreset";
 import { motivoVazio, TabelaFamilia } from "../componentes/TabelaFamilia";
+import { Termo } from "../componentes/Termo";
 import { formatarData, formatarVol } from "../formatacao";
 
 const FAMILIAS: [Familia, string][] = [
@@ -157,26 +158,29 @@ function dicaVol(c: ContextoVol): string {
 function EtiquetasVol({ contextos }: { contextos: ContextoVol[] }) {
   if (contextos.length === 0) return null;
   return (
-    <ul className="etiquetas-vol" aria-label="Vol de cada ativo">
-      {contextos.map((c) =>
-        c.motivo !== null ? (
-          <li className="etiqueta-vol secundario" key={c.ativo}>
-            {comAtivo(c.ativo, c.motivo, " · ")}
-          </li>
-        ) : (
-          <li className="etiqueta-vol" key={c.ativo} title={dicaVol(c)}>
-            {c.ativo}
-            {c.regime !== null && (
-              <>
-                {" "}
-                · vol <strong>{REGIME[c.regime]}</strong>
-                {c.regime_pela_hv && " (pela HV)"}
-              </>
-            )}
-          </li>
-        ),
-      )}
-    </ul>
+    <div className="vol-dos-ativos">
+      <ul className="etiquetas-vol" aria-label="Vol de cada ativo">
+        {contextos.map((c) =>
+          c.motivo !== null ? (
+            <li className="etiqueta-vol secundario" key={c.ativo}>
+              {comAtivo(c.ativo, c.motivo, " · ")}
+            </li>
+          ) : (
+            <li className="etiqueta-vol" key={c.ativo} title={dicaVol(c)}>
+              {c.ativo}
+              {c.regime !== null && (
+                <>
+                  {" "}
+                  · vol <strong>{REGIME[c.regime]}</strong>
+                  {c.regime_pela_hv && " (pela HV)"}
+                </>
+              )}
+            </li>
+          ),
+        )}
+      </ul>
+      <Termo id="vol-cara-barata">o que é vol barata ou cara?</Termo>
+    </div>
   );
 }
 

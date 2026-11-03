@@ -16,6 +16,7 @@ import {
 } from "../api/carteira";
 import { ErroApi } from "../api/cliente";
 import { AdicionarAcoes } from "../componentes/AdicionarAcoes";
+import { Ajuda } from "../componentes/Ajuda";
 import { DialogoEncerrar } from "../componentes/DialogoEncerrar";
 import { DialogoExercicio } from "../componentes/DialogoExercicio";
 import { FormOperacao } from "../componentes/FormOperacao";
@@ -74,7 +75,9 @@ function Pernas({ operacao }: { operacao: OperacaoCarteira }) {
           <th>Lado</th>
           <th className="num">Quantidade</th>
           <th className="num">Preço médio</th>
-          <th className="num">Preço de zerar</th>
+          <th className="num">
+            Preço de zerar <Ajuda id="preco-de-zerar" />
+          </th>
           <th className="num">Não realizado</th>
           <th className="num">Realizado</th>
         </tr>
@@ -156,7 +159,9 @@ function Totais({ carteira }: { carteira: CarteiraDados }) {
           <th>Lado</th>
           <th className="num">Quantidade</th>
           <th className="num">Preço médio</th>
-          <th className="num">Preço de zerar</th>
+          <th className="num">
+            Preço de zerar <Ajuda id="preco-de-zerar" />
+          </th>
           <th className="num">Não realizado</th>
         </tr>
       </thead>

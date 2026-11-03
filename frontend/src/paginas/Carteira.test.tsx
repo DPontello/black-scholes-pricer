@@ -52,6 +52,15 @@ test("perna sem preço de zerar mostra o teórico rotulado e a operação fica s
   expect(screen.getByText("preços de zerar ao vivo (Tryd)")).toBeTruthy();
 });
 
+test("o cabeçalho Preço de zerar tem o '?' que leva ao termo", async () => {
+  api();
+  montar();
+  fireEvent.click(await screen.findByRole("button", { name: /trava de alta/ }));
+  const ajudas = screen.getAllByRole("link", { name: "O que é Preço de zerar?" });
+  expect(ajudas.length).toBeGreaterThan(0);
+  for (const ajuda of ajudas) expect(ajuda.getAttribute("href")).toBe("/aprender/termos#preco-de-zerar");
+});
+
 test("o total por ativo vem por ativo e o total executável deixa de fora quem não tem preço", async () => {
   api();
   montar();

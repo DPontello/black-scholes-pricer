@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import type { FamiliaBook, ItemBook } from "../api/book";
 import { formatarData, formatarDiasUteis, formatarPreco } from "../formatacao";
+import { Ajuda } from "./Ajuda";
 import { LinhaPernas } from "./LinhaPernas";
 
 const QUALIDADE = { executavel: "executável", indicativo: "indicativo", teorico: "teórico" };
@@ -32,9 +33,15 @@ function Itens({ itens }: { itens: ItemBook[] }) {
           <th>Operação</th>
           <th>Vence</th>
           <th>Critério</th>
-          <th className="num">Ganha até</th>
-          <th className="num">Perde até</th>
-          <th className="num">Chance de lucro</th>
+          <th className="num">
+            Ganha até <Ajuda id="ganho-perda-maximos" />
+          </th>
+          <th className="num">
+            Perde até <Ajuda id="ganho-perda-maximos" />
+          </th>
+          <th className="num">
+            Chance de lucro <Ajuda id="chance-de-lucro" />
+          </th>
           <th />
         </tr>
       </thead>

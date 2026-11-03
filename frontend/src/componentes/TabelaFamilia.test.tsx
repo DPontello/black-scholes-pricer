@@ -52,10 +52,16 @@ test("uma linha por item com operação, vencimento, critério e resultado", () 
     "Operação",
     "Vence",
     "Critério",
-    "Ganha até",
-    "Perde até",
-    "Chance de lucro",
+    "Ganha até ?",
+    "Perde até ?",
+    "Chance de lucro ?",
     "",
+  ]);
+  const ajudas = within(linhas[0]!).getAllByRole("link", { name: /^O que é/ });
+  expect(ajudas.map((link) => link.getAttribute("href"))).toEqual([
+    "/aprender/termos#ganho-perda-maximos",
+    "/aprender/termos#ganho-perda-maximos",
+    "/aprender/termos#chance-de-lucro",
   ]);
   expect(celulas(linhas[1]!)).toEqual([
     "▸ venda coberta PETR4 call 32,00",

@@ -134,6 +134,13 @@ test("a vol vira etiquetas com palavras", async () => {
   expect(etiquetas[5]!.title).toBe("");
 });
 
+test("ao lado das etiquetas, o link explica vol barata ou cara", async () => {
+  api();
+  montar();
+  const link = await screen.findByRole("link", { name: "o que é vol barata ou cara?" });
+  expect(link.getAttribute("href")).toBe("/aprender/termos#vol-cara-barata");
+});
+
 test("um cartão por família, com o primeiro item", async () => {
   const base = bookFalso();
   api(
