@@ -181,6 +181,7 @@ export function FormOperacao({ inicial, onRegistrada, onCancelar }: Props) {
             <tr key={i}>
               <td>
                 <input
+                  className="campo-ticker"
                   aria-label={`Ticker da perna ${i + 1}`}
                   value={perna.ticker}
                   onChange={(e) => mudarPerna(i, { ticker: e.target.value.toUpperCase() })}

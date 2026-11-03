@@ -159,6 +159,19 @@ test("salvar simulação manda o nome e o pedido", async () => {
   expect(corpos(fetch, "/api/simulacoes")[0]).toEqual({ nome: "coberta nov", ...SUGESTAO });
 });
 
+test("salvar e registrar ficam logo abaixo das pernas, antes do resumo e do gráfico", async () => {
+  api({ corpo: analiseCoberta() });
+  montar();
+  fireEvent.change(await screen.findByLabelText("Modelo pronto"), {
+    target: { value: "venda_coberta" },
+  });
+  const grafico = await screen.findByRole("img", { name: /Resultado de/ });
+  for (const nome of ["Salvar simulação", "Registrar como executada"]) {
+    const botao = screen.getByRole("button", { name: nome });
+    expect(botao.compareDocumentPosition(grafico) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+});
+
 function Sonda() {
   const local = useLocation();
   return <pre data-testid="estado">{JSON.stringify(local.state)}</pre>;

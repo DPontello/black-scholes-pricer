@@ -15,13 +15,42 @@ import { formatarData, formatarInstante } from "../formatacao";
 // Download à mão: os termos da B3 proíbem coleta automática (ADR-0006).
 const LINK_COTAHIST =
   "https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/historico/mercado-a-vista/cotacoes-historicas/";
-const LINK_BOLETIM =
-  "https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/consultas/boletim-diario/";
+const LINK_CADASTRO =
+  "https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/historico/boletins-diarios/pesquisa-por-pregao/";
 
 const TIPOS: Record<ArquivoB3["tipo"], string> = {
   cotahist: "COTAHIST (histórico)",
   cadastro: "Cadastro de Instrumentos",
 };
+
+type Pregao = { data: string; diasUteis: number | null; velho: boolean };
+
+// O estado vem escrito ("em dia", "hora de baixar"): a cor só reforça.
+function EstadoDoPasso({ pregao, motivo }: { pregao: Pregao | null; motivo: string | null }) {
+  if (pregao === null) {
+    return motivo !== null ? (
+      <p>{motivo}</p>
+    ) : (
+      <p>
+        <strong className="estado-ausente">ainda não baixado</strong>
+      </p>
+    );
+  }
+  const quando = `pregão de ${formatarData(pregao.data)}`;
+  if (pregao.diasUteis === null) return <p>{quando}</p>;
+  if (pregao.velho)
+    return (
+      <p>
+        <strong className="estado-velho">hora de baixar</strong> · {quando}, há {pregao.diasUteis}{" "}
+        dias úteis
+      </p>
+    );
+  return (
+    <p>
+      <strong className="estado-em-dia">em dia</strong> · {quando}
+    </p>
+  );
+}
 
 export function ArquivosB3() {
   const [arquivos, setArquivos] = useState<ArquivoB3[]>([]);
@@ -75,10 +104,58 @@ export function ArquivosB3() {
   }
 
   const cadastro = status?.cadastro ?? null;
+  const cotahist = status?.cotahist ?? null;
+  const anoCorrente = new Date().getFullYear();
 
   return (
     <section className="pagina-arquivos">
       <h1>Arquivos da B3</h1>
+      <div className="rotina-semana">
+        <h2>Rotina da semana</h2>
+        <ol>
+          <li>
+            <a href={LINK_CADASTRO} target="_blank" rel="noreferrer">
+              Cadastro de Instrumentos — Pesquisa por pregão
+            </a>
+            <p className="secundario">
+              Escolha o último pregão e o Cadastro de Instrumentos. O arquivo se chama{" "}
+              <strong>pesquisa-pregao.zip</strong>.
+            </p>
+            {status !== null && (
+              <EstadoDoPasso
+                pregao={
+                  cadastro === null
+                    ? null
+                    : { data: cadastro.data, diasUteis: cadastro.dias_uteis, velho: cadastro.velho }
+                }
+                motivo={status.cadastro_motivo}
+              />
+            )}
+          </li>
+          <li>
+            <a href={LINK_COTAHIST} target="_blank" rel="noreferrer">
+              COTAHIST anual — Cotações Históricas
+            </a>
+            <p className="secundario">
+              Baixe a série anual do ano corrente. O arquivo se chama{" "}
+              <strong>{`COTAHIST_A${anoCorrente}.zip`}</strong>.
+            </p>
+            {status !== null && (
+              <EstadoDoPasso
+                pregao={
+                  cotahist === null
+                    ? null
+                    : { data: cotahist.ate, diasUteis: cotahist.dias_uteis, velho: cotahist.velho }
+                }
+                motivo={null}
+              />
+            )}
+          </li>
+        </ol>
+        <p className="secundario">
+          O diário não é preciso: o anual baixado no dia já traz o último pregão.
+        </p>
+      </div>
       <p className="secundario">
         A cadeia de opções precisa do Cadastro de Instrumentos (séries e estilo de exercício). O
         COTAHIST é opcional: serve para o fim de dia, quando o Tryd está fechado, e para o
@@ -102,11 +179,6 @@ export function ArquivosB3() {
       {cadastro?.velho === true && (
         <p className="aviso" role="status">
           Cadastro com {cadastro.dias_uteis} dias úteis: séries novas podem estar faltando
-        </p>
-      )}
-      {status !== null && status.cadastro === null && status.cadastro_motivo !== null && (
-        <p className="aviso" role="status">
-          {status.cadastro_motivo}
         </p>
       )}
       <div className="area-soltar" onDragOver={(evento) => evento.preventDefault()} onDrop={soltar}>
@@ -153,24 +225,6 @@ export function ArquivosB3() {
         </tbody>
       </table>
       {arquivos.length === 0 && <p className="secundario">Nenhum arquivo importado ainda.</p>}
-      <h2>Onde baixar</h2>
-      <ul>
-        <li>
-          <a href={LINK_COTAHIST} target="_blank" rel="noreferrer">
-            COTAHIST — Cotações Históricas da B3
-          </a>{" "}
-          <span className="secundario">(o anual, e o diário do último pregão)</span>
-        </li>
-        <li>
-          <a href={LINK_BOLETIM} target="_blank" rel="noreferrer">
-            Cadastro de Instrumentos — Boletim Diário da B3
-          </a>{" "}
-          <span className="secundario">
-            (em "Pesquisa por pregão", o Cadastro de Instrumentos do mesmo pregão; o
-            pesquisa-pregao.zip entra como veio)
-          </span>
-        </li>
-      </ul>
     </section>
   );
 }

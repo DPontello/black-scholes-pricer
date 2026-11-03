@@ -5,7 +5,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -14,10 +14,12 @@ from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.outbound.b3_calendar import StaticHolidayCalendar
 from options_engine.adapters.outbound.b3files.library import B3FileLibrary
 from options_engine.adapters.outbound.b3files.loaded import LibraryLoader
+from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.application.ports.outbound import CadastroFreshness
 from options_engine.config.web_app import (
     MARKET_DIR_NAME,
     _close,
+    _cotahist_age,
     _cotahist_range,
     _freshness,
     _lifespan,
@@ -165,6 +167,29 @@ def test_faixa_de_pregoes_dos_cotahist_importados(tmp_path: Path) -> None:
     inicio, fim = _cotahist_range(biblioteca(tmp_path / "cheia")) or (None, None)
     assert fim == REFERENCE_SESSION
     assert isinstance(inicio, date) and inicio < fim
+
+
+def _hoje(ano: int, mes: int, dia: int) -> FixedClock:
+    return FixedClock(datetime(ano, mes, dia, 15, 0, tzinfo=UTC))
+
+
+def test_idade_do_cotahist_em_dias_uteis(tmp_path: Path) -> None:
+    lib = biblioteca(tmp_path)
+    # 23/10 (sexta) a 03/11: 23 e 26 a 30/10 contam (intervalo meio-aberto); 02/11 é feriado.
+    assert _cotahist_age(lib, CALENDARIO, _hoje(2026, 11, 3)) == 6
+
+
+def test_idade_do_cotahist_sem_arquivo_e_nula(tmp_path: Path) -> None:
+    vazia = B3FileLibrary(tmp_path / "vazia", relogio())
+    assert _cotahist_age(vazia, CALENDARIO, relogio()) is None
+
+
+def test_idade_do_cotahist_com_pregao_no_futuro_e_zero(tmp_path: Path) -> None:
+    assert _cotahist_age(biblioteca(tmp_path), CALENDARIO, _hoje(2026, 10, 20)) == 0
+
+
+def test_idade_do_cotahist_fora_do_calendario_e_nula(tmp_path: Path) -> None:
+    assert _cotahist_age(biblioteca(tmp_path), CALENDARIO, _hoje(2028, 6, 1)) is None
 
 
 def test_a_biblioteca_do_app_mora_em_config_dir_mercado(tmp_path: Path) -> None:

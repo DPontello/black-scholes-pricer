@@ -267,19 +267,6 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
         </div>
         <div className="montador-resultado">
           <TabelaPernas pedido={pedido} analise={analise} onMudar={setPedido} />
-          {analise !== null && (
-            <>
-              <h2>
-                {analise.nome}{" "}
-                <span className="secundario">
-                  vence {formatarData(analise.vencimento)} · preços {FONTES[analise.fonte]}
-                </span>
-              </h2>
-              <ResumoEstrutura analise={analise} />
-              <GraficoPayoff analise={analise} />
-              {analise.hoje !== null && <GradeCenarios grade={analise.hoje.grade} />}
-            </>
-          )}
           <div className="acoes-montador">
             <input
               aria-label="Nome da simulação"
@@ -321,6 +308,19 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
                 ))}
               </ul>
             </details>
+          )}
+          {analise !== null && (
+            <>
+              <h2>
+                {analise.nome}{" "}
+                <span className="secundario">
+                  vence {formatarData(analise.vencimento)} · preços {FONTES[analise.fonte]}
+                </span>
+              </h2>
+              <ResumoEstrutura analise={analise} />
+              <GraficoPayoff analise={analise} />
+              {analise.hoje !== null && <GradeCenarios grade={analise.hoje.grade} />}
+            </>
           )}
         </div>
       </div>

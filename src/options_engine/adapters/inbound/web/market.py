@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketState
 
 from options_engine.adapters.inbound.web.portfolio import Closes, carteira_atual
+from options_engine.adapters.outbound.b3files.library import STALE_CADASTRO_BUSINESS_DAYS
 from options_engine.application.ports.inbound import (
     ChainView,
     MarketAnalysis,
@@ -147,6 +148,8 @@ class CadastroOut(BaseModel):
 class FaixaOut(BaseModel):
     de: str
     ate: str
+    dias_uteis: int | None
+    velho: bool
 
 
 class StatusOut(BaseModel):
@@ -222,6 +225,7 @@ class _PedidoCadeia(BaseModel):
 def _status_out(status: MarketStatus) -> StatusOut:
     cadastro = status.cadastro
     faixa = status.cotahist_range
+    idade = status.cotahist_business_days
     return StatusOut(
         fonte=status.source.value,
         cadastro=None
@@ -234,7 +238,12 @@ def _status_out(status: MarketStatus) -> StatusOut:
         cadastro_motivo=status.cadastro_reason,
         cotahist=None
         if faixa is None
-        else FaixaOut(de=faixa[0].isoformat(), ate=faixa[1].isoformat()),
+        else FaixaOut(
+            de=faixa[0].isoformat(),
+            ate=faixa[1].isoformat(),
+            dias_uteis=idade,
+            velho=idade is not None and idade > STALE_CADASTRO_BUSINESS_DAYS,
+        ),
     )
 
 
