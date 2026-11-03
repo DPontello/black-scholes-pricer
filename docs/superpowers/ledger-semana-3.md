@@ -121,3 +121,10 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - `componentes/GraficoSmile.tsx`: `GraficoSmile` (IV de cada série contra o strike, com o spot marcado) e `GraficoTermo` (IV no dinheiro contra os dias úteis).
 - Refactor: `componentes/useGrafico.ts` concentra o ciclo do ECharts (iniciar, redimensionar, descartar, redesenhar), usado pelos gráficos novos e pelo `GraficoPayoff`.
 - Checagens: `tsc` e os testes do Vitest dos componentes novos e do `GraficoPayoff`.
+
+## 2026-11-02: Task 13 — ponta a ponta e documentação
+
+- Gate completo da semana: 5096 testes Python (cobertura 98,33%), mypy strict, ruff, ruff format, import-linter; frontend com 92 testes, `tsc` e `build`.
+- Ponta a ponta com a fixture sintética pelo app inteiro (`--sem-ponte`, APPDATA temporário): o book de PETR4 do pregão de 23/10 com Renda, Volatilidade e Proteção (Direcionais sem visão vazia: sem IV rank, a regra exige o rank), uma trava de alta com put aberta no montador com o mesmo resultado do book (ganho líquido de R$ 17,78 sobre o risco de R$ 79, os 22,5% do critério), e a aba Análise com os cartões, o smile e a estrutura a termo.
+- **Não feito, depende do autor:** o ponta a ponta com os arquivos reais (anual de 2026, diário e Cadastro de 28/10), que não estavam neste PC, inclusive o vínculo das séries vencidas de PETR3/PETR4 pelo ESPECI e o tempo da primeira leitura do anual; e o teste ao vivo com o Tryd. Lista no HANDOFF de 02/11, seção 6, itens 6 e 7.
+- Documentação: HANDOFF de 02/11, ROADMAP e README.

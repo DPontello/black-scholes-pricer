@@ -18,9 +18,13 @@
 >   `feat/app-semana-2`, com o ponta a ponta nos arquivos reais. Falta o teste ao vivo no
 >   pregão (o P&L da carteira pelo Tryd). Decisões no
 >   [ledger](superpowers/ledger-semana-2.md).
-> - **Semana 3 (book e análise):** planejada em 2026-11-02, [spec](superpowers/specs/2026-11-02-semana-3-book-analise-design.md)
->   e [plano](superpowers/plans/2026-11-02-app-semana-3-book-analise.md) (13 tarefas: histórico de
->   IV, book das quatro famílias e a aba Análise no Mercado).
+> - **Semana 3 (book e análise, 2026-11-02):** as 13 tarefas do
+>   [plano](superpowers/plans/2026-11-02-app-semana-3-book-analise.md) feitas na branch
+>   `feat/app-semana-3`: histórico de IV de 30 dias úteis e HV 21 pelos COTAHIST (com cache),
+>   IV rank, percentil e regime de vol; o book das quatro famílias (Renda, Volatilidade,
+>   Direcionais com e sem visão, Proteção) com presets salvos no perfil e "abrir no montador";
+>   a aba Análise no Mercado. Falta o ponta a ponta com os arquivos reais da B3 (não estavam neste
+>   PC) e o teste ao vivo no pregão. Decisões no [ledger](superpowers/ledger-semana-3.md).
 > - **Semanas 4 e 5:** alertas, proventos, IR e instalador; teste com a mãe. Os planos ainda não
 >   foram escritos.
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
