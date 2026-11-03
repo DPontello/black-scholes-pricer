@@ -17,7 +17,9 @@ from options_engine.domain.model.errors import DomainError
 
 __all__ = ["DownloadsImporter", "ImportacaoAutomatica"]
 
-_NOME_B3: Final = re.compile(r"^(COTAHIST.*\.(zip|txt)|InstrumentsConsolidated.*\.csv)$", re.I)
+_NOME_B3: Final = re.compile(
+    r"^(COTAHIST.*\.(zip|txt)|InstrumentsConsolidated.*\.csv|pesquisa-pregao.*\.zip)$", re.I
+)
 _HISTORICO: Final = 20
 _TIPOS: Final = {"cotahist": "COTAHIST", "cadastro": "Cadastro de Instrumentos"}
 

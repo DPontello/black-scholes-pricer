@@ -219,7 +219,8 @@ python -m options_engine app                                  # abre a janela; -
 Sem o Tryd (ou sem a ponte), o app abre do mesmo jeito e mostra o fim de dia dos
 arquivos da B3 importados em **Arquivos B3**, com o rótulo "Fim de dia (B3)". A
 configuração fica em `%APPDATA%\PainelOpcoes` (Windows) ou `~/.config/painel-opcoes`.
-A cadeia ao vivo precisa só do Cadastro de Instrumentos; o COTAHIST é opcional (fim de dia e
+A cadeia ao vivo precisa só do Cadastro de Instrumentos (o CSV ou o `pesquisa-pregao.zip` da
+"Pesquisa por pregão" do Boletim Diário, como veio); o COTAHIST é opcional (fim de dia e
 histórico). Os arquivos da B3 baixados para a pasta Downloads entram sozinhos
 (`--sem-downloads` desliga).
 No **Montador**, a estrutura sai de um dos 18 modelos prontos ou perna a perna, pela

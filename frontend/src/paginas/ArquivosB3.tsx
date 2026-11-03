@@ -110,7 +110,10 @@ export function ArquivosB3() {
         </p>
       )}
       <div className="area-soltar" onDragOver={(evento) => evento.preventDefault()} onDrop={soltar}>
-        <p>Arraste aqui o COTAHIST (.zip ou .txt) ou o Cadastro de Instrumentos (.csv).</p>
+        <p>
+          Arraste aqui o COTAHIST (.zip ou .txt) ou o Cadastro de Instrumentos (.csv ou o
+          pesquisa-pregao.zip).
+        </p>
         <label className="botao-arquivo">
           Escolher arquivo
           <input
@@ -163,7 +166,8 @@ export function ArquivosB3() {
             Cadastro de Instrumentos — Boletim Diário da B3
           </a>{" "}
           <span className="secundario">
-            (em "Pesquisa por pregão", o Cadastro de Instrumentos do mesmo pregão)
+            (em "Pesquisa por pregão", o Cadastro de Instrumentos do mesmo pregão; o
+            pesquisa-pregao.zip entra como veio)
           </span>
         </li>
       </ul>
