@@ -1,6 +1,9 @@
 import { Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
 
+import { Comece } from "../aprender/Comece";
 import { Operacoes } from "../aprender/Operacoes";
+import { Telas } from "../aprender/Telas";
+import { Termos } from "../aprender/Termos";
 
 const SUB_ABAS: ReadonlyArray<{ caminho: string; nome: string }> = [
   { caminho: "/aprender/comece", nome: "Comece aqui" },
@@ -29,22 +32,13 @@ export function Aprender({ comPerfil }: Props) {
       </nav>
       <Routes>
         <Route index element={<Navigate to="/aprender/comece" replace />} />
-        <Route path="comece" element={<Provisorio titulo="Comece aqui" />} />
+        <Route path="comece" element={<Comece comPerfil={comPerfil} />} />
         <Route path="operacoes" element={<Operacoes comPerfil={comPerfil} />} />
         <Route path="operacoes/:modelo" element={<Operacoes comPerfil={comPerfil} />} />
-        <Route path="termos" element={<Provisorio titulo="Termos" />} />
-        <Route path="telas" element={<Provisorio titulo="Telas do app" />} />
+        <Route path="termos" element={<Termos />} />
+        <Route path="telas" element={<Telas />} />
         <Route path="*" element={<Navigate to="/aprender/comece" replace />} />
       </Routes>
     </section>
-  );
-}
-
-function Provisorio({ titulo }: { titulo: string }) {
-  return (
-    <div className="corpo-aprender">
-      <h2>{titulo}</h2>
-      <p className="secundario">Esta parte ainda está sendo escrita.</p>
-    </div>
   );
 }

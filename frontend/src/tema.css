@@ -485,6 +485,138 @@ button.link {
   margin-left: 0.5rem;
 }
 
+/* Termo do glossário no meio do texto: sublinhado pontilhado, para não parecer um botão. */
+a.termo {
+  color: inherit;
+  text-decoration: underline dotted var(--compra);
+  text-underline-offset: 0.2em;
+}
+
+a.termo:hover {
+  color: var(--compra);
+}
+
+/* O "?" ao lado de um rótulo: pequeno, para não poluir a tela. */
+a.ajuda {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1px solid var(--borda);
+  border-radius: 50%;
+  color: var(--texto-secundario);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  vertical-align: middle;
+}
+
+a.ajuda:hover,
+a.ajuda:focus-visible {
+  border-color: var(--compra);
+  color: var(--compra);
+}
+
+.corpo-aprender {
+  max-width: 860px;
+}
+
+.corpo-aprender h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.3rem;
+}
+
+.busca-termos {
+  width: 100%;
+  max-width: 420px;
+  margin-bottom: 1rem;
+}
+
+.lista-termos {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.termo-glossario {
+  padding: 0.7rem 1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  scroll-margin-top: 1rem;
+}
+
+.termo-glossario h3 {
+  margin: 0 0 0.3rem;
+  font-size: 1rem;
+}
+
+.termo-glossario p {
+  margin: 0 0 0.35rem;
+}
+
+.termo-glossario.termo-alvo {
+  border-color: var(--compra);
+  box-shadow: 0 0 0 1px var(--compra);
+}
+
+.passos {
+  margin: 0;
+  padding-left: 1.4rem;
+}
+
+.passos li {
+  margin-bottom: 1rem;
+}
+
+.passos h3,
+.telas h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.passos p,
+.telas p {
+  margin: 0 0 0.3rem;
+}
+
+.telas section {
+  margin-bottom: 1rem;
+}
+
+.indicadores {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.indicadores div {
+  display: grid;
+  grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.indicadores dt {
+  font-weight: 600;
+}
+
+.indicadores dd {
+  margin: 0;
+}
+
+.vol-dos-ativos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 0.5rem;
+}
+
+.vol-dos-ativos .etiquetas-vol {
+  margin: 0;
+}
+
 .vencimentos {
   display: flex;
   flex-wrap: wrap;

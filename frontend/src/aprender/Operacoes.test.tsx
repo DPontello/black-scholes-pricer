@@ -7,11 +7,12 @@ import type { Exemplo } from "../api/aprender";
 import { Aprender } from "../paginas/Aprender";
 import { EXEMPLOS } from "../testes/aprender";
 import { simularFetch } from "../testes/fetchFalso";
+import { semMarcas } from "../componentes/Termo";
 import { TEXTOS_OPERACOES, type TextoOperacao } from "./operacoes";
 
 function Sonda() {
-  const { pathname, search } = useLocation();
-  return <output data-testid="endereco">{pathname + search}</output>;
+  const { pathname, search, hash } = useLocation();
+  return <output data-testid="endereco">{pathname + search + hash}</output>;
 }
 
 function montar(endereco: string, opcoes: { comPerfil?: boolean; exemplos?: Exemplo[] } = {}) {
@@ -36,6 +37,11 @@ const endereco = () => screen.getByTestId("endereco").textContent;
 async function operacao(nome: string) {
   const titulo = await screen.findByRole("heading", { level: 2, name: nome });
   return within(titulo.closest("article") as HTMLElement);
+}
+
+// O parágrafo inteiro, com os links dos termos dentro: o getByText comum só vê o texto solto.
+function paragrafo(painel: ReturnType<typeof within>, texto: string): HTMLElement {
+  return painel.getByText((_: string, el: Element | null) => el?.tagName === "P" && el.textContent === texto);
 }
 
 function exemploCom(chave: string, mudancas: Partial<Exemplo>): Exemplo[] {
@@ -123,12 +129,24 @@ test("a venda coberta mostra os seis blocos, com os textos dela", async () => {
     "O que pode dar errado",
     "No app",
   ]);
-  const texto = TEXTOS_OPERACOES.venda_coberta;
-  expect(texto).toBeDefined();
-  for (const parte of [texto?.oQueE, texto?.quandoUsar, texto?.comoMontar])
-    expect(painel.getByText(parte as string)).toBeTruthy();
-  expect(painel.getByText(texto?.oQuePodeDarErrado as string)).toBeTruthy();
-  expect(painel.getByText(texto?.noApp as string)).toBeTruthy();
+  const texto = TEXTOS_OPERACOES.venda_coberta as TextoOperacao;
+  const partes = [texto.oQueE, texto.quandoUsar, texto.comoMontar, texto.oQuePodeDarErrado, texto.noApp];
+  for (const parte of partes) expect(paragrafo(painel, semMarcas(parte))).toBeTruthy();
+});
+
+test("os termos do glossário nos textos viram links para a aba Termos", async () => {
+  montar("/aprender/operacoes/venda_coberta");
+  const painel = await operacao("Venda coberta");
+  const oQueE = paragrafo(painel, semMarcas(TEXTOS_OPERACOES.venda_coberta?.oQueE ?? ""));
+  const links = within(oQueE).getAllByRole("link");
+  expect(links.map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+    ["strike", "/aprender/termos#strike"],
+    ["vencimento", "/aprender/termos#vencimento"],
+    ["prêmio", "/aprender/termos#premio"],
+  ]);
+  fireEvent.click(links[0] as HTMLElement);
+  expect(endereco()).toBe("/aprender/termos#strike");
+  expect(await screen.findByRole("heading", { level: 3, name: "Strike" })).toBeTruthy();
 });
 
 test("as etiquetas começam pela família e seguem com as três do texto", async () => {
@@ -313,10 +331,19 @@ test("'No app' diz a família do Book; as três que o Book não varre dizem que 
   }
 });
 
+// O texto como a pessoa lê, sem as marcas dos links dos termos.
 function texto(chave: string): TextoOperacao {
   const achado = TEXTOS_OPERACOES[chave];
   expect(achado, chave).toBeDefined();
-  return achado as TextoOperacao;
+  const t = achado as TextoOperacao;
+  return {
+    etiquetas: t.etiquetas,
+    oQueE: semMarcas(t.oQueE),
+    quandoUsar: semMarcas(t.quandoUsar),
+    comoMontar: semMarcas(t.comoMontar),
+    oQuePodeDarErrado: semMarcas(t.oQuePodeDarErrado),
+    noApp: semMarcas(t.noApp),
+  };
 }
 
 test("compra de call e de put: perde tudo só além do strike; entre o strike e o empate, só parte", () => {

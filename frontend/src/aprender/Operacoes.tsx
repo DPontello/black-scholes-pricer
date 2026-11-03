@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { carregarExemplos, type Exemplo } from "../api/aprender";
 import type { Familia } from "../api/book";
 import { ErroApi } from "../api/cliente";
+import { ComTermos } from "../componentes/Termo";
 import { formatarInteiro, formatarPreco } from "../formatacao";
 import { GraficoExemplo } from "./GraficoExemplo";
 import { type TextoOperacao, TEXTOS_OPERACOES } from "./operacoes";
@@ -138,17 +139,27 @@ function Operacao({
         ))}
       </ul>
       <h3>O que é</h3>
-      <p>{texto.oQueE}</p>
+      <p>
+        <ComTermos texto={texto.oQueE} />
+      </p>
       <h3>Quando usar</h3>
-      <p>{texto.quandoUsar}</p>
+      <p>
+        <ComTermos texto={texto.quandoUsar} />
+      </p>
       <h3>Como montar</h3>
-      <p>{texto.comoMontar}</p>
+      <p>
+        <ComTermos texto={texto.comoMontar} />
+      </p>
       <h3>Exemplo</h3>
       <BlocoExemplo exemplo={exemplo} />
       <h3>O que pode dar errado</h3>
-      <p>{texto.oQuePodeDarErrado}</p>
+      <p>
+        <ComTermos texto={texto.oQuePodeDarErrado} />
+      </p>
       <h3>No app</h3>
-      <p>{texto.noApp}</p>
+      <p>
+        <ComTermos texto={texto.noApp} />
+      </p>
       <button
         type="button"
         disabled={!comPerfil}
