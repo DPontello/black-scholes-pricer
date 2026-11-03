@@ -17,6 +17,19 @@ export type PernaBook = {
   qualidade: Qualidade;
 };
 
+/**
+ * Ganho e perda líquidos de custos e IR no vencimento; a chance de lucro é bruta (sem custos nem IR).
+ * `null` em `ganha_ate`/`perde_ate` = sem limite. Os textos já vêm formatados.
+ */
+export type ResultadoBook = {
+  ganha_ate: number | null;
+  perde_ate: number | null;
+  chance_de_lucro: number;
+  ganha_ate_texto: string;
+  perde_ate_texto: string;
+  chance_texto: string;
+};
+
 export type ItemBook = {
   familia: Familia;
   estrutura: string;
@@ -30,8 +43,10 @@ export type ItemBook = {
   criterio: Metrica;
   numeros: Metrica[];
   porque: string;
+  porque_curto: string;
   rotulos: { chave: string; texto: string }[];
   pedido: PedidoAnalise;
+  resultado: ResultadoBook | null;
 };
 
 export type Exclusao = { simbolo: string; motivo: string };

@@ -13,16 +13,27 @@ from options_engine.domain.book.presets import BookSettings
 from options_engine.domain.model.quotes import DataSource
 from options_engine.domain.model.templates import Family
 
-__all__ = ["BookEntry", "BookFamilyView", "BookUseCase", "BookView", "UnderlyingVol"]
+__all__ = ["BookEntry", "BookFamilyView", "BookOutcome", "BookUseCase", "BookView", "UnderlyingVol"]
+
+
+@dataclass(frozen=True, slots=True)
+class BookOutcome:
+    """Ganho e perda líquidos de custos e IR no vencimento, em moeda; ``max_loss`` positivo,
+    ``None`` = sem limite. A chance de lucro é bruta (sem custos nem IR)."""
+
+    max_gain: float | None
+    max_loss: float | None
+    probability_of_profit: float
 
 
 @dataclass(frozen=True, slots=True)
 class BookEntry:
     """O item e o pedido pronto para o montador, sem preços: ele reprecifica pela cadeia do
-    momento."""
+    momento. ``outcome``: ``None`` se a análise do pedido não deu resultado ou se é referência."""
 
     item: BookItem
     request: BuilderRequest
+    outcome: BookOutcome | None = None
 
 
 @dataclass(frozen=True, slots=True)

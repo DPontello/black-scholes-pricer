@@ -6,21 +6,32 @@ from datetime import date
 import pytest
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
-from options_engine.application.ports.book import BookUseCase, BookView
+from options_engine.application.ports.book import (
+    BookEntry,
+    BookOutcome,
+    BookUseCase,
+    BookView,
+)
 from options_engine.application.use_cases.book import BookService
 from options_engine.application.use_cases.strategy_builder import StrategyBuilderService
 from options_engine.domain.analytics.volatility import DailyVol, VolRegime
 from options_engine.domain.book.direcionais import Direction, DirectionalView
 from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.chain import OptionQuote
-from options_engine.domain.model.enums import Side, StockOrigin
-from options_engine.domain.model.errors import InvalidDomainValueError
+from options_engine.domain.model.enums import OptionType, Side, StockOrigin
+from options_engine.domain.model.errors import InvalidDomainValueError, UnderlyingUnavailableError
 from options_engine.domain.model.quotes import DataSource
 from options_engine.domain.model.templates import Family
 from options_engine.domain.portfolio.positions import AssetTotal
-from tests.application._book_falso import MercadoDoBook, mercado_do_book, servico_do_book
-from tests.application._mercado_falso import CALENDARIO, NOVEMBRO, PREGAO
-from tests.book._cadeias import MODERADO, TABELA, cadeia_larga
+from tests.application._book_falso import (
+    MercadoDoBook,
+    MontadorFalso,
+    mercado_do_book,
+    resultado_no_vencimento,
+    servico_do_book,
+)
+from tests.application._mercado_falso import CALENDARIO, NOVEMBRO, PREGAO, serie
+from tests.book._cadeias import DEZEMBRO, MODERADO, TABELA, cadeia_larga
 
 LARGO = replace(MODERADO, max_spread_pct=1.5)
 
@@ -155,3 +166,136 @@ def test_vencimento_vencido_ou_fora_do_calendario_fica_fora_sem_derrubar_o_book(
     book = _servico(mercado=mercado).book(LARGO, ("PETR4",))
     vencimentos = {e.item.expiry for f in book.families.values() for e in f.items}
     assert vencimentos and vencimentos <= {NOVEMBRO, date(2026, 12, 18)}
+
+
+def _entradas(book: BookView) -> list[BookEntry]:
+    return [e for f in book.families.values() for e in f.items]
+
+
+def test_item_do_book_leva_o_resultado_liquido_do_montador() -> None:
+    montador = MontadorFalso(resultado_no_vencimento(350.11, -16433.11, 0.62))
+
+    book = _book(builder=montador)
+
+    entradas = _entradas(book)
+    assert entradas
+    assert all(e.outcome == BookOutcome(350.11, 16433.11, 0.62) for e in entradas)
+    assert montador.pedidos == [e.request for e in entradas]
+
+
+def test_ganho_sem_limite_vira_none() -> None:
+    montador = MontadorFalso(resultado_no_vencimento(None, -16433.11, 0.62))
+
+    entradas = _entradas(_book(builder=montador))
+
+    assert entradas
+    for entrada in entradas:
+        assert entrada.outcome is not None
+        assert entrada.outcome.max_gain is None
+        assert entrada.outcome.max_loss == 16433.11
+
+
+def test_perda_sem_limite_vira_none() -> None:
+    montador = MontadorFalso(resultado_no_vencimento(350.11, None, 0.62))
+
+    entradas = _entradas(_book(builder=montador))
+
+    assert entradas
+    assert all(e.outcome == BookOutcome(350.11, None, 0.62) for e in entradas)
+
+
+def test_pior_caso_com_lucro_vira_perda_zero() -> None:
+    montador = MontadorFalso(resultado_no_vencimento(350.11, 5.0, 0.62))
+
+    entradas = _entradas(_book(builder=montador))
+
+    assert entradas
+    assert all(e.outcome == BookOutcome(350.11, 0.0, 0.62) for e in entradas)
+
+
+@pytest.mark.parametrize(
+    "erro",
+    [UnderlyingUnavailableError("PETR4: sem fechamento"), None],
+    ids=["erro_de_dominio", "sem_resultado_no_vencimento"],
+)
+def test_analise_que_falha_deixa_o_resultado_vazio(erro: Exception | None) -> None:
+    montador = MontadorFalso(erro=erro)
+    book = _book(builder=montador)
+
+    entradas = _entradas(book)
+    assert entradas
+    assert montador.pedidos
+    assert all(e.outcome is None for e in entradas)
+    assert book.families[Family.RENDA].items
+
+
+def test_erro_que_nao_e_do_dominio_nao_e_engolido() -> None:
+    montador = MontadorFalso(erro=RuntimeError("bug"))
+    with pytest.raises(RuntimeError, match="bug"):
+        _book(builder=montador)
+
+
+def test_sem_builder_nao_ha_resultado() -> None:
+    entradas = _entradas(_book())
+
+    assert entradas
+    assert all(e.outcome is None for e in entradas)
+
+
+def test_referencia_nao_e_analisada_e_sai_sem_resultado() -> None:
+    sem_book = serie("PETRX260", 26.0, OptionType.PUT, DEZEMBRO, book=False)
+    mercado = MercadoDoBook(chains={"PETR4": cadeia_larga(sem_book)})
+    montador = MontadorFalso(resultado_no_vencimento(350.11, -16433.11, 0.62))
+
+    book = _servico(mercado=mercado, builder=montador).book(LARGO, ("PETR4",))
+
+    referencias = [e for f in book.families.values() for e in f.references]
+    assert referencias
+    assert all(e.outcome is None for e in referencias)
+    executaveis = _entradas(book)
+    assert executaveis
+    assert all(e.outcome is not None for e in executaveis)
+    assert montador.pedidos == [e.request for e in executaveis]
+
+
+def test_direcionais_com_visao_tambem_levam_o_resultado() -> None:
+    montador = MontadorFalso(resultado_no_vencimento(350.11, -16433.11, 0.62))
+    visao = DirectionalView("PETR4", Direction.ALTA, 33.0, NOVEMBRO)
+
+    resultado = _servico(builder=montador).directional(LARGO, visao)
+
+    assert resultado.items
+    assert all(e.outcome == BookOutcome(350.11, 16433.11, 0.62) for e in resultado.items)
+
+
+def test_com_o_montador_real_o_resultado_e_o_da_analise_do_pedido() -> None:
+    mercado = mercado_do_book()
+    montador = StrategyBuilderService(
+        mercado, CALENDARIO, B3_UTC_OFFSET, schedules=[TABELA], lots=lambda _: None
+    )
+
+    book = _servico(mercado=mercado, builder=montador).book(LARGO, ("PETR4", "VALE3"))
+
+    for familia in Family:
+        entrada = book.families[familia].items[0]
+        esperado = montador.analyze(entrada.request).at_expiry
+        assert esperado is not None and entrada.outcome is not None
+        assert entrada.outcome.max_gain == esperado.net_max_gain
+        assert entrada.outcome.max_loss == (
+            None if esperado.net_max_loss is None else max(0.0, -esperado.net_max_loss)
+        )
+        assert entrada.outcome.probability_of_profit == esperado.probability_of_profit
+
+
+def test_referencia_das_direcionais_com_visao_tambem_nao_e_analisada() -> None:
+    sem_book = serie("PETRK340", 34.0, OptionType.CALL, NOVEMBRO, book=False)
+    mercado = MercadoDoBook(chains={"PETR4": cadeia_larga(sem_book)})
+    montador = MontadorFalso(resultado_no_vencimento(350.11, -16433.11, 0.62))
+    visao = DirectionalView("PETR4", Direction.ALTA, 33.0, NOVEMBRO)
+
+    resultado = _servico(mercado=mercado, builder=montador).directional(LARGO, visao)
+
+    assert resultado.references
+    assert all(e.outcome is None for e in resultado.references)
+    assert resultado.items
+    assert montador.pedidos == [e.request for e in resultado.items]

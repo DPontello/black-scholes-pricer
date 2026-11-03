@@ -81,26 +81,26 @@
 
 - [ ] **Step 2: Rodar e ver falhar.**
 
-- [ ] **Step 3: Implementar** com este texto exato (o autor revisa na entrega; as chaves são as do catálogo):
+- [ ] **Step 3: Implementar** com este texto exato (o autor revisa na entrega; as chaves são as do catálogo). Na execução, 12 frases foram trocadas para dizer só o cenário e o risco, nunca a vol (revisão da Task 2, 03/11); a tabela abaixo já é a final:
 
   | chave | frase |
   |---|---|
   | `venda_coberta` | Renda com as suas ações: recebe o prêmio e aceita vender no strike. |
   | `put_coberta` | Renda com caixa: recebe o prêmio e aceita comprar a ação no strike. |
-  | `trava_alta_put` | Renda com risco limitado: recebe um crédito e já sabe a perda máxima. |
-  | `trava_baixa_call` | Renda com risco limitado: recebe um crédito e já sabe a perda máxima. |
-  | `compra_call` | Call barata pela vol: ganha se a ação subir. |
-  | `compra_put` | Put barata pela vol: ganha se a ação cair. |
+  | `trava_alta_put` | Renda com risco limitado: dá certo se a ação não cair. |
+  | `trava_baixa_call` | Renda com risco limitado: dá certo se a ação não subir. |
+  | `compra_call` | Aposta na alta: a perda máxima é o que pagou. |
+  | `compra_put` | Aposta na queda: a perda máxima é o que pagou. |
   | `trava_alta_call` | Aposta na alta com perda limitada. |
   | `trava_baixa_put` | Aposta na queda com perda limitada. |
-  | `straddle_comprado` | Vol barata: ganha se a ação andar muito para qualquer lado. |
-  | `straddle_vendido` | Vol cara: ganha se a ação ficar parada; a perda não tem limite. |
-  | `strangle_comprado` | Vol barata: ganha se a ação sair da faixa para qualquer lado. |
-  | `strangle_vendido` | Vol cara: ganha se a ação ficar na faixa; a perda não tem limite. |
-  | `iron_condor_vendido` | Vol cara: ganha se a ação ficar na faixa, com perda limitada. |
-  | `iron_condor_comprado` | Vol barata: ganha se a ação sair da faixa, com perda limitada. |
-  | `borboleta_comprada` | Vol cara: ganha se a ação parar perto do strike do meio. |
-  | `borboleta_vendida` | Vol barata: ganha se a ação se afastar do strike do meio. |
+  | `straddle_comprado` | Ganha se a ação andar muito para qualquer lado; a perda máxima é o que pagou. |
+  | `straddle_vendido` | Ganha se a ação ficar parada; a perda não tem limite. |
+  | `strangle_comprado` | Ganha se a ação sair da faixa para qualquer lado; a perda máxima é o que pagou. |
+  | `strangle_vendido` | Ganha se a ação ficar na faixa; a perda não tem limite. |
+  | `iron_condor_vendido` | Ganha se a ação ficar na faixa, com perda limitada. |
+  | `iron_condor_comprado` | Ganha se a ação sair da faixa, com perda limitada. |
+  | `borboleta_comprada` | Ganha se a ação parar perto do strike do meio, com perda limitada. |
+  | `borboleta_vendida` | Ganha se a ação se afastar do strike do meio, com perda limitada. |
   | `put_protetora` | Seguro para as suas ações até o vencimento. |
   | `collar` | Seguro barato: protege a queda e abre mão de parte da alta. |
 
