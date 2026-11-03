@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 
 import type { EstadoAoVivo, SeguirCadeia } from "../api/aoVivo";
 import { definirAtivos, ErroApi, type Perfil } from "../api/cliente";
+import { AnaliseAtivo } from "../componentes/AnaliseAtivo";
 import { ListaAtivos } from "../componentes/ListaAtivos";
 import { TabelaCadeia } from "../componentes/TabelaCadeia";
 
@@ -16,6 +17,7 @@ export function Mercado({ aoVivo, seguirCadeia, onPerfil }: Props) {
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [vencimentos, setVencimentos] = useState<string[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [aba, setAba] = useState<"cadeia" | "analise">("cadeia");
 
   // Só assina a cadeia com a tela aberta: os termos do Tryd vedam "flood".
   useEffect(() => {
@@ -57,12 +59,36 @@ export function Mercado({ aoVivo, seguirCadeia, onPerfil }: Props) {
           Montar com {selecionado}
         </Link>
       )}
-      <TabelaCadeia
-        ativo={selecionado}
-        cadeia={aoVivo.cadeia}
-        indisponivel={aoVivo.cadeiaIndisponivel}
-        onVencimentos={setVencimentos}
-      />
+      {selecionado !== null && (
+        <div className="abas" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={aba === "cadeia"}
+            onClick={() => setAba("cadeia")}
+          >
+            Cadeia
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={aba === "analise"}
+            onClick={() => setAba("analise")}
+          >
+            Análise
+          </button>
+        </div>
+      )}
+      {selecionado !== null && aba === "analise" ? (
+        <AnaliseAtivo ativo={selecionado} />
+      ) : (
+        <TabelaCadeia
+          ativo={selecionado}
+          cadeia={aoVivo.cadeia}
+          indisponivel={aoVivo.cadeiaIndisponivel}
+          onVencimentos={setVencimentos}
+        />
+      )}
     </section>
   );
 }

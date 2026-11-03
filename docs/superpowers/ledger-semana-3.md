@@ -112,3 +112,12 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - Ruling: o `TermPoint` leva também o vencimento (o plano dizia `ExpiryVol`, que só tem os dias úteis): a tela mostra a data no eixo.
 - Ruling: a HV 21 de hoje é a do último pregão do histórico que a tem; sem histórico, a vol realizada que a cadeia traz, e o regime sai pela margem sobre ela, rotulado. O pregão de hoje, se já está no histórico (fim de dia), não entra na comparação do rank.
 - Checagens: ruff, mypy, import-linter e as suítes `tests/web`, `tests/application` e `tests/config/test_web_app.py` (337 testes; o serviço em 100%).
+
+## 2026-11-02: Task 12 — aba Análise no Mercado
+
+- `frontend/src/paginas/Mercado.tsx`: com um ativo escolhido, abas Cadeia e Análise. A assinatura da cadeia continua com a aba Análise aberta, para a análise usar a cadeia ao vivo.
+- `componentes/AnaliseAtivo.tsx`: cartões de IV 30 de hoje, HV 21, IV rank, percentil e regime ("histórico curto" quando vêm vazios; "pela HV" quando o regime saiu da margem), a fonte de hoje e o rótulo da taxa (o CDI do perfil, constante em todo o histórico, uma aproximação), o gráfico do histórico, o smile com a escolha do vencimento e a estrutura a termo. Sem histórico ou sem IV de hoje, o motivo, e o resto segue.
+- `componentes/GraficoVol.tsx`: o fechamento e a IV 30 contra a HV 21 no último ano (252 pregões), em dois eixos; pregão sem número fica `null` (buraco, nunca ligado) e a IV extrapolada vem marcada com um triângulo.
+- `componentes/GraficoSmile.tsx`: `GraficoSmile` (IV de cada série contra o strike, com o spot marcado) e `GraficoTermo` (IV no dinheiro contra os dias úteis).
+- Refactor: `componentes/useGrafico.ts` concentra o ciclo do ECharts (iniciar, redimensionar, descartar, redesenhar), usado pelos gráficos novos e pelo `GraficoPayoff`.
+- Checagens: `tsc` e os testes do Vitest dos componentes novos e do `GraficoPayoff`.

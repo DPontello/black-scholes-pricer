@@ -7,10 +7,11 @@ import {
 } from "echarts/components";
 import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
-import { useEffect, useRef } from "react";
+import { useMemo } from "react";
 
 import type { Analise } from "../api/montador";
 import { formatarPreco } from "../formatacao";
+import { useGrafico } from "./useGrafico";
 
 echarts.use([
   LineChart,
@@ -89,26 +90,7 @@ function opcoes(analise: Analise): echarts.EChartsCoreOption {
 }
 
 export function GraficoPayoff({ analise }: { analise: Analise }) {
-  const div = useRef<HTMLDivElement>(null);
-  const grafico = useRef<echarts.ECharts | null>(null);
-
-  useEffect(() => {
-    if (div.current === null) return;
-    const instancia = echarts.init(div.current, "dark");
-    grafico.current = instancia;
-    const redimensionar = () => instancia.resize();
-    window.addEventListener("resize", redimensionar);
-    return () => {
-      window.removeEventListener("resize", redimensionar);
-      instancia.dispose();
-      grafico.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    grafico.current?.setOption(opcoes(analise), true);
-  }, [analise]);
-
+  const div = useGrafico(useMemo(() => opcoes(analise), [analise]));
   return (
     <div
       ref={div}
