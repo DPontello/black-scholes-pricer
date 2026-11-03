@@ -597,44 +597,109 @@ button.link {
   gap: 0.5rem;
 }
 
-.contextos-vol caption {
-  text-align: left;
-  color: var(--texto-secundario);
+.pagina-book {
+  max-width: 1440px;
 }
 
-.lista-book {
+.cabecalho-book {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.cabecalho-book h1,
+.cabecalho-book p {
+  margin: 0;
+}
+
+.cabecalho-book .selo-fonte {
+  font-weight: 400;
+}
+
+.etiquetas-vol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.etiqueta-vol {
+  padding: 0.15rem 0.7rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.etiqueta-vol[title] {
+  cursor: help;
+}
+
+.cartoes-destaque {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 0.75rem;
-  margin: 0.5rem 0 1rem;
+  margin: 0.5rem 0 1.25rem;
 }
 
-.item-book {
+.cartao-destaque {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.45rem;
   padding: 0.8rem 1rem;
   background: var(--painel);
   border: 1px solid var(--borda);
   border-radius: 6px;
 }
 
-.item-book .criterio,
-.item-book .porque {
+.cartao-destaque > * {
   margin: 0;
 }
 
-.item-book button {
+/* Empurra o botão para o pé do cartão: numa fileira os botões ficam alinhados. */
+.cartao-destaque button {
   align-self: flex-start;
+  margin-top: auto;
 }
 
-.pernas-book,
+.cartao-destaque h3 {
+  font-size: 1rem;
+}
+
+.familia-destaque {
+  color: var(--texto-secundario);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.numero-grande strong {
+  font-size: 1.6rem;
+}
+
+.resultado-curto {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+}
+
+.resultado-numero {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.85rem;
+}
+
+.porque-curto {
+  color: var(--texto-secundario);
+}
+
 .rotulos {
   margin: 0;
   padding-left: 1.1rem;
-}
-
-.rotulos {
   color: var(--atencao);
   font-size: 0.85rem;
 }
@@ -645,7 +710,28 @@ button.link {
   font-size: 0.85rem;
 }
 
-.exclusoes summary {
+.tabela-familia .linha-item {
+  cursor: pointer;
+}
+
+.tabela-familia .linha-item:hover {
+  background: var(--painel);
+}
+
+.detalhe-operacao .linha-pernas,
+.detalhe-operacao .porque {
+  margin: 0.35rem 0;
+}
+
+.referencias,
+.exclusoes,
+.indisponiveis {
+  margin-top: 0.75rem;
+}
+
+.referencias summary,
+.exclusoes summary,
+.indisponiveis summary {
   cursor: pointer;
   color: var(--texto-secundario);
 }

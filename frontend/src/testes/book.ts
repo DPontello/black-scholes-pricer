@@ -47,12 +47,21 @@ export function itemCoberta(extra: Partial<ItemBook> = {}): ItemBook {
       { chave: "premio", rotulo: "prêmio por ação", valor: 0.41, unidade: "reais", texto: "R$ 0,41" },
     ],
     porque: "Venda coberta de PETRK320: o prêmio de R$ 0,41 por ação rende 12,4% ao ano.",
+    porque_curto: "Renda com as suas ações: recebe o prêmio e aceita vender no strike.",
     rotulos: [],
     pedido: {
       ativo: "PETR4",
       pernas: [{ ticker: "PETRK320", lado: "venda", quantidade: 100, preco: null }],
       acao: { lado: "compra", quantidade: 100, origem: "compra", preco: null },
       modelo: "venda_coberta",
+    },
+    resultado: {
+      ganha_ate: 350.11,
+      perde_ate: 16433.11,
+      chance_de_lucro: 0.62,
+      ganha_ate_texto: "R$ 350,11",
+      perde_ate_texto: "R$ 16.433,11",
+      chance_texto: "62,0%",
     },
     ...extra,
   };

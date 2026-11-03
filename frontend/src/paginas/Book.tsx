@@ -9,8 +9,9 @@ import {
   type FamiliaBook,
 } from "../api/book";
 import { ErroApi, type Perfil } from "../api/cliente";
+import { CartaoDestaque } from "../componentes/CartaoDestaque";
 import { EditorPreset } from "../componentes/EditorPreset";
-import { ItemBook } from "../componentes/ItemBook";
+import { motivoVazio, TabelaFamilia } from "../componentes/TabelaFamilia";
 import { formatarData, formatarVol } from "../formatacao";
 
 const FAMILIAS: [Familia, string][] = [
@@ -19,6 +20,8 @@ const FAMILIAS: [Familia, string][] = [
   ["direcionais", "Direcionais"],
   ["protecao", "Proteção"],
 ];
+
+const REGIME = { baixa: "barata", neutra: "normal", alta: "cara" };
 
 type Props = { perfil: Perfil; onPerfil: (perfil: Perfil) => void };
 
@@ -30,6 +33,7 @@ export function Book({ perfil, onPerfil }: Props) {
   const [book, setBook] = useState<Resposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aba, setAba] = useState<Familia>("renda");
+  const [ajustando, setAjustando] = useState(false);
 
   // O preset e a lista vêm do perfil: mudou um dos dois, o book é varrido de novo.
   useEffect(() => {
@@ -51,7 +55,28 @@ export function Book({ perfil, onPerfil }: Props) {
 
   return (
     <section className="pagina-book">
-      <h1>Book</h1>
+      <header className="cabecalho-book">
+        <h1>Melhores operações de hoje</h1>
+        {book !== null && (
+          <p className="selo-fonte fonte-fim-de-dia">
+            {book.pregao === null
+              ? "Sem pregão de fim de dia: importe um COTAHIST em Arquivos B3."
+              : `pregão de ${formatarData(book.pregao)} · fim de dia (B3)`}
+          </p>
+        )}
+        <p className="criterios">
+          Critérios: <strong>{capitalizar(perfil.book.preset)}</strong> ·{" "}
+          <button
+            type="button"
+            className="link"
+            aria-expanded={ajustando}
+            onClick={() => setAjustando(!ajustando)}
+          >
+            ajustar <span aria-hidden="true">{ajustando ? "▾" : "▸"}</span>
+          </button>
+        </p>
+      </header>
+      {ajustando && <EditorPreset preset={perfil.book} onSalvo={onPerfil} />}
       {erro !== null && (
         <p className="erro" role="alert">
           {erro}
@@ -60,120 +85,98 @@ export function Book({ perfil, onPerfil }: Props) {
       {book === null && erro === null && <p className="secundario">Varrendo o fim de dia…</p>}
       {book !== null && (
         <>
-          <p className="selo-fonte fonte-fim-de-dia">
-            {book.pregao === null
-              ? "Sem pregão de fim de dia: importe um COTAHIST em Arquivos B3."
-              : `fim de dia (B3) do pregão ${formatarData(book.pregao)}`}
-          </p>
-          {book.indisponiveis.map((e) => (
-            <p className="aviso" key={e.simbolo}>
-              {e.simbolo}: {e.motivo}
-            </p>
-          ))}
-          <ContextosVol contextos={book.contextos} />
+          <EtiquetasVol contextos={book.contextos} />
+          {book.pregao !== null && (
+            <>
+              <h2>O melhor de cada família</h2>
+              <div className="cartoes-destaque">
+                {FAMILIAS.map(([chave, rotulo]) => (
+                  <CartaoDestaque
+                    key={chave}
+                    familia={chave}
+                    rotulo={rotulo}
+                    item={book.familias[chave].itens[0] ?? null}
+                    motivoVazio={motivoVazio(book.familias[chave])}
+                    onVerFamilia={() => setAba(chave)}
+                  />
+                ))}
+              </div>
+              <div className="abas" role="tablist">
+                {FAMILIAS.map(([chave, rotulo]) => (
+                  <button
+                    key={chave}
+                    type="button"
+                    role="tab"
+                    aria-selected={aba === chave}
+                    onClick={() => setAba(chave)}
+                  >
+                    {rotulo} ({book.familias[chave].itens.length})
+                  </button>
+                ))}
+              </div>
+              <div role="tabpanel">
+                {aba === "direcionais" && <ComVisao ativos={perfil.ativos} />}
+                <TabelaFamilia key={aba} familia={book.familias[aba]} />
+              </div>
+            </>
+          )}
+          {book.indisponiveis.length > 0 && (
+            <details className="indisponiveis">
+              <summary>Ativos indisponíveis ({book.indisponiveis.length})</summary>
+              <ul>
+                {book.indisponiveis.map((e) => (
+                  <li key={e.simbolo}>{comAtivo(e.simbolo, e.motivo, ": ")}</li>
+                ))}
+              </ul>
+            </details>
+          )}
         </>
       )}
-      <EditorPreset preset={perfil.book} onSalvo={onPerfil} />
-      <div className="abas" role="tablist">
-        {FAMILIAS.map(([chave, rotulo]) => (
-          <button
-            key={chave}
-            type="button"
-            role="tab"
-            aria-selected={aba === chave}
-            onClick={() => setAba(chave)}
-          >
-            {rotulo}
-          </button>
-        ))}
-      </div>
-      {aba === "direcionais" && <ComVisao ativos={perfil.ativos} />}
-      {book !== null && <PainelFamilia familia={book.familias[aba]} />}
     </section>
   );
 }
 
-function ContextosVol({ contextos }: { contextos: ContextoVol[] }) {
-  if (contextos.length === 0) return null;
-  return (
-    <table className="contextos-vol">
-      <caption>Vol de cada ativo no fim de dia</caption>
-      <thead>
-        <tr>
-          <th>Ativo</th>
-          <th className="num">IV 30</th>
-          <th className="num">HV 21</th>
-          <th className="num">IV rank</th>
-          <th className="num">Percentil</th>
-          <th>Regime</th>
-        </tr>
-      </thead>
-      <tbody>
-        {contextos.map((c) =>
-          c.motivo !== null ? (
-            <tr key={c.ativo}>
-              <td>{c.ativo}</td>
-              <td colSpan={5} className="secundario">
-                {c.motivo}
-              </td>
-            </tr>
-          ) : (
-            <tr key={c.ativo}>
-              <td>{c.ativo}</td>
-              <td className="num">
-                {formatarVol(c.iv30)}
-                {c.extrapolada && " (extrapolada)"}
-              </td>
-              <td className="num">{formatarVol(c.hv21)}</td>
-              <td className="num">{formatarVol(c.iv_rank)}</td>
-              <td className="num">{formatarVol(c.iv_percentil)}</td>
-              <td>
-                {c.regime}
-                {c.regime_pela_hv && " (pela HV: histórico curto)"}
-              </td>
-            </tr>
-          ),
-        )}
-      </tbody>
-    </table>
-  );
+// Alguns motivos já trazem o ticker na frente ("PETR4: sem histórico de IV"), outros não.
+function comAtivo(ativo: string, motivo: string, separador: string): string {
+  return motivo.startsWith(`${ativo}:`) ? motivo : `${ativo}${separador}${motivo}`;
 }
 
-function PainelFamilia({ familia }: { familia: FamiliaBook }) {
+function capitalizar(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
+function dicaVol(c: ContextoVol): string {
+  return [
+    `IV 30: ${formatarVol(c.iv30)}${c.extrapolada ? " (extrapolada)" : ""}`,
+    `HV 21: ${formatarVol(c.hv21)}`,
+    `IV rank: ${formatarVol(c.iv_rank)}`,
+    `percentil: ${formatarVol(c.iv_percentil)}`,
+  ].join(" · ");
+}
+
+function EtiquetasVol({ contextos }: { contextos: ContextoVol[] }) {
+  if (contextos.length === 0) return null;
   return (
-    <div className="painel-familia" role="tabpanel">
-      {familia.itens.length === 0 ? (
-        <p className="secundario">Nada passou nos filtros do preset nesta família.</p>
-      ) : (
-        <div className="lista-book">
-          {familia.itens.map((item) => (
-            <ItemBook key={item.pedido.pernas.map((p) => p.ticker).join("/")} item={item} />
-          ))}
-        </div>
+    <ul className="etiquetas-vol" aria-label="Vol de cada ativo">
+      {contextos.map((c) =>
+        c.motivo !== null ? (
+          <li className="etiqueta-vol secundario" key={c.ativo}>
+            {comAtivo(c.ativo, c.motivo, " · ")}
+          </li>
+        ) : (
+          <li className="etiqueta-vol" key={c.ativo} title={dicaVol(c)}>
+            {c.ativo}
+            {c.regime !== null && (
+              <>
+                {" "}
+                · vol <strong>{REGIME[c.regime]}</strong>
+                {c.regime_pela_hv && " (pela HV)"}
+              </>
+            )}
+          </li>
+        ),
       )}
-      {familia.referencias.length > 0 && (
-        <section className="referencias" aria-label="Referências">
-          <h2>Referências (sem preço executável em alguma perna)</h2>
-          <div className="lista-book">
-            {familia.referencias.map((item) => (
-              <ItemBook key={item.pedido.pernas.map((p) => p.ticker).join("/")} item={item} />
-            ))}
-          </div>
-        </section>
-      )}
-      {familia.exclusoes.length > 0 && (
-        <details className="exclusoes">
-          <summary>Fora do book por dado ruim ({familia.exclusoes.length})</summary>
-          <ul>
-            {familia.exclusoes.map((e) => (
-              <li key={`${e.simbolo}:${e.motivo}`}>
-                {e.simbolo}: {e.motivo}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </div>
+    </ul>
   );
 }
 
@@ -247,7 +250,7 @@ function ComVisao({ ativos }: { ativos: string[] }) {
           {erro}
         </p>
       )}
-      {resultado !== null && <PainelFamilia familia={resultado} />}
+      {resultado !== null && <TabelaFamilia familia={resultado} />}
       <h2>Sem visão: opções baratas pela vol</h2>
     </section>
   );

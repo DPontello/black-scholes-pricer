@@ -82,6 +82,10 @@ export function formatarData(iso: string): string {
   return `${dia}/${mes}/${ano}`;
 }
 
+export function formatarDiasUteis(n: number): string {
+  return n === 1 ? "1 dia útil" : `${n} dias úteis`;
+}
+
 // O dia do pregão agora, AAAA-MM-DD: a data padrão de um registro na carteira.
 export function hojeNaB3(agora: Date = new Date()): string {
   return diaNaB3.format(agora);

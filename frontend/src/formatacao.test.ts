@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import {
   formatarData,
   formatarDelta,
+  formatarDiasUteis,
   formatarHora,
   formatarInstante,
   formatarInteiro,
@@ -25,6 +26,8 @@ test("formatação pt-BR", () => {
   expect(formatarVolume(812)).toBe("812");
   expect(formatarInteiro(22704)).toBe("22.704");
   expect(formatarData("2026-11-19")).toBe("19/11/2026");
+  expect(formatarDiasUteis(4)).toBe("4 dias úteis");
+  expect(formatarDiasUteis(1)).toBe("1 dia útil");
   expect(formatarVol(0.312)).toBe("31,2%");
   expect(formatarDelta(-0.4512)).toBe("-0,45");
   expect(formatarDelta(null)).toBe("—");
