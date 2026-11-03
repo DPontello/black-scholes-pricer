@@ -22,6 +22,7 @@ composition root; mora fora das camadas porque é quem chama o ``config``.
 """
 
 import argparse
+import logging
 import os
 import platform
 import shutil
@@ -300,7 +301,12 @@ def app(args: Sequence[str]) -> int:
     )
     opcoes = parser.parse_args(args)
 
-    static_dir = launch.default_static_dir()
+    sistema = platform.system()
+    config_dir = launch.platform_config_dir(sistema, os.environ, Path.home())
+    meipass, frozen_dir = _instalado()
+    if frozen_dir is not None:
+        _log_em_arquivo(config_dir)
+    static_dir = launch.default_static_dir(meipass)
     if not (static_dir / "index.html").is_file():
         print(
             "erro: o frontend não está compilado; rode `npm --prefix frontend run build`",
@@ -316,8 +322,6 @@ def app(args: Sequence[str]) -> int:
         )
         return 2
 
-    sistema = platform.system()
-    config_dir = launch.platform_config_dir(sistema, os.environ, Path.home())
     porta = launch.find_free_port(opcoes.porta)
     url = f"http://{launch.HOST}:{porta}/"
     web = build_web_app(
@@ -328,6 +332,7 @@ def app(args: Sequence[str]) -> int:
         downloads_dir=None
         if opcoes.sem_downloads
         else launch.downloads_dir(sistema, os.environ, Path.home()),
+        frozen_dir=frozen_dir,
     )
     janela = launch.app_window_command(
         sistema, url, shutil.which, launch.has_flatpak_app, launch.windows_edge_paths(os.environ)
@@ -336,6 +341,25 @@ def app(args: Sequence[str]) -> int:
     on_ready = None if opcoes.sem_janela else (lambda: launch.open_window(janela, url))
     launch.serve(web, porta, on_ready)
     return 0
+
+
+def _instalado() -> tuple[Path | None, Path | None]:
+    """No app instalado (PyInstaller): a pasta de dados de dentro do executável e a do programa."""
+    if not getattr(sys, "frozen", False):
+        return None, None
+    return Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)), Path(sys.executable).parent
+
+
+def _log_em_arquivo(config_dir: Path) -> None:
+    from options_engine.adapters.inbound.web import launch
+
+    if sys.stdout is None or sys.stderr is None:
+        saida = launch.console_log(config_dir)
+        sys.stdout = sys.stdout or saida
+        sys.stderr = sys.stderr or saida
+    raiz = logging.getLogger()
+    raiz.addHandler(launch.log_handler(config_dir))
+    raiz.setLevel(logging.INFO)
 
 
 def _par_pex(texto: str) -> tuple[str, float]:

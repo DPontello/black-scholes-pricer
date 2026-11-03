@@ -1,6 +1,9 @@
 """Comando ``app`` (Task 14): pasta de configuração, porta, janela de app e frontend ausente."""
 
+import logging
+import logging.handlers
 import socket
+import sys
 from pathlib import Path
 
 import pytest
@@ -113,6 +116,103 @@ def test_sem_navegador_de_janela_de_app_devolve_none() -> None:
 def test_app_sem_o_frontend_compilado_sai_com_codigo_2_e_mensagem(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(launch, "default_static_dir", lambda: tmp_path / "nao-existe")
+    monkeypatch.setattr(launch, "default_static_dir", lambda meipass=None: tmp_path / "nao-existe")
     assert main(["app", "--sem-janela", "--sem-ponte"]) == 2
     assert "npm --prefix frontend run build" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------- app instalado
+
+
+def test_tela_do_app_instalado_fica_dentro_do_executavel(tmp_path: Path) -> None:
+    assert launch.default_static_dir(tmp_path) == tmp_path / "static"
+    assert launch.default_static_dir().name == "static"
+    assert launch.default_static_dir().parent.name == "web"
+
+
+def test_log_do_app_instalado_e_rotativo_na_pasta_de_configuracao(tmp_path: Path) -> None:
+    handler = launch.log_handler(tmp_path / "cfg")
+    try:
+        assert isinstance(handler, logging.handlers.RotatingFileHandler)
+        assert Path(handler.baseFilename) == tmp_path / "cfg" / "logs" / "app.log"
+        assert handler.maxBytes == launch.LOG_MAX_BYTES
+        assert handler.backupCount == launch.LOG_BACKUPS
+    finally:
+        handler.close()
+
+
+def test_console_do_app_instalado_guarda_so_a_ultima_execucao(tmp_path: Path) -> None:
+    with launch.console_log(tmp_path) as saida:
+        saida.write("primeira\n")
+    with launch.console_log(tmp_path) as saida:
+        saida.write("segunda\n")
+    assert (tmp_path / "logs" / "console.log").read_text(encoding="utf-8") == "segunda\n"
+
+
+def test_comando_app_instalado_usa_a_tela_a_ponte_e_o_log_de_dentro_do_executavel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from options_engine.config import web_app
+
+    meipass = tmp_path / "_internal"
+    (meipass / "static").mkdir(parents=True)
+    (meipass / "static" / "index.html").write_text("<html></html>", encoding="utf-8")
+    programa = tmp_path / "PainelOpcoes"
+    recebido: dict[str, object] = {}
+
+    def build_falso(**kwargs: object) -> object:
+        recebido.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(meipass), raising=False)
+    monkeypatch.setattr(sys, "executable", str(programa / "PainelOpcoes.exe"))
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setattr(web_app, "build_web_app", build_falso)
+    monkeypatch.setattr(launch, "find_free_port", lambda porta: 8765)
+    monkeypatch.setattr(launch, "serve", lambda *a, **k: None)
+    antes = list(logging.getLogger().handlers)
+    try:
+        assert main(["app", "--sem-janela", "--sem-ponte"]) == 0
+    finally:
+        for handler in logging.getLogger().handlers:
+            if handler not in antes:
+                logging.getLogger().removeHandler(handler)
+                handler.close()
+        if sys.stdout is not None:
+            sys.stdout.close()
+
+    assert recebido["static_dir"] == meipass / "static"
+    assert recebido["frozen_dir"] == programa
+    logs = tmp_path / "cfg" / "painel-opcoes" / "logs"
+    assert (logs / "app.log").exists()
+    assert "Painel de Opções em http://127.0.0.1:8765/" in (logs / "console.log").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_comando_app_fora_do_executavel_nao_passa_pasta_do_programa(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from options_engine.config import web_app
+
+    estatico = tmp_path / "static"
+    estatico.mkdir()
+    (estatico / "index.html").write_text("<html></html>", encoding="utf-8")
+    recebido: dict[str, object] = {}
+
+    def build_falso(**kwargs: object) -> object:
+        recebido.update(kwargs)
+        return object()
+
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setattr(launch, "default_static_dir", lambda meipass=None: estatico)
+    monkeypatch.setattr(web_app, "build_web_app", build_falso)
+    monkeypatch.setattr(launch, "find_free_port", lambda porta: 8765)
+    monkeypatch.setattr(launch, "serve", lambda *a, **k: None)
+    assert main(["app", "--sem-janela", "--sem-ponte"]) == 0
+    assert recebido["frozen_dir"] is None
+    assert not (tmp_path / "cfg" / "painel-opcoes" / "logs").exists()

@@ -2,6 +2,7 @@
 
 Só stdlib no topo: o uvicorn (extra ``app``) entra só quando o servidor sobe."""
 
+import logging
 import os
 import re
 import socket
@@ -11,8 +12,9 @@ import urllib.error
 import urllib.request
 import webbrowser
 from collections.abc import Callable, Mapping, Sequence
+from logging.handlers import RotatingFileHandler
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, TextIO
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -21,10 +23,12 @@ __all__ = [
     "DEFAULT_PORT",
     "HOST",
     "app_window_command",
+    "console_log",
     "default_static_dir",
     "downloads_dir",
     "find_free_port",
     "has_flatpak_app",
+    "log_handler",
     "open_window",
     "platform_config_dir",
     "serve",
@@ -37,6 +41,8 @@ _PORT_ATTEMPTS: Final = 20
 _READY_TIMEOUT_S: Final = 30.0
 _LINUX_BROWSERS: Final = ("google-chrome", "chromium", "brave-browser")
 _FLATPAK_BROWSERS: Final = ("com.google.Chrome", "com.brave.Browser")
+LOG_MAX_BYTES: Final = 5 * 1024 * 1024
+LOG_BACKUPS: Final = 3
 
 
 def platform_config_dir(system: str, env: Mapping[str, str], home: Path) -> Path:
@@ -139,8 +145,35 @@ def has_flatpak_app(app_id: str) -> bool:
     return resultado.returncode == 0
 
 
-def default_static_dir() -> Path:
+def default_static_dir(meipass: Path | None = None) -> Path:
+    """A tela compilada; no app instalado, dentro do executável (``meipass``)."""
+    if meipass is not None:
+        return meipass / "static"
     return Path(__file__).resolve().parent / "static"
+
+
+def _pasta_de_logs(config_dir: Path) -> Path:
+    pasta = config_dir / "logs"
+    pasta.mkdir(parents=True, exist_ok=True)
+    return pasta
+
+
+def log_handler(config_dir: Path) -> logging.Handler:
+    """O log do app instalado, que não tem console: ``logs/app.log`` rotativo."""
+    handler = RotatingFileHandler(
+        _pasta_de_logs(config_dir) / "app.log",
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUPS,
+        encoding="utf-8",
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    return handler
+
+
+def console_log(config_dir: Path) -> TextIO:
+    """Para onde vão a saída e os erros sem tratamento do app instalado: sem console, o Python
+    os perderia. Só a última execução (``logs/console.log``)."""
+    return (_pasta_de_logs(config_dir) / "console.log").open("w", encoding="utf-8", buffering=1)
 
 
 def open_window(command: tuple[str, ...] | None, url: str) -> None:

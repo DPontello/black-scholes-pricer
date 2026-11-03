@@ -60,6 +60,14 @@ def test_comando_da_ponte_no_windows() -> None:
     assert cwd == SRC
 
 
+def test_no_app_instalado_a_ponte_e_o_exe_que_vem_junto() -> None:
+    pasta = Path("C:/Programas/PainelOpcoes")
+    for sistema in ("Windows", "Linux"):
+        comando, cwd = default_bridge_command(sistema, SRC, HOME, 8766, frozen_dir=pasta)
+        assert comando == (str(pasta / "ponte" / "PonteTryd.exe"), "servir", "--porta", "8766")
+        assert cwd == pasta / "ponte"
+
+
 def test_comando_para_matar_a_ponte_que_sobrou_so_existe_no_linux() -> None:
     assert bridge_kill_command("Linux") == KILL_LINUX
     assert bridge_kill_command("Windows") is None

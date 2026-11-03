@@ -100,6 +100,7 @@ def build_web_app(
     machine_name: str,
     clock: Clock | None = None,
     downloads_dir: Path | None = None,
+    frozen_dir: Path | None = None,
 ) -> FastAPI:
     clock = SystemClock() if clock is None else clock
     calendar = StaticHolidayCalendar.from_packaged_data()
@@ -177,7 +178,7 @@ def build_web_app(
     process = None
     if bridge:
         command, cwd = default_bridge_command(
-            platform.system(), _ponte_src_dir(), Path.home(), PORTA_PONTE
+            platform.system(), _ponte_src_dir(), Path.home(), PORTA_PONTE, frozen_dir=frozen_dir
         )
         process = BridgeProcess(command, cwd, client)
     importer = None if downloads_dir is None else DownloadsImporter(library, downloads_dir, clock)
