@@ -4,6 +4,8 @@ import logging
 import logging.handlers
 import socket
 import sys
+import urllib.error
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -172,6 +174,7 @@ def test_comando_app_instalado_usa_a_tela_a_ponte_e_o_log_de_dentro_do_executave
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setattr(web_app, "build_web_app", build_falso)
     monkeypatch.setattr(launch, "find_free_port", lambda porta: 8765)
+    monkeypatch.setattr(launch, "already_running", lambda porta: False)
     monkeypatch.setattr(launch, "serve", lambda *a, **k: None)
     antes = list(logging.getLogger().handlers)
     try:
@@ -212,7 +215,75 @@ def test_comando_app_fora_do_executavel_nao_passa_pasta_do_programa(
     monkeypatch.setattr(launch, "default_static_dir", lambda meipass=None: estatico)
     monkeypatch.setattr(web_app, "build_web_app", build_falso)
     monkeypatch.setattr(launch, "find_free_port", lambda porta: 8765)
+    monkeypatch.setattr(launch, "already_running", lambda porta: False)
     monkeypatch.setattr(launch, "serve", lambda *a, **k: None)
     assert main(["app", "--sem-janela", "--sem-ponte"]) == 0
     assert recebido["frozen_dir"] is None
     assert not (tmp_path / "cfg" / "painel-opcoes" / "logs").exists()
+
+
+# --------------------------------------------------------------------------- já está aberto
+
+
+def _erro(url: str) -> object:
+    raise urllib.error.URLError("recusada")
+
+
+def test_ja_aberto_quando_a_porta_responde_com_o_nome_do_app() -> None:
+    urls: list[str] = []
+
+    def saude(url: str) -> object:
+        urls.append(url)
+        return {"status": "ok", "versao": "0.5.0", "app": "painel-de-opcoes"}
+
+    assert launch.already_running(8765, saude)
+    assert urls == ["http://127.0.0.1:8765/"]
+
+
+@pytest.mark.parametrize(
+    "fetch",
+    [
+        _erro,
+        lambda url: {"status": "ok"},  # outro serviço na porta
+        lambda url: {"status": "ok", "app": "outro-app"},
+        lambda url: ["painel-de-opcoes"],
+    ],
+)
+def test_nao_esta_aberto_sem_resposta_ou_com_outro_servico(fetch: Callable[[str], object]) -> None:
+    assert not launch.already_running(8765, fetch)
+
+
+def test_json_ilegivel_na_porta_nao_e_o_app() -> None:
+    def ilegivel(url: str) -> object:
+        raise ValueError("Expecting value")
+
+    assert not launch.already_running(8765, ilegivel)
+
+
+def test_porta_sem_ninguem_nao_esta_aberto() -> None:
+    assert not launch.already_running(find_free_port(0))
+
+
+def test_comando_app_ja_aberto_so_abre_a_janela_na_porta_dele(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from options_engine.config import web_app
+
+    estatico = tmp_path / "static"
+    estatico.mkdir()
+    (estatico / "index.html").write_text("<html></html>", encoding="utf-8")
+    janelas: list[str] = []
+
+    def nao_pode(*args: object, **kwargs: object) -> object:
+        raise AssertionError("não deveria subir outro servidor")
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setattr(launch, "default_static_dir", lambda meipass=None: estatico)
+    monkeypatch.setattr(launch, "already_running", lambda porta: porta == 8770)
+    monkeypatch.setattr(launch, "open_window", lambda comando, url: janelas.append(url))
+    monkeypatch.setattr(web_app, "build_web_app", nao_pode)
+    monkeypatch.setattr(launch, "serve", nao_pode)
+    assert main(["app", "--porta", "8770"]) == 0
+    assert janelas == ["http://127.0.0.1:8770/"]
+    assert main(["app", "--porta", "8770", "--sem-janela"]) == 0
+    assert janelas == ["http://127.0.0.1:8770/"]

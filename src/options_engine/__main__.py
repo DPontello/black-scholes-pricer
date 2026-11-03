@@ -322,6 +322,12 @@ def app(args: Sequence[str]) -> int:
         )
         return 2
 
+    if launch.already_running(opcoes.porta):
+        url = f"http://{launch.HOST}:{opcoes.porta}/"
+        print(f"O Painel de Opções já está aberto em {url}")
+        if not opcoes.sem_janela:
+            launch.open_window(_janela(sistema, url), url)
+        return 0
     porta = launch.find_free_port(opcoes.porta)
     url = f"http://{launch.HOST}:{porta}/"
     web = build_web_app(
@@ -334,13 +340,19 @@ def app(args: Sequence[str]) -> int:
         else launch.downloads_dir(sistema, os.environ, Path.home()),
         frozen_dir=frozen_dir,
     )
-    janela = launch.app_window_command(
-        sistema, url, shutil.which, launch.has_flatpak_app, launch.windows_edge_paths(os.environ)
-    )
+    janela = _janela(sistema, url)
     print(f"Painel de Opções em {url} (configuração em {config_dir})")
     on_ready = None if opcoes.sem_janela else (lambda: launch.open_window(janela, url))
     launch.serve(web, porta, on_ready)
     return 0
+
+
+def _janela(sistema: str, url: str) -> tuple[str, ...] | None:
+    from options_engine.adapters.inbound.web import launch
+
+    return launch.app_window_command(
+        sistema, url, shutil.which, launch.has_flatpak_app, launch.windows_edge_paths(os.environ)
+    )
 
 
 def _instalado() -> tuple[Path | None, Path | None]:

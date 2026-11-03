@@ -18,6 +18,7 @@ def test_saude_responde_ok_com_a_versao_do_pacote() -> None:
     assert resposta.json() == {
         "status": "ok",
         "versao": importlib.metadata.version("options-engine"),
+        "app": "painel-de-opcoes",
     }
 
 

@@ -14,3 +14,11 @@ Branch `feat/instalador`, a partir da `development` (`0c8e09b`).
 - Ruling: com `frozen_dir`, o comando é o do `.exe` qualquer que seja o sistema: o app só é empacotado para o Windows; no Linux ele roda pelo venv do `instalar.sh` (Task 6).
 - Ruling: a saída padrão só é redirecionada para o `console.log` quando está ausente (`None`, o caso do executável sem console); o log do `logging` vai sempre para o `app.log` no app instalado.
 - Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/web/test_launch.py`, `tests/adapters/tryd/test_launcher.py` e `tests/config/test_web_app.py` (63 testes).
+
+## 2026-11-03: Task 2 — "já está aberto" só abre a janela
+
+- `GET /api/saude` ganhou `"app": "painel-de-opcoes"` (`launch.APP_ID`), a assinatura do app na porta.
+- `launch.already_running(port, fetch)`: `True` só quando a porta responde com essa assinatura; sem resposta, com outro serviço, com JSON sem o campo ou ilegível, `False` (prazo de 1 s).
+- Comando `app`: com o app já aberto na porta pedida (a padrão, 8765, ou a de `--porta`), imprime o endereço, abre a janela nele (ou nada, com `--sem-janela`) e sai com 0, sem montar o servidor nem tocar na trava do perfil.
+- Ruling: só a porta pedida é consultada, não as 20 seguintes que o `find_free_port` tenta. O app que caiu numa porta seguinte (8765 ocupada por outro programa) não é achado, e o segundo clique sobe outro; a trava do perfil continua avisando. Se errado: consultar também as seguintes, ao custo de até 20 s com tudo ocupado.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/web`, `tests/adapters/tryd/test_launcher.py` e `tests/config/test_web_app.py` (180 testes).
