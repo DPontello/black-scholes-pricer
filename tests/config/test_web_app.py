@@ -255,3 +255,24 @@ def test_fechamento_do_pregao_vem_dos_cotahist_importados(tmp_path: Path) -> Non
     assert _close(loader, "PETR4", date(2026, 11, 19)) is None
     vazio = LibraryLoader(B3FileLibrary(tmp_path / "vazia", relogio()))
     assert _close(vazio, "PETR4", REFERENCE_SESSION) is None
+
+
+def test_book_do_app_usa_o_fim_de_dia_e_o_historico_da_biblioteca(tmp_path: Path) -> None:
+    biblioteca(tmp_path / "config" / MARKET_DIR_NAME, cadastro=cadastro_com_objetos())
+    pasta = tmp_path / "perfil-hugo"
+    pasta.mkdir()
+    with _app(tmp_path / "config") as cliente:
+        assert cliente.post("/api/perfis", json={"nome": "Hugo", "pasta": str(pasta)}).is_success
+        assert cliente.post("/api/perfis/Hugo/abrir", json={"forcar": False}).is_success
+        assert cliente.put("/api/perfil/ativos", json={"ativos": ["PETR4"]}).is_success
+        r = cliente.get("/api/book")
+    assert r.status_code == 200
+    corpo = r.json()
+    assert (corpo["pregao"], corpo["fonte"]) == (REFERENCE_SESSION.isoformat(), "fim_de_dia")
+    assert corpo["indisponiveis"] == []
+    (contexto,) = corpo["contextos"]
+    assert contexto["ativo"] == "PETR4"
+    # A fixture tem opções só no pregão de referência: IV 30 sem rank, regime pela HV.
+    assert contexto["iv30"] is not None and contexto["iv_rank"] is None
+    assert contexto["regime_pela_hv"] is True
+    assert (tmp_path / "config" / MARKET_DIR_NAME / "vol_history.sqlite").exists()

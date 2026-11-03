@@ -14,7 +14,7 @@ from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.profile import Profile, ProfileEntry
 
-__all__ = ["router_perfis"]
+__all__ = ["BookOut", "book_out", "router_perfis"]
 
 
 class EntradaPerfilOut(BaseModel):
@@ -68,7 +68,7 @@ def _entrada_out(entrada: ProfileEntry) -> EntradaPerfilOut:
     return EntradaPerfilOut(nome=entrada.name, pasta=entrada.folder)
 
 
-def _book_out(book: BookSettings) -> BookOut:
+def book_out(book: BookSettings) -> BookOut:
     return BookOut(
         preset=book.preset,
         delta_min=book.delta_min,
@@ -104,7 +104,7 @@ def _perfil_out(perfil: Profile) -> PerfilOut:
         nome=perfil.name,
         ativos=list(perfil.watchlist),
         cdi_anual=perfil.cdi_annual,
-        book=_book_out(perfil.book_settings),
+        book=book_out(perfil.book_settings),
     )
 
 

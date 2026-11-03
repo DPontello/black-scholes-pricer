@@ -1,111 +1,36 @@
 """``BookService`` sobre a cadeia falsa de fim de dia (PETR4 e VALE3 a 30, vol 30%)."""
 
-from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
-from datetime import date, timedelta
+from dataclasses import replace
+from datetime import date
 
 import pytest
 
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
 from options_engine.application.ports.book import BookUseCase, BookView
 from options_engine.application.use_cases.book import BookService
-from options_engine.application.use_cases.rank_income import RankIncomeOpportunitiesService
 from options_engine.application.use_cases.strategy_builder import StrategyBuilderService
 from options_engine.domain.analytics.volatility import DailyVol, VolRegime
 from options_engine.domain.book.direcionais import Direction, DirectionalView
 from options_engine.domain.book.presets import BookPreset, BookSettings
-from options_engine.domain.model.chain import OptionChain, OptionQuote
+from options_engine.domain.model.chain import OptionQuote
 from options_engine.domain.model.enums import Side, StockOrigin
-from options_engine.domain.model.errors import InvalidDomainValueError, UnderlyingUnavailableError
+from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.quotes import DataSource
 from options_engine.domain.model.templates import Family
 from options_engine.domain.portfolio.positions import AssetTotal
-from options_engine.domain.pricing.black_scholes import BlackScholesPricingModel
-from tests.application._mercado_falso import CALENDARIO, NOVEMBRO, PREGAO, MercadoFalso
+from tests.application._book_falso import MercadoDoBook, mercado_do_book, servico_do_book
+from tests.application._mercado_falso import CALENDARIO, NOVEMBRO, PREGAO
 from tests.book._cadeias import MODERADO, TABELA, cadeia_larga
 
 LARGO = replace(MODERADO, max_spread_pct=1.5)
 
 
-def _de(ativo: str, chain: OptionChain) -> OptionChain:
-    """A mesma cadeia com outro ativo-objeto (VALE3 a 30, séries VALEK300...)."""
-    raiz = ativo[:4]
-    return replace(
-        chain,
-        underlying=replace(chain.underlying, underlying_symbol=ativo),
-        quotes=tuple(
-            replace(
-                q,
-                contract=replace(
-                    q.contract,
-                    symbol=raiz + q.contract.symbol[4:],
-                    terms=replace(q.contract.terms, underlying=ativo),
-                ),
-            )
-            for q in chain.quotes
-        ),
-    )
-
-
-def _historico(iv_hoje: float, hv_hoje: float) -> tuple[DailyVol, ...]:
-    """100 pregões com IV de 31% a 40% e o de hoje com ``iv_hoje`` (rank 0 se abaixo de 31%)."""
-    inicio = date(2026, 5, 1)
-    antes = tuple(
-        DailyVol(inicio + timedelta(days=i), 30.0, 0.31 + i / 1000, False, None) for i in range(100)
-    )
-    return (*antes, DailyVol(PREGAO, 30.0, iv_hoje, False, hv_hoje))
-
-
-@dataclass
-class _Historicos:
-    por_ativo: dict[str, tuple[DailyVol, ...] | str] = field(default_factory=dict)
-
-    def history(self, symbol: str) -> tuple[DailyVol, ...] | str:
-        return self.por_ativo.get(symbol, f"{symbol}: sem histórico")
-
-
-class _Indisponivel(MercadoFalso):
-    def get_chain(self, underlying_symbol: str) -> OptionChain:
-        if underlying_symbol == "ITUB4":
-            raise UnderlyingUnavailableError("ITUB4: sem fechamento no COTAHIST")
-        return super().get_chain(underlying_symbol)
-
-
-def _mercado() -> MercadoFalso:
-    base = cadeia_larga()
-    return _Indisponivel(chains={"PETR4": base, "VALE3": _de("VALE3", base)})
-
-
-def _servico(
-    historicos: dict[str, tuple[DailyVol, ...] | str] | None = None,
-    carteira: Sequence[AssetTotal] = (),
-    mercado: MercadoFalso | None = None,
-) -> BookService:
-    mercado = mercado or _mercado()
-    renda = RankIncomeOpportunitiesService(
-        chains=mercado,
-        calendar=CALENDARIO,
-        model=BlackScholesPricingModel(),
-        cost_schedules=(TABELA,),
-        valuation_timezone=B3_UTC_OFFSET,
-    )
-    padrao: dict[str, tuple[DailyVol, ...] | str] = {
-        "PETR4": _historico(0.30, 0.40),
-        "VALE3": _historico(0.30, 0.40),
-    }
-    return BookService(
-        mercado,
-        _Historicos(padrao if historicos is None else historicos),
-        renda,
-        lambda: carteira,
-        CALENDARIO,
-        B3_UTC_OFFSET,
-        (TABELA,),
-    )
+def _servico(**campos: object) -> BookService:
+    return servico_do_book(**campos)  # type: ignore[arg-type]  # justificativa: kwargs de teste
 
 
 def _book(settings: BookSettings = LARGO, *ativos: str, **campos: object) -> BookView:
-    return _servico(**campos).book(settings, ativos or ("PETR4", "VALE3"))  # type: ignore[arg-type]  # justificativa: kwargs de teste
+    return _servico(**campos).book(settings, ativos or ("PETR4", "VALE3"))
 
 
 def test_cumpre_o_protocolo() -> None:
@@ -168,7 +93,7 @@ def test_historico_sem_iv_hoje_tambem_vira_motivo() -> None:
 
 
 def test_o_pedido_de_cada_item_abre_no_montador() -> None:
-    mercado = _mercado()
+    mercado = mercado_do_book()
     book = _servico(mercado=mercado).book(LARGO, ("PETR4", "VALE3"))
     montador = StrategyBuilderService(
         mercado, CALENDARIO, B3_UTC_OFFSET, schedules=[TABELA], lots=lambda _: None
@@ -226,7 +151,7 @@ def test_vencimento_vencido_ou_fora_do_calendario_fica_fora_sem_derrubar_o_book(
         com_vencimento("PETRA300", date(2028, 1, 21)),
         com_vencimento("PETRJ300", date(2026, 10, 16)),
     )
-    mercado = _Indisponivel(chains={"PETR4": replace(base, quotes=(*base.quotes, *extras))})
+    mercado = MercadoDoBook(chains={"PETR4": replace(base, quotes=(*base.quotes, *extras))})
     book = _servico(mercado=mercado).book(LARGO, ("PETR4",))
     vencimentos = {e.item.expiry for f in book.families.values() for e in f.items}
     assert vencimentos and vencimentos <= {NOVEMBRO, date(2026, 12, 18)}

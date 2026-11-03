@@ -87,3 +87,11 @@ Branch `feat/app-semana-3`, a partir da `development` (`088f67e`).
 - Ruling: os 5 melhores por estrutura são escolhidos entre todos os ativos da lista, não por ativo. A direção do critério de cada estrutura ficou num lugar só (`LOWER_IS_BETTER` em `domain/book/model.py`: compra de vol e proteção, menor é melhor), em vez de um parâmetro em cada família.
 - Ruling: com cadeias de pregões diferentes, o book mostra o mais recente.
 - Checagens: ruff, mypy, import-linter e as suítes do book e de `tests/application` (271 testes; `use_cases/book.py` em 100%).
+
+## 2026-11-02: Task 9 — API do book
+
+- `adapters/inbound/web/book.py`: `GET /api/book` (perfil aberto, com o preset e a lista dele) e `POST /api/book/direcional` (`{ativo, direcao, alvo, vencimento}`). Cada item leva os números crus (valor e unidade) e já formatados, o porquê montado em pt-BR, os rótulos com o texto e o `pedido` no formato do `AnaliseIn` do montador (sem preços). Sem perfil: 404; alvo do lado errado: 422 com o motivo; sem COTAHIST: os ativos em `indisponiveis` com o motivo e nenhum item.
+- `config/web_app.py`: o `EndOfDayMarket` virou uma variável própria e alimenta o `BookService`, com o `CotahistVolHistory` da biblioteca, um `RankIncomeOpportunitiesService` sobre o fim de dia e as ações compradas da carteira (`open_operations().totals`).
+- O `_pedido_out` do montador virou `pedido_out` público, e o `_book_out` dos perfis virou `book_out`, para o router do book não repetir as conversões.
+- Conferido com a fixture pelo app inteiro: o book de PETR4 vem do pregão de 23/10, com a IV 30 sem rank (regime pela HV) e o cache `vol_history.sqlite` gravado na biblioteca.
+- Checagens: ruff, mypy, import-linter e as suítes `tests/web` e `tests/config/test_web_app.py` (122 testes; o router do book em 100%).
