@@ -25,6 +25,9 @@
 >   Direcionais com e sem visão, Proteção) com presets salvos no perfil e "abrir no montador";
 >   a aba Análise no Mercado. Falta o ponta a ponta com os arquivos reais da B3 (não estavam neste
 >   PC) e o teste ao vivo no pregão. Decisões no [ledger](superpowers/ledger-semana-3.md).
+> - **Cadastro pelo `pesquisa-pregao.zip` (2026-11-03):** o app aceita o Cadastro de
+>   Instrumentos em XML da "Pesquisa por pregão", como a B3 entrega, além do CSV (ADR-0006,
+>   "Cadastro em XML"). Conferido com o arquivo real e a cadeia ao vivo de PETR4.
 > - **Semanas 4 e 5:** alertas, proventos, IR e instalador; teste com a mãe. Os planos ainda não
 >   foram escritos.
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).

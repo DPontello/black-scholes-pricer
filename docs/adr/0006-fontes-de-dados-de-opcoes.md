@@ -77,6 +77,25 @@ Fontes avaliadas para a cadeia de opções:
   - `ExrcPric` vem com vírgula decimal ou inteiro;
   - `UndrlygTckrSymb1` vem vazio em todas as opções. O ativo-objeto está em
     `Asst` (PETR4, BOVA11), que no à vista traz só a raiz.
+- **Cadastro em XML, o `pesquisa-pregao.zip`** (conferido em 03/11/2026):
+  - a "Pesquisa por pregão" entrega o cadastro do pregão como
+    `pesquisa-pregao.zip`, com um `IN<AAMMDD>.zip` dentro e o XML
+    `BVBG.028.02_*.xml` (432 MB) dentro deste. O CSV exportado da tabela de
+    instrumentos do site veio só com os derivativos da BM&F e com o cabeçalho
+    traduzido ("Ticker symbol"), sem nenhuma opção de ação;
+  - **decisão: o app aceita o pacote como veio.** Na importação, o XML é lido
+    em fluxo e convertido no CSV de sempre, só com as ações (`EqtyInf`) e as
+    opções sobre ações (`OptnOnEqtsInf`); a data é a do próprio XML;
+  - no XML o `Asst` da opção é só a raiz (`PETR`); o ativo-objeto vem do
+    `UndrlygInstrmId`, que é o `FinInstrmId` da ação no mesmo arquivo, e
+    separa PETR3 de PETR4 sem ambiguidade;
+  - no arquivo de 03/11: 120.116 instrumentos, 71.349 opções sobre ações,
+    todas com `OptnStyle` (`AMER`/`EURO`) e `OptnTp` `CALL`/`PUTT`. 97 opções
+    (RAIZ, INBR e ODPV) apontam para ações fora do arquivo e seguem a regra de
+    raiz do ticker. A conversão leva ~10 s e ~100 MB.
+- **COTAHIST anual atualizado:** o anual baixado em 03/11/2026 traz o trailer
+  de 30/10, o último pregão, igual ao diário. Com o anual baixado no dia, o
+  diário é dispensável.
 - O ticker **não codifica estilo** (estrutura do código de negociação no
   OC 025/2017-DO, vigência 04/12/2017). O "E" no fim do código identifica o
   instrumento de **exercício**, não "europeia".
