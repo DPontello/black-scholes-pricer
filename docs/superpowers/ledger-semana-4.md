@@ -34,3 +34,13 @@ Branch `feat/instalador`, a partir da `development` (`0c8e09b`).
 - Ruling: sem ícone por enquanto (o repositório não tem um); o Windows usa o ícone padrão. Fica para o acabamento da semana 5.
 - **Conferido de verdade no Linux:** o `painel.spec` gerou o app com o PyInstaller 6.11.1 (46 MB). O binário serviu a tela, o `GET /api/saude` com a versão e o `"app"`, os exemplos do Aprender e o `app.log` na pasta de configuração; o segundo processo achou o primeiro e saiu com 0. O `ponte.spec` (32 bits, pywin32) só se confere no job Windows (Task 5).
 - Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/packaging`, `tests/ponte` e `tests/adapters/tryd` (671 testes).
+
+## 2026-11-03: Task 4 — Inno Setup
+
+- `packaging/windows/PainelOpcoes.iss`: instalação por usuário (`PrivilegesRequired=lowest`) em `%LOCALAPPDATA%\Programs\PainelOpcoes`, `AppId` fixo (`B68E5C59-…`), atalhos no menu Iniciar e na área de trabalho, "abrir o Painel de Opções" no fim, desinstalador em português (`BrazilianPortuguese.isl`, que vem com o Inno Setup 6). O build passa `Versao`, `VersaoNome`, `Origem` e `Saida` por `/D`.
+- `packaging/windows/versao.py`: a versão do `pyproject.toml` inteira (`0.5.0.dev0`, no nome do instalador) e só com números (`0.5.0`, a que o Inno Setup aceita na versão do arquivo).
+- Ruling: atualizar por cima apaga antes `{app}\_internal` e `{app}\ponte` (`[InstallDelete]`), para não sobrar biblioteca da versão antiga; nada fora de `{app}` é apagado, nem na atualização nem na desinstalação (teste no `.iss`). Os dados ficam em `%APPDATA%\PainelOpcoes` e na pasta de cada perfil.
+- Ruling: `CloseApplications=yes` fecha o app aberto antes de trocar os arquivos.
+- Ruling: sem página de escolher pasta (`DisableDirPage=yes`): uma pergunta a menos para a mãe do autor.
+- O `.iss` só compila no job Windows (Task 5); aqui, os testes leem o script.
+- Checagens: ruff, ruff format, mypy, import-linter e `tests/packaging` (19 testes).
