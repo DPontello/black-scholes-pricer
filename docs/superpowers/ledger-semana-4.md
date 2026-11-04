@@ -44,3 +44,10 @@ Branch `feat/instalador`, a partir da `development` (`0c8e09b`).
 - Ruling: sem página de escolher pasta (`DisableDirPage=yes`): uma pergunta a menos para a mãe do autor.
 - O `.iss` só compila no job Windows (Task 5); aqui, os testes leem o script.
 - Checagens: ruff, ruff format, mypy, import-linter e `tests/packaging` (19 testes).
+
+## 2026-11-04: Task 5 — job do GitHub Actions
+
+- `.github/workflows/instalador.yml` (`windows-latest`, PowerShell): build da tela; Python 3.12 **x64** e o PyInstaller do app; fumaça do app (o `GET /api/saude` com `"app": "painel-de-opcoes"`, a tela com `<div id="raiz"` e o segundo processo saindo com 0); Python 3.12 **x86** e o PyInstaller da ponte; fumaça da ponte (`PonteTryd.exe --help`); autoteste da ponte; Inno Setup (instala pelo `choco` se o runner não tiver); o instalador como artefato `PainelOpcoes-<versão>-setup`.
+- Ruling: o autoteste da ponte roda com `continue-on-error`: ele precisa da type library do Tryd ou do Excel, que o runner pode não ter. Falhando no runner, ele vira item manual no PC Windows do autor (Task 7). O `--help` é a fumaça obrigatória da ponte.
+- Ruling: além de `workflow_dispatch` e tag `v*`, o job roda em pull request que mexe em `packaging/**`, no próprio workflow ou em `src/options_ponte/**`. O GitHub só mostra o "Run workflow" de um arquivo que já está na branch padrão (`master`), que só recebe a `development` no fechamento de versão; sem o gatilho de PR, o instalador não poderia ser testado antes disso.
+- YAML conferido com o PyYAML (12 passos). O job em si só roda no GitHub.
