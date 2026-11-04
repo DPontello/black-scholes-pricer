@@ -39,8 +39,11 @@
 >   - `scripts/linux/instalar.sh` instala neste PC;
 >   - falta conferir num PC Windows real.
 >
->   Depois vêm o IR mensal das opções (parte 2) e os alertas (parte 3). Proventos e ajuste de
->   strike ficaram fora da semana 4.
+>   A parte 2, o IR mensal das opções ([plano](superpowers/plans/2026-11-04-semana-4-parte-2-ir-mensal.md)),
+>   também está feita: a aba IR mensal da Carteira, com day trade, prejuízo por categoria, DARF
+>   mínimo de R$ 10 e o prazo de pagamento.
+>
+>   Depois vêm os alertas (parte 3). Proventos e ajuste de strike ficaram fora da semana 4.
 > - **Semana 5:** teste com a mãe e acabamento (ícone do app, entre outros).
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
