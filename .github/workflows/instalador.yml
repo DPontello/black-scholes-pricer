@@ -1,0 +1,110 @@
+# Instalador do Windows (semana 4, parte 1): o app em Python de 64 bits e a ponte do Tryd em
+# Python de 32 bits, com o PyInstaller, e o instalador com o Inno Setup. Roda à mão (Actions >
+# Instalador > Run workflow, depois que o arquivo chegar à master), em tag v* e nos pull requests
+# que mexem no empacotamento. O instalador sai como artefato do job.
+name: Instalador
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "packaging/**"
+      - ".github/workflows/instalador.yml"
+      - "src/options_ponte/**"
+
+jobs:
+  windows:
+    name: Instalador do Windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Tela (build da SPA)
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+
+      - name: Python 3.12 de 64 bits (o app)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: PyInstaller do app
+        run: |
+          python -m pip install ".[app]" -r packaging/windows/requirements-build.txt
+          pyinstaller --noconfirm --distpath dist --workpath build/painel packaging/windows/painel.spec
+
+      - name: Fumaça do app (API, versão e tela)
+        run: |
+          $env:APPDATA = "$env:RUNNER_TEMP\appdata"
+          $argumentos = "app", "--sem-janela", "--sem-ponte", "--sem-downloads", "--porta", "8799"
+          $app = Start-Process -FilePath dist\PainelOpcoes\PainelOpcoes.exe -ArgumentList $argumentos -PassThru
+          $saude = $null
+          for ($i = 0; $i -lt 60 -and $null -eq $saude; $i++) {
+            try { $saude = Invoke-RestMethod http://127.0.0.1:8799/api/saude } catch { Start-Sleep -Seconds 1 }
+          }
+          if ($null -eq $saude) {
+            Get-Content "$env:APPDATA\PainelOpcoes\logs\console.log" -ErrorAction SilentlyContinue
+            throw "o app não respondeu em 60 s"
+          }
+          if ($saude.app -ne "painel-de-opcoes") { throw "outro serviço na porta: $($saude | ConvertTo-Json)" }
+          Write-Output "app no ar, versão $($saude.versao)"
+          $tela = Invoke-WebRequest http://127.0.0.1:8799/ -UseBasicParsing
+          if ($tela.Content -notmatch '<div id="raiz"') { throw "a tela não veio" }
+          # O segundo processo acha o primeiro, só abriria a janela, e sai.
+          $segundo = Start-Process -FilePath dist\PainelOpcoes\PainelOpcoes.exe -ArgumentList "--sem-janela", "--porta", "8799" -PassThru -Wait
+          if ($segundo.ExitCode -ne 0) { throw "o segundo processo saiu com $($segundo.ExitCode)" }
+          Stop-Process -Id $app.Id
+
+      - name: Python 3.12 de 32 bits (a ponte)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x86
+
+      - name: PyInstaller da ponte
+        run: |
+          python -m pip install -r packaging/windows/requirements-build.txt
+          pyinstaller --noconfirm --distpath dist --workpath build/ponte packaging/windows/ponte.spec
+
+      - name: Fumaça da ponte (o executável abre)
+        run: |
+          & dist\ponte\PonteTryd.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "PonteTryd.exe --help saiu com $LASTEXITCODE" }
+
+      # O autoteste usa um servidor RTD falso e a type library do Tryd ou do Excel, que o runner
+      # pode não ter. Se falhar aqui, ele vira item manual no PC Windows do autor (ledger, Task 5).
+      - name: Autoteste da ponte (sem Tryd)
+        continue-on-error: true
+        run: |
+          $saida = & dist\ponte\PonteTryd.exe autoteste 2>&1 | Out-String
+          Write-Output $saida
+          if ($saida -notmatch "AUTOTESTE OK") { throw "autoteste não passou" }
+
+      - name: Instalador (Inno Setup)
+        run: |
+          $versao = python packaging/windows/versao.py
+          $inno = python packaging/windows/versao.py --inno
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+          & $iscc "/DVersao=$inno" "/DVersaoNome=$versao" "/DOrigem=$PWD\dist" "/DSaida=$PWD\instalador" packaging\windows\PainelOpcoes.iss
+          if ($LASTEXITCODE -ne 0) { throw "o Inno Setup saiu com $LASTEXITCODE" }
+          "VERSAO=$versao" >> $env:GITHUB_ENV
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PainelOpcoes-${{ env.VERSAO }}-setup
+          path: instalador/*.exe
+          if-no-files-found: error

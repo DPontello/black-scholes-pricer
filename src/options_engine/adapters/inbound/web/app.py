@@ -22,6 +22,7 @@ from options_engine.adapters.inbound.web.errors import (
     http_error_body,
     validation_error_body,
 )
+from options_engine.adapters.inbound.web.launch import APP_ID
 
 __all__ = ["create_app"]
 
@@ -93,7 +94,7 @@ def create_app(
 
     @app.get("/api/saude")
     def saude() -> dict[str, str]:
-        return {"status": "ok", "versao": versao}
+        return {"status": "ok", "versao": versao, "app": APP_ID}
 
     for router in routers:
         app.include_router(router)

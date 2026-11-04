@@ -565,9 +565,11 @@ class _ServidorFalso:
         self.callback.UpdateNotify()
 
 
-def comando_servidor_falso(executavel: str, segundos: float) -> list[str]:
-    """O comando que sobe o servidor falso noutro processo (``python -m options_ponte ...``)."""
-    return [executavel, "-m", "options_ponte", "servidor-falso", "--segundos", f"{segundos:g}"]
+def comando_servidor_falso(executavel: str, segundos: float, *, frozen: bool = False) -> list[str]:
+    """O comando que sobe o servidor falso noutro processo (``python -m options_ponte ...``).
+    Na ponte instalada (``frozen``), o executável já é a ponte: sem ``-m options_ponte``."""
+    modulo = [] if frozen else ["-m", "options_ponte"]
+    return [executavel, *modulo, "servidor-falso", "--segundos", f"{segundos:g}"]
 
 
 def servir_falso(segundos: float) -> int:
@@ -628,7 +630,9 @@ def _autoteste_entre_processos() -> bool:
     """A ``Ponte`` e a ``SessaoRtdCom`` aqui; o servidor noutro processo, que morre no meio."""
     pythoncom = _importar("pythoncom")
     servidor = subprocess.Popen(
-        comando_servidor_falso(sys.executable, _VIDA_DO_SERVIDOR_FALSO_S),
+        comando_servidor_falso(
+            sys.executable, _VIDA_DO_SERVIDOR_FALSO_S, frozen=getattr(sys, "frozen", False)
+        ),
         cwd=DIRETORIO_SRC,
         stdout=subprocess.PIPE,
         text=True,

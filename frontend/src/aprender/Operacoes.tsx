@@ -7,7 +7,7 @@ import { ErroApi } from "../api/cliente";
 import { ComTermos } from "../componentes/Termo";
 import { formatarInteiro, formatarPreco } from "../formatacao";
 import { GraficoExemplo } from "./GraficoExemplo";
-import { type TextoOperacao, TEXTOS_OPERACOES } from "./operacoes";
+import { type TextoOperacao, TEXTOS_OPERACOES } from "./textosOperacoes";
 
 // A API não diz o ativo do exemplo: ele é sempre este.
 const ATIVO_DO_EXEMPLO = "PETR4";

@@ -48,16 +48,28 @@ ProcessSpawner = Callable[[Sequence[str], Path], ProcessHandle]
 
 
 def spawn_process(command: Sequence[str], cwd: Path) -> ProcessHandle:
-    """Executor real: ``Popen`` sem stdin (a ponte não lê do terminal do app)."""
-    return subprocess.Popen(list(command), cwd=cwd, stdin=subprocess.DEVNULL)
+    """Executor real: ``Popen`` sem stdin (a ponte não lê do terminal do app). No Windows, sem
+    janela de console: a ponte instalada é um programa de console, para o ``diagnostico`` e o
+    ``autoteste`` mostrarem o resultado, mas o app a sobe escondida."""
+    return subprocess.Popen(
+        list(command),
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
 
 
 def default_bridge_command(
-    system: str, src_dir: Path, home: Path, port: int
+    system: str, src_dir: Path, home: Path, port: int, *, frozen_dir: Path | None = None
 ) -> tuple[tuple[str, ...], Path]:
     """Comando que sobe a ponte e o diretório de trabalho dele (``src_dir``, onde mora
     ``options_ponte``). ``system`` é o de ``platform.system()``; o que não é Windows usa o Wine.
+    ``frozen_dir`` é a pasta do app instalado: lá a ponte é o ``PonteTryd.exe`` que vem junto, e não
+    há ``python`` no PATH.
     """
+    if frozen_dir is not None:
+        ponte = frozen_dir / "ponte"
+        return (str(ponte / "PonteTryd.exe"), "servir", "--porta", str(port)), ponte
     if system == "Windows":  # desenvolvimento: Python do Windows no PATH
         return ("python", "-m", "options_ponte", "servir", "--porta", str(port)), src_dir
     return (

@@ -1,0 +1,4 @@
+# Só para gerar o instalador no job Windows do GitHub Actions; fora do pyproject, para o núcleo
+# seguir sem dependências. Versões exatas: o executável tem de sair igual a cada build.
+pyinstaller==6.11.1
+pywin32==308 ; sys_platform == "win32"

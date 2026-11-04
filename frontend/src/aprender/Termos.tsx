@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 
 import { ComTermos, semMarcas } from "../componentes/Termo";
-import { TERMOS, type TermoGlossario } from "./termos";
+import { TERMOS, type TermoGlossario } from "./glossario";
 
 // A busca ignora acento e maiúsculas: "exercicio" acha "Exercício".
 function normalizar(texto: string): string {
   return texto
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 }
 

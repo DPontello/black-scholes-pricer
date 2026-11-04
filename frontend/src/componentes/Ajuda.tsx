@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import { termoPorId } from "../aprender/termos";
+import { termoPorId } from "../aprender/glossario";
 import { enderecoDoTermo } from "./Termo";
 
 // Um "?" pequeno ao lado de um rótulo, que abre o termo na aba Aprender.

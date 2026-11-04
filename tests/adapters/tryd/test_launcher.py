@@ -60,6 +60,14 @@ def test_comando_da_ponte_no_windows() -> None:
     assert cwd == SRC
 
 
+def test_no_app_instalado_a_ponte_e_o_exe_que_vem_junto() -> None:
+    pasta = Path("C:/Programas/PainelOpcoes")
+    for sistema in ("Windows", "Linux"):
+        comando, cwd = default_bridge_command(sistema, SRC, HOME, 8766, frozen_dir=pasta)
+        assert comando == (str(pasta / "ponte" / "PonteTryd.exe"), "servir", "--porta", "8766")
+        assert cwd == pasta / "ponte"
+
+
 def test_comando_para_matar_a_ponte_que_sobrou_so_existe_no_linux() -> None:
     assert bridge_kill_command("Linux") == KILL_LINUX
     assert bridge_kill_command("Windows") is None
@@ -276,6 +284,22 @@ def test_start_sem_o_executavel_nao_levanta_e_o_app_segue_sem_ponte(
     cenario.executor.falha = FileNotFoundError("distrobox")
     cenario.processo().start()  # Tryd fora do ar não derruba a abertura do app
     assert "distrobox" in caplog.text
+
+
+def test_spawn_process_no_windows_sobe_a_ponte_sem_janela(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recebido: dict[str, object] = {}
+
+    def popen_falso(command: list[str], **kwargs: object) -> object:
+        recebido.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(subprocess, "Popen", popen_falso)
+    spawn_process(("PonteTryd.exe", "servir"), tmp_path)
+    assert recebido["creationflags"] == 0x08000000
+    assert recebido["cwd"] == tmp_path
 
 
 def test_spawn_process_lanca_um_processo_de_verdade(tmp_path: Path) -> None:

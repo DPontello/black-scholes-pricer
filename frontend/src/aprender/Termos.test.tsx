@@ -3,8 +3,8 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, test } from "vitest";
 
 import { semMarcas, termosCitados } from "../componentes/Termo";
-import { TEXTOS_OPERACOES } from "./operacoes";
-import { TERMOS } from "./termos";
+import { TEXTOS_OPERACOES } from "./textosOperacoes";
+import { TERMOS } from "./glossario";
 import { Termos } from "./Termos";
 
 // Os ids que os "?" do app usam: nenhum pode sumir do glossário.
