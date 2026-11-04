@@ -241,3 +241,26 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
 - Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/adapters/storage`,
   `tests/application`, `tests/web`, `tests/alerts`, `tests/config` e `tests/domain` (1033
   passando; 14 testes novos). A única falha é a do `test_launch`, a mesma de antes (Task 2).
+
+## 2026-11-04: parte 3, Task 4 — `AlertService` e os dispensados
+
+- `application/ports/alerts.py`: `AlertsView` (alertas visíveis, quantos dispensados, fonte) e
+  `AlertUseCase` (`evaluate(view, notices)`, `dismiss`, `restore_all`).
+- Porta `DismissedAlertsRepository` (`load`, `save`) em `ports/outbound.py`.
+- `application/use_cases/alerts.py`: `AlertService(dismissed_for, settings_for, clock, tz,
+  market=, calendar=)`. O total é `realizado + não realizado` (`fsum`); o spot só dos ativos com
+  opção vendida aberta (`last`, senão `previous_close`); "hoje" pelo fuso da B3; vencimento que o
+  calendário recusa vira `None` (indeterminado).
+- Dispensados: mantém só `dispensados ∩ (ativos ∪ indeterminados)` e grava só quando muda (o
+  WebSocket avalia a cada ciclo).
+- `adapters/outbound/storage/dismissed_alerts.py`: `alertas.json` na pasta do perfil
+  (`{"versao": 1, "dispensados": [...]}`, ordenado, escrita atômica). Ilegível é lido como vazio e
+  nunca sobrescrito (`UnreadableRecordError` no `save`); pasta fora do ar no `save` dá
+  `ProfileFolderUnavailableError`.
+- Ruling: o `AlertService` recebe `settings_for` (uma função) em vez do `ProfileUseCase` inteiro:
+  só precisa dos limites, e o teste fica sem perfil falso.
+- Ruling: sem log quando o `alertas.json` está ilegível; o aviso chega ao usuário quando ele tenta
+  dispensar (422 com o caminho). Custo se errado: um arquivo quebrado passa despercebido até o
+  primeiro "Dispensar".
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/application`,
+  `tests/adapters/storage` e `tests/alerts` (394 passando; 21 testes novos).
