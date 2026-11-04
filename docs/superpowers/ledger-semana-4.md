@@ -264,3 +264,25 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
   primeiro "Dispensar".
 - Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/application`,
   `tests/adapters/storage` e `tests/alerts` (394 passando; 21 testes novos).
+
+## 2026-11-04: parte 3, Task 5 — rolagem
+
+- `RollSuggestion` e `RollUseCase` em `application/ports/alerts.py`; `RollService` em
+  `application/use_cases/roll.py`, com `open_operations` (a Carteira marcada) e `suggest` (o
+  `StrategyBuilderService.suggest`) injetados como funções.
+- Vencimento atual: o mais próximo entre as opções vendidas abertas. Seguinte, pela cadeia do ativo
+  (`list_expiries`): o próximo mensal se a vendida é mensal; o próximo qualquer se é semanal.
+- Estrutura nova: `suggest(ativo, modelo, seguinte)` com as quantidades multiplicadas por
+  `round(opções abertas / opções sugeridas)` (no mínimo 1); sem modelo, modelo fora do catálogo
+  ou sem vencimento seguinte, `request = None`.
+- Caixa de zerar: comprada recebe o bid, vendida paga o ask, pelas marcas da Carteira; `None` se
+  alguma perna de opção está sem preço de zerar.
+- Ruling: a ação do modelo (venda coberta, put protetora, collar) entra como **da carteira**
+  quando a operação já tem ação comprada aberta, para a rolagem não sugerir comprar as ações de
+  novo. Custo se errado: o Montador mostraria a compra da ação junto da opção nova.
+- Ruling: a escala usa a soma das quantidades de opção (abertas ÷ sugeridas), não a primeira perna:
+  dá o mesmo nas estruturas 1×1 e segue certo na borboleta (1×2×1). Operação com pernas
+  desiguais (encerramento parcial de uma perna) arredonda para o inteiro mais perto.
+- Ruling: erro da cadeia (ativo sem cadeia) sobe como está; a rota vira o 404/422 de sempre.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/application` e
+  `tests/alerts` (287 passando; 13 testes novos).
