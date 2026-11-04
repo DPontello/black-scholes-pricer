@@ -286,3 +286,23 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
 - Ruling: erro da cadeia (ativo sem cadeia) sobe como está; a rota vira o 404/422 de sempre.
 - Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/application` e
   `tests/alerts` (287 passando; 13 testes novos).
+
+## 2026-11-04: parte 3, Task 6 — rotas e WebSocket
+
+- `adapters/inbound/web/portfolio.py`: `carteira_atual` deu lugar a `ler_carteira` (vencimento +
+  carteira aberta, devolve `CarteiraLida` com a visão e os avisos) e `carteira_out` (pública). A
+  rota `GET /api/carteira` e o WebSocket usam as duas.
+- `adapters/inbound/web/alerts.py`: `GET /api/alertas`, `POST /api/alertas/{chave}/dispensar`
+  (204), `POST /api/alertas/restaurar` (204) e `GET /api/alertas/rolagem/{operacao_id}`; o
+  `pedido` da rolagem sai pelo `pedido_out` do Montador (o mesmo formato que o Book manda).
+- WebSocket: mensagem `alertas`, da mesma leitura da carteira (uma consulta de mercado para as
+  duas), enviada só quando muda. Sem perfil aberto ou pasta fora do ar, a mensagem leva o erro,
+  como a da carteira.
+- `config/web_app.py`: `AlertService` (dispensados em `JsonDismissedAlerts` na pasta do perfil,
+  limites de `profiles.active().alert_settings`) e `RollService` (`portfolio.open_operations` e
+  `builder.suggest`, o do mercado ao vivo).
+- Ruling: a rolagem usa o `builder` do mercado ao vivo (com recuo para o fim de dia), não o
+  `book_builder` só de fim de dia: a sugestão é para agir no pregão.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/web`, `tests/config`,
+  `tests/application`, `tests/alerts` e `tests/adapters/storage` (9 testes novos). A única falha é
+  a do `test_launch`, a mesma de antes (Task 2).

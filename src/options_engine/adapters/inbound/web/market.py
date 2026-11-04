@@ -1,8 +1,9 @@
 """Router de mercado: status, cotações, cadeia, análise e o WebSocket ``/api/ao-vivo``.
 
-O WebSocket manda cada mensagem (``status``, ``cotacoes``, ``cadeia``, ``carteira``) só quando
-ela muda. A carteira entra na assinatura do mercado: os ativos dela depois da lista do perfil e
-as séries abertas antes da cadeia.
+O WebSocket manda cada mensagem (``status``, ``cotacoes``, ``cadeia``, ``carteira``,
+``alertas``) só quando ela muda. A carteira entra na assinatura do mercado: os ativos dela depois
+da lista do perfil e as séries abertas antes da cadeia. Os alertas saem da mesma leitura da
+carteira, sem outra consulta de mercado.
 """
 
 import asyncio
@@ -16,8 +17,10 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketState
 
-from options_engine.adapters.inbound.web.portfolio import Closes, carteira_atual
+from options_engine.adapters.inbound.web.alerts import alertas_out
+from options_engine.adapters.inbound.web.portfolio import Closes, carteira_out, ler_carteira
 from options_engine.adapters.outbound.b3files.library import STALE_CADASTRO_BUSINESS_DAYS
+from options_engine.application.ports.alerts import AlertUseCase
 from options_engine.application.ports.inbound import (
     ChainView,
     MarketAnalysis,
@@ -333,6 +336,7 @@ def router_mercado(
     closes: Closes = lambda _symbol, _day: None,
     interval_s: float = INTERVALO_AO_VIVO_S,
     analysis: MarketAnalysisUseCase | None = None,
+    alerts: AlertUseCase | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["mercado"])
 
@@ -362,7 +366,9 @@ def router_mercado(
     @router.websocket("/ao-vivo")
     async def ao_vivo(websocket: WebSocket) -> None:
         await websocket.accept()
-        await _SessaoAoVivo(websocket, market, profiles, interval_s, portfolio, closes).rodar()
+        await _SessaoAoVivo(
+            websocket, market, profiles, interval_s, portfolio, closes, alerts
+        ).rodar()
 
     return router
 
@@ -376,8 +382,10 @@ class _SessaoAoVivo:
         interval_s: float,
         portfolio: PortfolioUseCase | None,
         closes: Closes,
+        alerts: AlertUseCase | None = None,
     ) -> None:
         self._ws = websocket
+        self._alerts = alerts
         self._market = market
         self._profiles = profiles
         self._interval_s = interval_s
@@ -444,7 +452,7 @@ class _SessaoAoVivo:
         except NoActiveProfileError as erro:
             lista, motivo = (), str(erro)
         ativo, vencimentos = (None, None) if self._cadeia is None else self._cadeia
-        carteira, simbolos = self._mensagem_da_carteira()
+        carteira, alertas, simbolos = self._mensagens_da_carteira()
         seguir = (tuple(lista), ativo, vencimentos, simbolos)
         if seguir != self._seguindo:
             self._market.follow(
@@ -467,18 +475,33 @@ class _SessaoAoVivo:
             atual["cadeia"] = self._mensagem_da_cadeia(*self._cadeia)
         if carteira is not None:
             atual["carteira"] = carteira
+        if alertas is not None:
+            atual["alertas"] = alertas
         mudou = [m for chave, m in atual.items() if self._enviado.get(chave) != m]
         self._enviado.update(atual)
         return mudou
 
-    def _mensagem_da_carteira(self) -> tuple[dict[str, object] | None, PortfolioSymbols]:
+    def _mensagens_da_carteira(
+        self,
+    ) -> tuple[dict[str, object] | None, dict[str, object] | None, PortfolioSymbols]:
+        """A carteira e os alertas; sem perfil aberto ou com a pasta fora do ar, os dois levam o
+        erro."""
         if self._portfolio is None:
-            return None, _NADA
+            return None, None, _NADA
         try:
-            dados, simbolos = carteira_atual(self._portfolio, self._closes)
-        except DomainError as erro:  # sem perfil aberto, pasta fora do ar
-            return {"tipo": "carteira", "erro": type(erro).__name__, "mensagem": str(erro)}, _NADA
-        return {"tipo": "carteira", "dados": dados.model_dump()}, simbolos
+            lida = ler_carteira(self._portfolio, self._closes)
+        except DomainError as erro:
+            carteira = _erro("carteira", erro)
+            return carteira, None if self._alerts is None else _erro("alertas", erro), _NADA
+        carteira = {"tipo": "carteira", "dados": carteira_out(lida.view, lida.notices).model_dump()}
+        if self._alerts is None:
+            return carteira, None, lida.view.symbols
+        try:
+            dados = alertas_out(self._alerts.evaluate(lida.view, lida.notices)).model_dump()
+            alertas: dict[str, object] = {"tipo": "alertas", "dados": dados}
+        except DomainError as erro:
+            alertas = _erro("alertas", erro)
+        return carteira, alertas, lida.view.symbols
 
     def _mensagem_da_cadeia(
         self, ativo: str, vencimentos: frozenset[date] | None
@@ -493,6 +516,10 @@ class _SessaoAoVivo:
                 "mensagem": str(erro),
             }
         return {"tipo": "cadeia", "dados": _cadeia_out(view).model_dump()}
+
+
+def _erro(tipo: str, erro: DomainError) -> dict[str, object]:
+    return {"tipo": tipo, "erro": type(erro).__name__, "mensagem": str(erro)}
 
 
 def _texto(erro: Exception) -> str:

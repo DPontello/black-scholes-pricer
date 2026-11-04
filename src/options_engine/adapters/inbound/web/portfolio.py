@@ -1,11 +1,13 @@
 """Router da carteira: as operações abertas a mercado, o histórico, o registro e os eventos.
 
 ``GET /api/carteira`` roda o vencimento antes (pó automático e avisos), como ao abrir a tela;
-a mesma visão vai no WebSocket (``carteira_atual``). Os termos de cada série vêm do cadastro
-pelo ticker (``terms``); o fechamento do pregão, dos COTAHIST importados (``closes``).
+a mesma visão vai no WebSocket (``ler_carteira`` e ``carteira_out``). Os termos de cada série
+vêm do cadastro pelo ticker (``terms``); o fechamento do pregão, dos COTAHIST importados
+(``closes``).
 """
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import date
 from typing import Annotated, Final, Literal
 
@@ -18,7 +20,6 @@ from options_engine.application.ports.portfolio import (
     Fill,
     LegMark,
     OperationView,
-    PortfolioSymbols,
     PortfolioUseCase,
     PortfolioView,
     RegisterOperation,
@@ -43,7 +44,15 @@ from options_engine.domain.portfolio.model import (
     TransferOut,
 )
 
-__all__ = ["MAX_EXECUCOES", "Closes", "Terms", "carteira_atual", "router_carteira"]
+__all__ = [
+    "MAX_EXECUCOES",
+    "CarteiraLida",
+    "Closes",
+    "Terms",
+    "carteira_out",
+    "ler_carteira",
+    "router_carteira",
+]
 
 MAX_EXECUCOES: Final = 20
 Closes = Callable[[str, date], float | None]
@@ -307,7 +316,7 @@ def _operacao_out(view: OperationView) -> OperacaoOut:
     )
 
 
-def _carteira_out(view: PortfolioView, avisos: Sequence[ExpiryNotice]) -> CarteiraOut:
+def carteira_out(view: PortfolioView, avisos: Sequence[ExpiryNotice]) -> CarteiraOut:
     return CarteiraOut(
         fonte=view.source.value,
         operacoes=[_operacao_out(o) for o in view.operations],
@@ -370,13 +379,18 @@ def _mes_ir_out(view: TaxMonthView) -> MesIrOut:
     )
 
 
-def carteira_atual(
-    portfolio: PortfolioUseCase, closes: Closes
-) -> tuple[CarteiraOut, PortfolioSymbols]:
+@dataclass(frozen=True, slots=True)
+class CarteiraLida:
+    """Uma leitura da carteira (uma consulta de mercado), para a Carteira e os alertas."""
+
+    view: PortfolioView
+    notices: tuple[ExpiryNotice, ...]
+
+
+def ler_carteira(portfolio: PortfolioUseCase, closes: Closes) -> CarteiraLida:
     """O vencimento roda antes: a perna que virou pó já sai fora das abertas."""
     avisos = portfolio.process_expiries(closes)
-    view = portfolio.open_operations()
-    return _carteira_out(view, avisos), view.symbols
+    return CarteiraLida(portfolio.open_operations(), avisos)
 
 
 def _fills(execucoes: Sequence[ExecucaoIn]) -> tuple[Fill, ...]:
@@ -412,7 +426,8 @@ def router_carteira(portfolio: PortfolioUseCase, *, closes: Closes, terms: Terms
 
     @router.get("")
     def carteira() -> CarteiraOut:
-        return carteira_atual(portfolio, closes)[0]
+        lida = ler_carteira(portfolio, closes)
+        return carteira_out(lida.view, lida.notices)
 
     @router.get("/historico")
     def historico() -> list[OperacaoOut]:

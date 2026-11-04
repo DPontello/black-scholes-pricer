@@ -20,9 +20,11 @@ from options_engine.application.ports.inbound import (
     WatchRow,
 )
 from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.application.use_cases.alerts import AlertService
 from options_engine.application.use_cases.market_analysis import MarketAnalysisService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
+from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.model.chain import RejectedSeries
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import (
@@ -172,13 +174,38 @@ def _cliente(
     com_perfil: bool = True,
     intervalo: float = 0.05,
     carteira: PortfolioService | None = None,
+    alertas: AlertService | None = None,
 ) -> TestClient:
     perfis = ProfileService(FakeProfileRepository(), FixedClock(AGORA), "PC-TESTE")
     if com_perfil:
         perfis.create("Hugo", "/pastas/hugo")
         perfis.open("Hugo")
-    app = create_app([router_mercado(mercado, perfis, portfolio=carteira, interval_s=intervalo)])
-    return TestClient(app)
+    rotas = router_mercado(
+        mercado, perfis, portfolio=carteira, interval_s=intervalo, alerts=alertas
+    )
+    return TestClient(create_app([rotas]))
+
+
+@dataclass
+class _Dispensados:
+    chaves: frozenset[str] = frozenset()
+
+    def load(self) -> frozenset[str]:
+        return self.chaves
+
+    def save(self, keys: frozenset[str]) -> None:
+        self.chaves = keys
+
+
+def _alertas(dispensados: _Dispensados) -> AlertService:
+    return AlertService(
+        lambda: dispensados,
+        AlertSettings,
+        FixedClock(AGORA),
+        B3_UTC_OFFSET,
+        market=MercadoFalso(),
+        calendar=CALENDARIO,
+    )
 
 
 def _carteira(
@@ -446,3 +473,36 @@ def test_analise_do_ativo_devolve_os_numeros_crus() -> None:
 def test_analise_de_ativo_desconhecido_devolve_404() -> None:
     r = _cliente_com_analise().get("/api/mercado/analise/XPTO3")
     assert (r.status_code, r.json()["erro"]) == (404, "UnknownSymbolError")
+
+
+def test_alertas_vao_no_ao_vivo_junto_da_carteira_e_so_quando_mudam() -> None:
+    carteira = _carteira()
+    acoes = carteira.add_stock("PETR4", 100, 28.0, NOVEMBRO)
+    carteira.set_limits(acoes.id, 100.0, None)
+    dispensados = _Dispensados()
+    with _cliente(
+        _MercadoFalso(), intervalo=0.02, carteira=carteira, alertas=_alertas(dispensados)
+    ).websocket_connect("/api/ao-vivo") as ws:
+        tipos = [ws.receive_json() for _ in range(4)]
+        assert [m["tipo"] for m in tipos] == ["status", "cotacoes", "carteira", "alertas"]
+        # Sem cotação da ação, o stop fica indeterminado: nada a mostrar ainda.
+        assert tipos[3]["dados"] == {"fonte": "ao_vivo", "alertas": [], "dispensados": 0}
+        carteira.add_stock("VALE3", 100, 60.0, NOVEMBRO)
+        mudou = ws.receive_json()
+    # Os alertas não mudaram (continuam vazios): só a carteira vai de novo.
+    assert mudou["tipo"] == "carteira"
+
+
+def test_alertas_sem_perfil_mandam_o_motivo() -> None:
+    def sem_perfil() -> FakeOperationRepository:
+        raise NoActiveProfileError("nenhum perfil aberto")
+
+    with _cliente(
+        _MercadoFalso(), carteira=_carteira(sem_perfil), alertas=_alertas(_Dispensados())
+    ).websocket_connect("/api/ao-vivo") as ws:
+        mensagens = [ws.receive_json() for _ in range(4)]
+    assert mensagens[3] == {
+        "tipo": "alertas",
+        "erro": "NoActiveProfileError",
+        "mensagem": "nenhum perfil aberto",
+    }
