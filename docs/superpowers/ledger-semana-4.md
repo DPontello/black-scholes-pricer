@@ -183,3 +183,22 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
   zerar ou sem spot, o dispensado fica (o Tryd piscando não faz o alerta voltar).
 - Ruling: vencimento seguinte da rolagem = o próximo mensal quando o atual é mensal; o próximo
   qualquer quando é semanal. Quantidades proporcionais à primeira perna de opção aberta.
+
+## 2026-11-04: parte 3, Task 1 — regras dos alertas no domínio
+
+- `domain/alerts/model.py`: `AlertSettings` (5 du e 2% por padrão; dias de 0 a 60, distância de 0 a
+  20%), `AlertKind` na ordem de gravidade, `OperationSnapshot`, `AfterExpiry`, `Alert` e
+  `Evaluation` (alertas + chaves indeterminadas).
+- `domain/alerts/rules.py`: `evaluate(operações, avisos, spots, dias_úteis, limites)`.
+- Mudança em relação ao plano: o `OperationSnapshot` leva o `stop_loss` e o `target` (antes viriam
+  da `Operation`, que só os ganha na Task 2). Assim a Task 1 não depende da 2, e o domínio dos
+  alertas recebe só o que usa. Também nasceu o `AfterExpiry` no domínio, porque o domínio não pode
+  importar o `ExpiryNotice` da aplicação (import-linter).
+- Ruling: a perna com aviso de depois do vencimento (registrar exercício, aguardando fechamento)
+  só tem o aviso; o vencimento próximo e o risco de exercício dela não se repetem.
+- Ruling: aviso de uma operação que não está entre as abertas é erro (`InvalidDomainValueError`),
+  não é ignorado: a perna do aviso está aberta por definição.
+- Ruling: borda inclusiva nos dois limites: dispara com `du == dias`, com `spot == strike·(1 − d)`
+  na call (`strike·(1 + d)` na put), com `total == −stop` e com `total == alvo`.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/alerts` e
+  `tests/portfolio` (108 testes; 27 novos, um deles com hypothesis).
