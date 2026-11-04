@@ -8,7 +8,7 @@ import { Aprender } from "../paginas/Aprender";
 import { EXEMPLOS } from "../testes/aprender";
 import { simularFetch } from "../testes/fetchFalso";
 import { semMarcas } from "../componentes/Termo";
-import { TEXTOS_OPERACOES, type TextoOperacao } from "./operacoes";
+import { TEXTOS_OPERACOES, type TextoOperacao } from "./textosOperacoes";
 
 function Sonda() {
   const { pathname, search, hash } = useLocation();

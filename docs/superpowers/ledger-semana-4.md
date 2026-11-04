@@ -51,3 +51,9 @@ Branch `feat/instalador`, a partir da `development` (`0c8e09b`).
 - Ruling: o autoteste da ponte roda com `continue-on-error`: ele precisa da type library do Tryd ou do Excel, que o runner pode não ter. Falhando no runner, ele vira item manual no PC Windows do autor (Task 7). O `--help` é a fumaça obrigatória da ponte.
 - Ruling: além de `workflow_dispatch` e tag `v*`, o job roda em pull request que mexe em `packaging/**`, no próprio workflow ou em `src/options_ponte/**`. O GitHub só mostra o "Run workflow" de um arquivo que já está na branch padrão (`master`), que só recebe a `development` no fechamento de versão; sem o gatilho de PR, o instalador não poderia ser testado antes disso.
 - YAML conferido com o PyYAML (12 passos). O job em si só roda no GitHub.
+
+## 2026-11-04: Task 5 — primeira rodada do job (PR #10): build da tela quebrado no Windows
+
+- Falha: `"Operacoes" is not exported by "src/aprender/operacoes.ts"` no `vite build` do job. O Windows não diferencia maiúsculas: com `Operacoes.tsx` e `operacoes.ts` na mesma pasta, o import `../aprender/Operacoes` (sem extensão) achou o `.ts`. O mesmo valia para `Termos.tsx` e `termos.ts`. O defeito já estava na `development` (o `operacoes.ts` veio da aba Aprender, tasks 1 a 3) e também quebraria o `npm run build` no PC Windows do autor; no Linux não aparece.
+- FIXED: `operacoes.ts` → `textosOperacoes.ts` e `termos.ts` → `glossario.ts`, com os imports. `tests/packaging/test_nomes_windows.py` impede módulo da tela que difira de outro só por maiúsculas (falha com os nomes antigos, passa com os novos).
+- Checagens: frontend `verificar` (194 testes) e `build`; ruff, mypy e `tests/packaging` (20 testes).

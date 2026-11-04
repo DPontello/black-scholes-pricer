@@ -2,7 +2,7 @@
  * Os textos de cada operação do catálogo do Montador, sem número: os números do exemplo vêm da API.
  * `etiquetas` são três, na ordem: o que é preciso ter, o cenário e o risco em uma frase (a família
  * vem do exemplo). A chave é a de `TEMPLATES`. Nos textos, `[palavra](id)` vira link para o termo
- * do glossário (`termos.ts`).
+ * do glossário (`glossario.ts`).
  */
 export type TextoOperacao = {
   etiquetas: string[];

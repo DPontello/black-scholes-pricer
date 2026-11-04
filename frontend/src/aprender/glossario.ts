@@ -1,5 +1,7 @@
 /**
  * O glossário da aba Aprender. Os "?" do app levam a `/aprender/termos#<id>`, então os ids não mudam.
+ * O arquivo não se chama `termos.ts`: no Windows, que não diferencia maiúsculas, o import
+ * `./Termos` acharia este arquivo em vez do componente `Termos.tsx`.
  * Nos textos, `[palavra](id)` vira um link para outro termo (ver `ComTermos`).
  */
 export type TermoGlossario = {
