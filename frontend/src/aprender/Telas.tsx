@@ -22,7 +22,7 @@ export const TELAS: Tela[] = [
   {
     titulo: "Carteira",
     texto:
-      "As operações que você executou na corretora e as ações que você já tem. Mostra o resultado realizado e o não realizado, pelo [preço de zerar](preco-de-zerar), e é onde você encerra uma operação ou registra o [exercício](exercicio) e a [atribuição](atribuicao). Os avisos de vencimento aparecem no topo.",
+      "As operações que você executou na corretora e as ações que você já tem. Mostra o resultado realizado e o não realizado, pelo [preço de zerar](preco-de-zerar), e é onde você encerra uma operação ou registra o [exercício](exercicio) e a [atribuição](atribuicao). Os avisos de vencimento aparecem no topo. Na aba IR mensal, uma estimativa do [imposto das opções](ir-mensal) mês a mês, com o prazo do DARF.",
   },
   {
     titulo: "Aprender",

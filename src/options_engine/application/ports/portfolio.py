@@ -10,6 +10,7 @@ from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.enums import Side, StockOrigin
 from options_engine.domain.model.quotes import DataSource
 from options_engine.domain.portfolio.expiry import ExpiryOutcome
+from options_engine.domain.portfolio.income_tax import TaxMonth
 from options_engine.domain.portfolio.model import LegState, Operation
 from options_engine.domain.portfolio.positions import AssetTotal
 
@@ -25,6 +26,7 @@ __all__ = [
     "RegisterOperation",
     "RegisterOptionLeg",
     "RegisterStock",
+    "TaxMonthView",
 ]
 
 
@@ -124,6 +126,15 @@ class PortfolioView:
     symbols: PortfolioSymbols
 
 
+@dataclass(frozen=True, slots=True)
+class TaxMonthView:
+    """``pay_by``: o último dia útil do mês seguinte, só quando há DARF a pagar no mês; ``None``
+    também quando esse dia cai fora da cobertura do calendário."""
+
+    month: TaxMonth
+    pay_by: date | None
+
+
 @runtime_checkable
 class PortfolioUseCase(Protocol):
     """Sempre na pasta do perfil aberto. ``closes(ativo, dia)``: o fechamento do pregão."""
@@ -155,6 +166,10 @@ class PortfolioUseCase(Protocol):
     def open_operations(self) -> PortfolioView: ...
 
     def history(self) -> tuple[OperationView, ...]: ...
+
+    def income_tax(self) -> tuple[TaxMonthView, ...]:
+        """O IR mensal estimado das opções, do mês mais antigo ao mais recente."""
+        ...
 
     def average_price(self, symbol: str) -> float | None:
         """O médio das ações livres do ativo (as que uma venda "da carteira" usaria)."""

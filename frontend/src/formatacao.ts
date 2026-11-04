@@ -82,6 +82,14 @@ export function formatarData(iso: string): string {
   return `${dia}/${mes}/${ano}`;
 }
 
+// "2026-10" → "out/2026". Sem Intl: o pt-BR dele põe um ponto depois da abreviação.
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+export function formatarMes(aaaaMm: string): string {
+  const [ano, mes] = aaaaMm.split("-");
+  return `${MESES[Number(mes) - 1]}/${ano}`;
+}
+
 export function formatarDiasUteis(n: number): string {
   return n === 1 ? "1 dia útil" : `${n} dias úteis`;
 }

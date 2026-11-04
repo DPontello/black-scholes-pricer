@@ -38,6 +38,7 @@ const IDS = [
   "cadastro",
   "cotahist",
   "custos-ir",
+  "ir-mensal",
   "anualizado",
   "retorno-sobre-risco",
   "chance-de-lucro",

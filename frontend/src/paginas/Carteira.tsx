@@ -20,6 +20,7 @@ import { Ajuda } from "../componentes/Ajuda";
 import { DialogoEncerrar } from "../componentes/DialogoEncerrar";
 import { DialogoExercicio } from "../componentes/DialogoExercicio";
 import { FormOperacao } from "../componentes/FormOperacao";
+import { IrMensal } from "../componentes/IrMensal";
 import { formatarData, formatarPreco, hojeNaB3 } from "../formatacao";
 
 const FONTES = { ao_vivo: "ao vivo (Tryd)", atrasado: "atrasado", fim_de_dia: "fim de dia (B3)" };
@@ -202,15 +203,17 @@ export function Carteira({ aoVivo }: Props) {
   const doMontador = (local.state as { registro?: RascunhoOperacao } | null)?.registro;
   const [carteira, setCarteira] = useState<CarteiraDados | null>(null);
   const [historico, setHistorico] = useState<OperacaoCarteira[] | null>(null);
-  const [aba, setAba] = useState<"abertas" | "historico">("abertas");
+  const [aba, setAba] = useState<"abertas" | "historico" | "ir">("abertas");
   const [painel, setPainel] = useState<Painel>(
     doMontador === undefined ? null : { tipo: "registrar", inicial: doMontador },
   );
   const [abertas, setAbertas] = useState<ReadonlySet<string>>(new Set());
   const [comEventos, setComEventos] = useState<ReadonlySet<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
+  const [leituras, setLeituras] = useState(0);
 
   function recarregar() {
+    setLeituras((n) => n + 1);
     lerCarteira()
       .then((nova) => {
         setCarteira(nova);
@@ -324,6 +327,9 @@ export function Carteira({ aoVivo }: Props) {
         >
           Histórico
         </button>
+        <button type="button" role="tab" aria-selected={aba === "ir"} onClick={() => setAba("ir")}>
+          IR mensal
+        </button>
       </div>
       {aba === "abertas" && carteira !== null && (
         <>
@@ -407,6 +413,7 @@ export function Carteira({ aoVivo }: Props) {
           {carteira.totais.length > 0 && <Totais carteira={carteira} />}
         </>
       )}
+      {aba === "ir" && <IrMensal key={leituras} />}
       {aba === "historico" &&
         (historico === null || historico.length === 0 ? (
           <p className="secundario">Nenhuma operação encerrada.</p>

@@ -7,6 +7,7 @@ import {
   formatarHora,
   formatarInstante,
   formatarInteiro,
+  formatarMes,
   formatarPercentual,
   formatarPreco,
   formatarVol,
@@ -26,6 +27,8 @@ test("formatação pt-BR", () => {
   expect(formatarVolume(812)).toBe("812");
   expect(formatarInteiro(22704)).toBe("22.704");
   expect(formatarData("2026-11-19")).toBe("19/11/2026");
+  expect(formatarMes("2026-10")).toBe("out/2026");
+  expect(formatarMes("2026-01")).toBe("jan/2026");
   expect(formatarDiasUteis(4)).toBe("4 dias úteis");
   expect(formatarDiasUteis(1)).toBe("1 dia útil");
   expect(formatarVol(0.312)).toBe("31,2%");

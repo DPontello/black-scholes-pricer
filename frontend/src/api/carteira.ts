@@ -72,6 +72,40 @@ export type Carteira = {
   ilegiveis: { arquivo: string; motivo: string }[];
 };
 
+/** Uma opção que fechou o mês: `categoria` diz em qual conta de IR ela entrou. `operacoes` são os nomes das operações de origem. */
+export type PecaIr = {
+  data: string;
+  ticker: string;
+  categoria: "comum" | "day_trade";
+  tipo: "encerramento" | "po";
+  resultado: number;
+  operacoes: string[];
+};
+
+/** Exercício ou atribuição: fica fora da conta (o prêmio vai para o preço da ação). */
+export type ExercicioIr = { data: string; ticker: string; operacao: string };
+
+/**
+ * Um mês da estimativa de IR, em reais. `prejuizo_*` vêm sem sinal (>= 0). `pagar_ate` só vem com
+ * IR a pagar no mês; `ir_de_antes` é o IR abaixo de R$ 10 que veio dos meses anteriores.
+ */
+export type MesIr = {
+  mes: string;
+  comum: number;
+  day_trade: number;
+  base_comum: number;
+  base_day_trade: number;
+  prejuizo_comum: number;
+  prejuizo_day_trade: number;
+  ir_do_mes: number;
+  ir_de_antes: number;
+  ir_a_pagar: number;
+  ir_para_depois: number;
+  pagar_ate: string | null;
+  pecas: PecaIr[];
+  exercicios: ExercicioIr[];
+};
+
 /** Rascunho do formulário: preço `null` é o que o usuário ainda tem de preencher. */
 export type ExecucaoRascunho = { quantidade: number; preco: number | null; custos: number | null };
 export type RascunhoOperacao = {
@@ -90,6 +124,11 @@ export function lerCarteira(): Promise<Carteira> {
 
 export function lerHistorico(): Promise<OperacaoCarteira[]> {
   return pedir("/api/carteira/historico");
+}
+
+/** Os meses com opção encerrada ou virada pó, do mais recente para o mais antigo. */
+export function lerIrMensal(): Promise<MesIr[]> {
+  return pedir("/api/carteira/ir-mensal");
 }
 
 export function registrarOperacao(corpo: RascunhoOperacao): Promise<Salva> {

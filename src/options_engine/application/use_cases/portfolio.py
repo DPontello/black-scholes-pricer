@@ -2,7 +2,7 @@
 
 import threading
 from collections.abc import Callable, Sequence
-from datetime import date, datetime, time, tzinfo
+from datetime import date, datetime, time, timedelta, tzinfo
 from math import fsum
 
 from options_engine.application.ports.outbound import (
@@ -19,6 +19,7 @@ from options_engine.application.ports.portfolio import (
     PortfolioSymbols,
     PortfolioView,
     RegisterOperation,
+    TaxMonthView,
 )
 from options_engine.application.use_cases._marks import Marker
 from options_engine.domain.income.costs import CostSchedule
@@ -26,6 +27,7 @@ from options_engine.domain.model.enums import OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.portfolio.exercise import apply_exercise, takes_portfolio_shares
 from options_engine.domain.portfolio.expiry import ExpiryOutcome, expiry_outcome
+from options_engine.domain.portfolio.income_tax import monthly_tax, tax_records
 from options_engine.domain.portfolio.model import (
     Close,
     Event,
@@ -50,6 +52,7 @@ __all__ = ["PortfolioService"]
 
 _FIM_DO_PREGAO = time(18, 0)
 _ACOES_A_MAO = "ações à mão"
+_UM_DIA = timedelta(days=1)
 
 
 class PortfolioService:
@@ -188,6 +191,13 @@ class PortfolioService:
         encerradas = [o for o in _operacoes(self._repository_for().list()) if is_closed(o)]
         return tuple(self._visao(o) for o in _recentes(encerradas))
 
+    def income_tax(self) -> tuple[TaxMonthView, ...]:
+        registros = tax_records(_operacoes(self._repository_for().list()), self._schedules)
+        return tuple(
+            TaxMonthView(m, self._pagar_ate(m.month) if m.due > 0 else None)
+            for m in monthly_tax(registros)
+        )
+
     def average_price(self, symbol: str) -> float | None:
         livres = _livres(_operacoes(self._repository_for().list()), symbol)
         total = sum(n for _, _, n, _ in livres)
@@ -225,6 +235,18 @@ class PortfolioService:
             if po:
                 repositorio.save(operacao.with_events(*po))
         return tuple(avisos)
+
+    def _pagar_ate(self, mes: date) -> date | None:
+        """O último dia útil do mês seguinte a ``mes`` (dia 1); ``None`` fora do calendário."""
+        ultimo = _primeiro_do_mes_seguinte(_primeiro_do_mes_seguinte(mes)) - _UM_DIA
+        for i in range(ultimo.day):
+            dia = ultimo - i * _UM_DIA
+            try:
+                if self._calendar.business_days_between(dia, dia + _UM_DIA) == 1:
+                    return dia
+            except InvalidDomainValueError:
+                continue  # o dia sai da cobertura: segue para trás até achar um coberto
+        return None
 
     def _visao(self, operacao: Operation) -> OperationView:
         return OperationView(
@@ -289,6 +311,10 @@ class PortfolioService:
 
 def _operacoes(itens: Sequence[Operation | UnreadableFile]) -> list[Operation]:
     return [i for i in itens if isinstance(i, Operation)]
+
+
+def _primeiro_do_mes_seguinte(dia: date) -> date:
+    return (dia.replace(day=28) + timedelta(days=4)).replace(day=1)
 
 
 def _recentes(operacoes: Sequence[Operation]) -> list[Operation]:

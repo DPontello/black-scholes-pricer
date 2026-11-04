@@ -24,11 +24,13 @@ from options_engine.application.ports.portfolio import (
     RegisterOperation,
     RegisterOptionLeg,
     RegisterStock,
+    TaxMonthView,
 )
 from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.enums import Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.profile import normalize_ticker
+from options_engine.domain.portfolio.income_tax import ExerciseNote, TaxPiece
 from options_engine.domain.portfolio.model import (
     Assignment,
     Close,
@@ -165,6 +167,41 @@ class AvisoOut(BaseModel):
     situacao: str
 
 
+class PecaIrOut(BaseModel):
+    data: date
+    ticker: str
+    categoria: str
+    tipo: str
+    resultado: float
+    operacoes: list[str]
+
+
+class ExercicioIrOut(BaseModel):
+    data: date
+    ticker: str
+    operacao: str
+
+
+class MesIrOut(BaseModel):
+    """``pagar_ate``: o último dia útil do mês seguinte, só com IR a pagar no mês (e dentro do
+    calendário); ``ir_de_antes``: o IR abaixo de R$ 10 que veio dos meses anteriores."""
+
+    mes: str
+    comum: float
+    day_trade: float
+    base_comum: float
+    base_day_trade: float
+    prejuizo_comum: float
+    prejuizo_day_trade: float
+    ir_do_mes: float
+    ir_de_antes: float
+    ir_a_pagar: float
+    ir_para_depois: float
+    pagar_ate: date | None
+    pecas: list[PecaIrOut]
+    exercicios: list[ExercicioIrOut]
+
+
 class CarteiraOut(BaseModel):
     fonte: str
     operacoes: list[OperacaoOut]
@@ -284,6 +321,41 @@ def _carteira_out(view: PortfolioView, avisos: Sequence[ExpiryNotice]) -> Cartei
     )
 
 
+def _peca_ir_out(peca: TaxPiece) -> PecaIrOut:
+    return PecaIrOut(
+        data=peca.on,
+        ticker=peca.symbol,
+        categoria=peca.category.value,
+        tipo=peca.kind.value,
+        resultado=peca.result,
+        operacoes=list(peca.operations),
+    )
+
+
+def _exercicio_ir_out(nota: ExerciseNote) -> ExercicioIrOut:
+    return ExercicioIrOut(data=nota.on, ticker=nota.symbol, operacao=nota.operation)
+
+
+def _mes_ir_out(view: TaxMonthView) -> MesIrOut:
+    mes = view.month
+    return MesIrOut(
+        mes=mes.month.isoformat()[:7],
+        comum=mes.common_result,
+        day_trade=mes.day_trade_result,
+        base_comum=mes.common_base,
+        base_day_trade=mes.day_trade_base,
+        prejuizo_comum=mes.common_loss,
+        prejuizo_day_trade=mes.day_trade_loss,
+        ir_do_mes=mes.tax,
+        ir_de_antes=mes.carried_in,
+        ir_a_pagar=mes.due,
+        ir_para_depois=mes.carried_out,
+        pagar_ate=view.pay_by,
+        pecas=[_peca_ir_out(p) for p in mes.pieces],
+        exercicios=[_exercicio_ir_out(n) for n in mes.exercises],
+    )
+
+
 def carteira_atual(
     portfolio: PortfolioUseCase, closes: Closes
 ) -> tuple[CarteiraOut, PortfolioSymbols]:
@@ -328,6 +400,10 @@ def router_carteira(portfolio: PortfolioUseCase, *, closes: Closes, terms: Terms
     @router.get("/historico")
     def historico() -> list[OperacaoOut]:
         return [_operacao_out(v) for v in portfolio.history()]
+
+    @router.get("/ir-mensal")
+    def ir_mensal() -> list[MesIrOut]:
+        return [_mes_ir_out(v) for v in reversed(portfolio.income_tax())]
 
     @router.post("/operacoes", status_code=201)
     def registrar(corpo: RegistroIn) -> OperacaoSalvaOut:
