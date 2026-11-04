@@ -28,8 +28,20 @@
 > - **Cadastro pelo `pesquisa-pregao.zip` (2026-11-03):** o app aceita o Cadastro de
 >   Instrumentos em XML da "Pesquisa por pregão", como a B3 entrega, além do CSV (ADR-0006,
 >   "Cadastro em XML"). Conferido com o arquivo real e a cadeia ao vivo de PETR4.
-> - **Semanas 4 e 5:** alertas, proventos, IR e instalador; teste com a mãe. Os planos ainda não
->   foram escritos.
+> - **Melhoria de UX (2026-11-03):** a rotina da semana em Arquivos B3, com os links exatos da
+>   B3; o layout do Montador e do Registrar operação; o Book mais simples ("Melhores operações de
+>   hoje"); e a aba Aprender (as 18 operações com exemplo, termos, comece aqui, telas do app e os
+>   "?" pelo app). [Desenho](superpowers/specs/2026-11-03-ux-book-aprender-design.md).
+> - **Semana 4 (instalador, IR mensal e alertas):** [desenho](superpowers/specs/2026-11-03-semana-4-instalador-ir-alertas-design.md)
+>   e [ledger](superpowers/ledger-semana-4.md). Parte 1, o instalador
+>   ([plano](superpowers/plans/2026-11-03-semana-4-parte-1-instalador.md)), está feita:
+>   - o `.exe` do Windows sai do job Instalador do GitHub Actions (PR #10);
+>   - `scripts/linux/instalar.sh` instala neste PC;
+>   - falta conferir num PC Windows real.
+>
+>   Depois vêm o IR mensal das opções (parte 2) e os alertas (parte 3). Proventos e ajuste de
+>   strike ficaram fora da semana 4.
+> - **Semana 5:** teste com a mãe e acabamento (ícone do app, entre outros).
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
 >   vitrine (benchmark, ADRs de apresentação) saíram do escopo.

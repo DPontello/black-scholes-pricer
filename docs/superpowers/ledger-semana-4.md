@@ -2,7 +2,8 @@
 
 Desenho: [`specs/2026-11-03-semana-4-instalador-ir-alertas-design.md`](specs/2026-11-03-semana-4-instalador-ir-alertas-design.md).
 Parte 1, plano: [`plans/2026-11-03-semana-4-parte-1-instalador.md`](plans/2026-11-03-semana-4-parte-1-instalador.md).
-Branch `feat/instalador`, a partir da `development` (`0c8e09b`).
+Branch `feat/instalador`, a partir da `development` (`0c8e09b`), com as Tasks 1 a 5 (PR #10). As
+Tasks 6 e 7 seguem na `feat/instalador-linux`, a partir da `development` (`eeb4186`).
 
 ## 2026-11-03: Task 1 — caminhos do app empacotado (ponte, tela e log)
 
@@ -57,3 +58,55 @@ Branch `feat/instalador`, a partir da `development` (`0c8e09b`).
 - Falha: `"Operacoes" is not exported by "src/aprender/operacoes.ts"` no `vite build` do job. O Windows não diferencia maiúsculas: com `Operacoes.tsx` e `operacoes.ts` na mesma pasta, o import `../aprender/Operacoes` (sem extensão) achou o `.ts`. O mesmo valia para `Termos.tsx` e `termos.ts`. O defeito já estava na `development` (o `operacoes.ts` veio da aba Aprender, tasks 1 a 3) e também quebraria o `npm run build` no PC Windows do autor; no Linux não aparece.
 - FIXED: `operacoes.ts` → `textosOperacoes.ts` e `termos.ts` → `glossario.ts`, com os imports. `tests/packaging/test_nomes_windows.py` impede módulo da tela que difira de outro só por maiúsculas (falha com os nomes antigos, passa com os novos).
 - Checagens: frontend `verificar` (194 testes) e `build`; ruff, mypy e `tests/packaging` (20 testes).
+
+## 2026-11-04: Task 6 — instalação no Linux
+
+- `scripts/linux/instalar.sh`:
+  - confere o Python 3.12+ (`PYTHON`, padrão `python3`) e o `node`/`npm` antes de gravar qualquer coisa;
+  - cria (ou reaproveita) o venv em `~/.local/share/painel-opcoes/venv` e roda `pip install -e "<repo>[app]"`;
+  - compila a tela (`npm ci` e `npm run build`);
+  - grava `~/.local/share/applications/painel-opcoes.desktop` a partir de `scripts/linux/painel-opcoes.desktop.in`;
+  - no fim, lembra o `preparar_ponte_wine.sh --verificar`;
+  - `--simular` mostra cada passo com os caminhos reais e não grava nada.
+- Ruling: `pip install -e` no lugar do `pip install "<repo>[app]"` do plano. Conferido com `pip wheel`: o pacote só leva `options_engine`, sem o `options_ponte` (que o `web_app` importa e a ponte roda do `src/`) e sem a tela compilada (`static/` está no `.gitignore`, e o hatchling a deixa fora). Se errado: a instalação depende de a pasta do repositório ficar onde está; atualizar é `git pull` e rodar o script de novo.
+- Ruling: o script só lembra o `preparar_ponte_wine.sh --verificar`, sem rodá-lo, porque entrar no distrobox é lento.
+- Ruling: o `.desktop` não tem `Icon=`, como na Task 3; o ícone fica para a semana 5.
+- O `Exec` segue a spec do Desktop Entry: aspas e escapes para caminhos com espaço ou caractere reservado, e `%` vira `%%`. Conferido com o GLib (`GKeyFile` e `shell_parse_argv`) e com o `desktop-file-validate`.
+- Revisão da task aprovada, sem achados críticos ou importantes. Ficaram para depois:
+  - o teste de ferramenta ausente não distingue `node` de `npm`;
+  - falta teste de regressão para `\`, `"` e crase no `Exec`;
+  - o `.desktop` não é gravado de forma atômica;
+  - o `npm ci` refaz o `node_modules` a cada execução.
+- Checagens: `tests/scripts` (19) e `tests/packaging` (20); `bash -n`; ruff; ruff format; mypy. O `shellcheck` não está instalado neste PC.
+
+## 2026-11-04: Task 7 — conferência e documentação (parcial)
+
+- **Gate completo verde** neste PC (Linux), na árvore com a Task 6:
+  - ruff, ruff format (308 arquivos), mypy strict (304) e import-linter (3 contratos);
+  - pytest com 5252 testes e cobertura de 98,39%;
+  - frontend: `verificar` com 194 testes, e `build`.
+- **`instalar.sh` do zero neste PC:**
+  - saiu com 0, e o `desktop-file-validate` aceitou o `.desktop`;
+  - o venv (Python 3.14.8) importa `options_engine` e `options_ponte` de `<repo>/src`;
+  - `gtk-launch painel-opcoes` subiu o app (`GET /api/saude` ok) e a ponte no distrobox;
+  - o segundo `gtk-launch` imprimiu "já está aberto" e não subiu outro servidor.
+- **Documentação:**
+  - README: a seção "Instalar" (Windows: instalar, SmartScreen, abrir duas vezes, atualizar, desinstalar e log; Linux: `instalar.sh`) e os links da semana 4;
+  - ROADMAP: a melhoria de UX e a semana 4;
+  - HANDOFF de 02/11: a tabela do §1, o item 5 do §6 e o §8, com o roteiro do PC Windows.
+- **Falta, no PC Windows do autor:** o Step 2 (o roteiro do §8 do HANDOFF, com o `PonteTryd.exe diagnostico`).
+- Ruling: as Tasks 6 e 7 ficam na branch `feat/instalador-linux`, em vez de reabrir a `feat/instalador`, que já estava mergeada. Se errado, só muda o nome.
+- **Revisão final da branch:** nenhum achado crítico; um importante e sete menores, todos corrigidos. A re-revisão confirmou as correções.
+  - Importante: o README dizia que o job roda "à mão", mas o "Run workflow" só aparece depois que o workflow chegar à `master`. Também não dizia que o artefato baixa como `.zip` e exige login. Passou a dizer, e o HANDOFF §8 aponta o artefato da execução do PR #10.
+  - Menores no texto:
+    - o segundo clique "não sobe outro programa e só abre a janela";
+    - o estado do atalho deste PC;
+    - os pré-requisitos e como ver um erro no Linux;
+    - o Windows de 64 bits;
+    - o cabeçalho deste ledger;
+    - "o Windows ainda a conferir" na linha de status.
+  - FIXED no `instalar.sh`: um venv cuja pasta existe mas cujo Python não roda (link quebrado depois de trocar a versão do Python) é refeito com `venv --clear`, também no `--simular`. Antes, o script parava com um "Errno 2" obscuro. Ganhou dois testes.
+  - FIXED no teste de ferramenta ausente: agora afirma `não achei o {node|npm}`.
+- Ficaram para depois:
+  - o cabeçalho do `instalar.sh` não cita o caso de refazer o venv;
+  - o script não confere a versão do Node (o README pede 22+ para rodar do código).
