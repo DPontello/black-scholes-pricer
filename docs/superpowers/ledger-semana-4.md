@@ -326,3 +326,21 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
 - Ruling: o "?" do glossário nos alertas fica para a Task 8, junto dos termos novos (sem termo, o
   link levaria a um termo que não existe).
 - Checagens: `npm run verificar` (tsc + 225 testes; 13 novos).
+
+## 2026-11-04: parte 3, Task 8 — stop e alvo na tela, faixa de rolagem e glossário
+
+- Registro: campos "Stop (perda em R$)" e "Alvo (ganho em R$)", opcionais; zero ou negativo é
+  recusado na tela. Vindo do Montador, o registro leva o `modelo` (`rascunhoDaAnalise`).
+- Carteira: a linha da operação mostra "stop R$ -X · alvo R$ Y" quando há; o botão **Stop e alvo**
+  abre o `DialogoLimites` (`PUT .../limites`, em branco apaga).
+- Montador: `FaixaRolagem` pelo `state.rolagem` (custo de zerar, vencimento novo e o caixa líquido
+  = caixa de zerar + `no_vencimento.caixa` da estrutura nova), com "Fechar a faixa". Sem modelo,
+  pede para montar pela cadeia; sem vencimento seguinte ou sem preço de zerar, diz qual.
+- Glossário: `stop-e-alvo`, `risco-de-exercicio` e `rolagem`; o "?" em cada alerta (vencimento →
+  `vencimento`, exercício a registrar → `exercicio`), no diálogo de stop e alvo e na faixa. A tela
+  Telas do Aprender descreve a aba Alertas (era "em construção") e o botão Stop e alvo da Carteira.
+- Ruling: o formulário de registro não tem o "?" do stop e alvo: ele é montado fora de um Router
+  nos testes e em nenhum lugar precisa de link; o "?" fica no diálogo da Carteira e nos Alertas.
+- Ruling: o Montador não troca sozinho o vencimento da cadeia para o da rolagem quando não há
+  pedido: a faixa diz a data e o usuário a escolhe (custo se errado: um clique a mais).
+- Checagens: `npm run verificar` (tsc + 235 testes; 10 novos) e `npm run build`.

@@ -46,6 +46,11 @@ export type OperacaoCarteira = {
   realizado: number;
   /** `null` quando alguma perna aberta está sem preço de zerar. */
   nao_realizado: number | null;
+  /** O modelo do Montador de onde veio (para a rolagem). */
+  modelo: string | null;
+  /** Stop (perda) e alvo (ganho) em reais, positivos; comparados com o resultado total. */
+  stop: number | null;
+  alvo: number | null;
 };
 
 export type TotalAtivo = {
@@ -114,6 +119,9 @@ export type RascunhoOperacao = {
   data: string;
   pernas: { ticker: string; lado: Lado; execucoes: ExecucaoRascunho[] }[];
   acao: { lado: Lado; origem: OrigemAcao; execucoes: ExecucaoRascunho[] } | null;
+  modelo?: string | null;
+  stop?: number | null;
+  alvo?: number | null;
 };
 
 type Salva = { id: string };
@@ -158,6 +166,13 @@ export function atribuir(id: string, corpo: EventoPedido): Promise<Salva> {
   return pedir(`/api/carteira/operacoes/${encodeURIComponent(id)}/atribuir`, json("POST", corpo));
 }
 
+export function definirLimites(
+  id: string,
+  limites: { stop: number | null; alvo: number | null },
+): Promise<Salva> {
+  return pedir(`/api/carteira/operacoes/${encodeURIComponent(id)}/limites`, json("PUT", limites));
+}
+
 export function rascunhoVazio(data: string): RascunhoOperacao {
   return { ativo: "", nome: "", data, pernas: [], acao: null };
 }
@@ -173,6 +188,7 @@ export function rascunhoDaAnalise(
     ativo: pedido.ativo,
     nome: analise?.nome ?? "",
     data,
+    modelo: pedido.modelo,
     pernas: pedido.pernas.map((perna, i) => ({
       ticker: perna.ticker,
       lado: perna.lado,

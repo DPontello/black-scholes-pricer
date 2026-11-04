@@ -51,6 +51,9 @@ export function trava(parcial: Partial<OperacaoCarteira> = {}): OperacaoCarteira
     ],
     realizado: -10.12,
     nao_realizado: null,
+    modelo: "trava_alta_call",
+    stop: null,
+    alvo: null,
     ...parcial,
   };
 }

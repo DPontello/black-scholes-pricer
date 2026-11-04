@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, test, vi } from "vitest";
 
 import type { Cadeia, EstadoAoVivo } from "../api/aoVivo";
+import { rolagem } from "../testes/alertas";
 import { analiseCoberta } from "../testes/analise";
 import { simularFetch } from "../testes/fetchFalso";
 import { Montador } from "./Montador";
@@ -238,6 +239,26 @@ test("o pedido que vem do book abre direto e é analisado pela cadeia do momento
   );
   await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1));
   expect(corpos(fetch, "/api/montador/analise")[0]).toEqual(SUGESTAO);
+});
+
+test("a rolagem dos alertas abre o pedido novo com a faixa do custo de zerar", async () => {
+  const fetch = api({ corpo: analiseCoberta() });
+  const dados = rolagem();
+  render(
+    <MemoryRouter
+      initialEntries={[
+        { pathname: "/montador", search: "?ativo=PETR4", state: { pedido: SUGESTAO, rolagem: dados } },
+      ]}
+    >
+      <Montador aoVivo={AO_VIVO} seguirCadeia={vi.fn()} />
+    </MemoryRouter>,
+  );
+  const faixa = screen.getByRole("complementary", { name: "Rolagem" });
+  expect(faixa.textContent).toContain("Rolagem de put coberta");
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1));
+  expect(await within(faixa).findByText(/Caixa líquido da rolagem/)).toBeTruthy();
+  fireEvent.click(within(faixa).getByRole("button", { name: "Fechar a faixa" }));
+  expect(screen.queryByRole("complementary", { name: "Rolagem" })).toBeNull();
 });
 
 // O Aprender abre o Montador só com o modelo: o ativo é o primeiro da lista do perfil.

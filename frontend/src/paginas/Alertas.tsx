@@ -11,9 +11,20 @@ import {
 } from "../api/alertas";
 import type { EstadoAoVivo } from "../api/aoVivo";
 import { definirLimitesAlertas, ErroApi, type Perfil } from "../api/cliente";
+import { Ajuda } from "../componentes/Ajuda";
 import { formatarData, formatarDiasUteis, formatarReais } from "../formatacao";
 
 const FONTES = { ao_vivo: null, atrasado: "com preços atrasados", fim_de_dia: "pelo fim de dia (B3)" };
+
+// O "?" de cada alerta leva ao termo que o explica.
+const TERMO: Record<Alerta["tipo"], string> = {
+  exercicio_a_registrar: "exercicio",
+  stop: "stop-e-alvo",
+  risco_de_exercicio: "risco-de-exercicio",
+  vencimento_proximo: "vencimento",
+  aguardando_fechamento: "vencimento",
+  alvo: "stop-e-alvo",
+};
 
 type Props = { aoVivo: EstadoAoVivo; perfil: Perfil; onPerfil: (perfil: Perfil) => void };
 
@@ -122,7 +133,9 @@ export function Alertas({ aoVivo, perfil, onPerfil }: Props) {
               <ul>
                 {grupo.map((alerta) => (
                   <li key={alerta.chave} className={`alerta ${alerta.tipo}`}>
-                    <span>{frase(alerta)}</span>
+                    <span>
+                      {frase(alerta)} <Ajuda id={TERMO[alerta.tipo]} />
+                    </span>
                     <button type="button" onClick={() => dispensar(alerta.chave)}>
                       Dispensar
                     </button>

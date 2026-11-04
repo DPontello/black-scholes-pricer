@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
+import type { Rolagem } from "../api/alertas";
 import type { EstadoAoVivo, SeguirCadeia, Serie } from "../api/aoVivo";
 import { rascunhoDaAnalise } from "../api/carteira";
 import { ErroApi } from "../api/cliente";
@@ -16,6 +17,7 @@ import {
   type Simulacao,
   sugerir,
 } from "../api/montador";
+import { FaixaRolagem } from "../componentes/FaixaRolagem";
 import { GradeCenarios } from "../componentes/GradeCenarios";
 import { GraficoPayoff } from "../componentes/GraficoPayoff";
 import { ResumoEstrutura } from "../componentes/ResumoEstrutura";
@@ -47,8 +49,11 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
   const [busca, setBusca] = useSearchParams();
   const navegar = useNavigate();
   const ativo = busca.get("ativo") ?? aoVivo.cotacoes[0]?.ativo ?? null;
-  // O book abre um item aqui pelo estado da rota; o montador reprecifica pela cadeia do momento.
-  const doBook = (useLocation().state as { pedido?: PedidoAnalise } | null)?.pedido ?? null;
+  // O book (e a rolagem dos Alertas) abre um item aqui pelo estado da rota; o montador reprecifica
+  // pela cadeia do momento.
+  const estadoDaRota = useLocation().state as { pedido?: PedidoAnalise; rolagem?: Rolagem } | null;
+  const doBook = estadoDaRota?.pedido ?? null;
+  const [rolagem, setRolagem] = useState<Rolagem | null>(estadoDaRota?.rolagem ?? null);
   const [vencimentos, setVencimentos] = useState<string[] | null>(null);
   const [pedido, setPedido] = useState<PedidoAnalise>(doBook ?? vazio(ativo));
   const [analise, setAnalise] = useState<Analise | null>(null);
@@ -194,6 +199,9 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
   return (
     <section className="pagina-montador">
       <h1>Montador</h1>
+      {rolagem !== null && (
+        <FaixaRolagem rolagem={rolagem} analise={analise} onFechar={() => setRolagem(null)} />
+      )}
       <div className="montador-topo">
         <label>
           Ativo{" "}

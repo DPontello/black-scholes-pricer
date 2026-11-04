@@ -284,6 +284,33 @@ export const TERMOS: TermoGlossario[] = [
     onde: "Na Carteira, na aba IR mensal.",
   },
   {
+    id: "stop-e-alvo",
+    titulo: "Stop e alvo",
+    texto:
+      "Dois limites em reais que você põe numa operação para o app avisar. O stop é a perda que você aceita; o alvo, o ganho em que pensa sair. O app compara com o resultado total da operação: o que já foi realizado, com os custos, mais o que daria zerar o resto agora, pelo [preço de zerar](preco-de-zerar). O app só avisa: quem encerra é você, na corretora.",
+    exemplo:
+      "Uma trava com stop de R$ 200,00: se o realizado é R$ -150,00 e zerar o resto agora daria R$ -60,00, o total é R$ -210,00, e o alerta de stop aparece.",
+    onde: "No registro da operação e no botão Stop e alvo da Carteira; os alertas aparecem na aba Alertas.",
+  },
+  {
+    id: "risco-de-exercicio",
+    titulo: "Risco de exercício",
+    texto:
+      "A chance de uma opção que você vendeu ser exercida contra você, perto do [vencimento](vencimento). O app avisa quando a opção vendida está dentro do dinheiro (a ação passou do [strike](strike)) ou a menos de 2% dele, a 5 [dias úteis](dias-uteis) ou menos do vencimento. Os dois números mudam nos limites da aba Alertas. Se for exercida, vem a [atribuição](atribuicao): você vende a ação (na call) ou compra (na put) pelo strike.",
+    exemplo:
+      "Uma put de PETR4 vendida com strike R$ 28,00, com a ação a R$ 28,30 e 2 dias úteis até o vencimento, está a menos de 2% do strike: o alerta aparece.",
+    onde: "Na aba Alertas, com os botões Abrir na Carteira e Rolar.",
+  },
+  {
+    id: "rolagem",
+    titulo: "Rolagem",
+    texto:
+      "Trocar uma operação que está vencendo pela mesma operação num [vencimento](vencimento) mais longe: zerar as pernas atuais e abrir as novas. Serve para não ser exercido ou para seguir recebendo [prêmio](premio). O app mostra o custo de zerar as pernas atuais pelo [preço de zerar](preco-de-zerar) e abre no Montador a mesma estrutura no vencimento seguinte, com os preços do momento. Nada é enviado: as duas ordens são suas, na corretora.",
+    exemplo:
+      "Uma put vendida de novembro que custa R$ 35,00 para recomprar, rolada para uma de dezembro que paga R$ 60,00: a rolagem dá R$ 25,00 de caixa.",
+    onde: "No botão Rolar da aba Alertas, que abre o Montador com uma faixa no topo.",
+  },
+  {
     id: "anualizado",
     titulo: "Anualizado",
     texto:

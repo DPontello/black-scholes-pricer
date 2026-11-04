@@ -18,10 +18,11 @@ import { ErroApi } from "../api/cliente";
 import { AdicionarAcoes } from "../componentes/AdicionarAcoes";
 import { Ajuda } from "../componentes/Ajuda";
 import { DialogoEncerrar } from "../componentes/DialogoEncerrar";
+import { DialogoLimites } from "../componentes/DialogoLimites";
 import { DialogoExercicio } from "../componentes/DialogoExercicio";
 import { FormOperacao } from "../componentes/FormOperacao";
 import { IrMensal } from "../componentes/IrMensal";
-import { formatarData, formatarPreco, hojeNaB3 } from "../formatacao";
+import { formatarData, formatarPreco, formatarReais, hojeNaB3 } from "../formatacao";
 
 const FONTES = { ao_vivo: "ao vivo (Tryd)", atrasado: "atrasado", fim_de_dia: "fim de dia (B3)" };
 const EVENTOS: Record<Evento["tipo"], string> = {
@@ -38,6 +39,7 @@ type Painel =
   | { tipo: "acoes" }
   | { tipo: "encerrar"; operacao: OperacaoCarteira }
   | { tipo: "exercicio"; operacao: OperacaoCarteira; perna?: number }
+  | { tipo: "limites"; operacao: OperacaoCarteira }
   | null;
 
 type Props = { aoVivo: EstadoAoVivo };
@@ -295,6 +297,9 @@ export function Carteira({ aoVivo }: Props) {
           onCancelar={() => setPainel(null)}
         />
       )}
+      {painel?.tipo === "limites" && (
+        <DialogoLimites operacao={painel.operacao} onFeito={feito} onCancelar={() => setPainel(null)} />
+      )}
       {indisponivel !== null && carteira === null && (
         <p className="erro" role="alert">
           {indisponivel}
@@ -374,6 +379,17 @@ export function Carteira({ aoVivo }: Props) {
                             {aberta ? "▾" : "▸"} {operacao.nome}
                           </button>{" "}
                           <span className="secundario">{operacao.ativo}</span>
+                          {(operacao.stop !== null || operacao.alvo !== null) && (
+                            <span className="secundario">
+                              {" · "}
+                              {[
+                                operacao.stop === null ? null : `stop ${formatarReais(-operacao.stop)}`,
+                                operacao.alvo === null ? null : `alvo ${formatarReais(operacao.alvo)}`,
+                              ]
+                                .filter((parte) => parte !== null)
+                                .join(" · ")}
+                            </span>
+                          )}
                         </td>
                         <td>{formatarData(operacao.criada_em)}</td>
                         <td className={`num ${sinal(operacao.realizado)}`}>
@@ -398,6 +414,9 @@ export function Carteira({ aoVivo }: Props) {
                               Exercício
                             </button>
                           )}
+                          <button type="button" onClick={() => setPainel({ tipo: "limites", operacao })}>
+                            Stop e alvo
+                          </button>
                           <button
                             type="button"
                             aria-pressed={comEventos.has(operacao.id)}

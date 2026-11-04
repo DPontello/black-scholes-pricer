@@ -191,3 +191,12 @@ test("vindo dos alertas, a operação do endereço já vem aberta", async () => 
   expect(botao.getAttribute("aria-expanded")).toBe("true");
   expect(document.getElementById("operacao-op1")).not.toBeNull();
 });
+
+test("a operação mostra o stop e o alvo, e o botão abre o diálogo deles", async () => {
+  api(carteira({ operacoes: [trava({ stop: 200, alvo: 90 })] }));
+  montar();
+  const linha = (await screen.findByRole("button", { name: /trava de alta/ })).closest("tr") as HTMLElement;
+  expect(linha.textContent).toContain("stop R$\u00a0-200,00 · alvo R$\u00a090,00");
+  fireEvent.click(within(linha).getByRole("button", { name: "Stop e alvo" }));
+  expect(screen.getByRole("form", { name: "Stop e alvo de trava de alta" })).toBeTruthy();
+});
