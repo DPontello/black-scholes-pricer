@@ -190,7 +190,7 @@ Documentação completa em [`docs/`](docs/):
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
 | 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` |
-| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1, 2 e 3 feitas (prazo 2026-11-30) |
+| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1, 2 e 3, a melhoria de UX e o instalador (semana 4, parte 1; o Windows ainda a conferir num PC real) feitos (prazo 2026-11-30) |
 
 ### App de opções (em construção)
 
@@ -205,9 +205,62 @@ ordens: você executa no home broker e registra a operação no app.
 - **Semana 3 (book e análise):** [desenho](docs/superpowers/specs/2026-11-02-semana-3-book-analise-design.md),
   [plano](docs/superpowers/plans/2026-11-02-app-semana-3-book-analise.md) e
   [ledger](docs/superpowers/ledger-semana-3.md).
+- **Semana 4 (instalador, IR mensal e alertas):** [desenho](docs/superpowers/specs/2026-11-03-semana-4-instalador-ir-alertas-design.md),
+  [plano do instalador](docs/superpowers/plans/2026-11-03-semana-4-parte-1-instalador.md) e
+  [ledger](docs/superpowers/ledger-semana-4.md).
 - **Estado e como retomar:** [`docs/superpowers/HANDOFF-2026-11-02.md`](docs/superpowers/HANDOFF-2026-11-02.md).
 - **Ponte do Tryd (RTD → TCP local):** [`src/options_ponte/README.md`](src/options_ponte/README.md).
   No Linux, o ambiente Wine é montado por [`scripts/linux/preparar_ponte_wine.sh`](scripts/linux/preparar_ponte_wine.sh).
+
+#### Instalar
+
+**Windows (64 bits).** O instalador `PainelOpcoes-<versão>-setup.exe` sai do job **Instalador**
+do GitHub Actions: aba Actions → Instalador → a execução → Artifacts. Baixar exige estar logado
+no GitHub, e o artefato vale por 90 dias.
+
+O job roda:
+- em tag `v*`;
+- em pull request que mexe em `packaging/**`, no próprio workflow ou em `src/options_ponte/**`;
+- à mão, mas o botão "Run workflow" só aparece depois que o workflow chegar à `master`.
+
+Um push na `development` não dispara o job.
+
+- **Instalar:** o artefato baixa como `.zip`. Extraia e dê dois cliques no `.exe`. Não pede senha
+  de administrador. O programa vai para
+  `%LOCALAPPDATA%\Programs\PainelOpcoes` e ganha o atalho **Painel de Opções** no menu Iniciar e,
+  se marcado, na área de trabalho.
+- **SmartScreen:** o instalador não é assinado, então o Windows avisa "O Windows protegeu o
+  computador". Clique em **Mais informações** → **Executar assim mesmo**. Um antivírus também
+  pode desconfiar do executável sem assinatura.
+- **Abrir duas vezes:** o segundo clique no atalho não sobe outro programa. Ele só abre a janela
+  do app que já está rodando.
+- **Atualizar:** instale a versão nova por cima. Se o app estiver aberto, o instalador o fecha
+  antes. Perfis, carteiras, simulações e arquivos da B3 ficam onde estão: em
+  `%APPDATA%\PainelOpcoes` e na pasta de cada perfil, fora da pasta do programa.
+- **Desinstalar:** pelo "Adicionar ou remover programas" (Configurações → Aplicativos), em
+  **Painel de Opções**. Os dados também ficam.
+- **Log:** `%APPDATA%\PainelOpcoes\logs\app.log`. Para conferir a ponte com o Tryd aberto, rode
+  `ponte\PonteTryd.exe diagnostico` na pasta do programa.
+
+**Linux.** Precisa do Python 3.12+ e do Node.js com npm. Na pasta do repositório, já na
+`development`:
+
+```bash
+scripts/linux/instalar.sh             # venv em ~/.local/share/painel-opcoes, tela e atalho no menu
+scripts/linux/instalar.sh --simular   # só mostra o que faria
+```
+
+A instalação aponta para a pasta do repositório (`pip install -e`).
+
+- **Atualizar:** rode `git pull` e o script de novo.
+- **Mudar a pasta de lugar ou apagá-la:** o atalho para de abrir. Rode o script de novo a partir
+  da pasta nova.
+- **Log:** o app aberto pelo menu não grava log em arquivo. Para ver um erro, rode
+  `~/.local/share/painel-opcoes/venv/bin/python -m options_engine app` num terminal.
+
+A ponte do Tryd continua no distrobox, montado por `preparar_ponte_wine.sh`.
+
+#### Rodar do código
 
 Para rodar o app (precisa do extra `app` e do Node 22+ para compilar a tela):
 
