@@ -6,6 +6,8 @@ Branch `feat/instalador`, a partir da `development` (`0c8e09b`), com as Tasks 1 
 Tasks 6 e 7 seguem na `feat/instalador-linux`, a partir da `development` (`eeb4186`).
 Parte 2, plano: [`plans/2026-11-04-semana-4-parte-2-ir-mensal.md`](plans/2026-11-04-semana-4-parte-2-ir-mensal.md),
 na branch `feat/ir-mensal`, a partir da `development` local (`785d324`).
+Parte 3, plano: [`plans/2026-11-04-semana-4-parte-3-alertas.md`](plans/2026-11-04-semana-4-parte-3-alertas.md),
+na branch `feat/alertas`, a partir da `development` (`057167d`).
 
 ## 2026-11-03: Task 1 — caminhos do app empacotado (ponte, tela e log)
 
@@ -163,3 +165,21 @@ na branch `feat/ir-mensal`, a partir da `development` local (`785d324`).
   - sem perfil aberto, o aviso aparece duas vezes (no topo da Carteira e na aba);
   - cada recarga da Carteira remonta a aba, e os meses abertos voltam fechados;
   - `sinal()` ganhou mais uma cópia (já havia três).
+
+## 2026-11-04: parte 3 (alertas) — enquetes e plano
+
+- Respostas do autor (§4.3 do desenho): padrões de **5 dias úteis e 2%**; stop e alvo em **todas**
+  as operações, também a só de ações; comparados com o **resultado total** (realizado com custos +
+  não realizado pelo preço de zerar).
+- Conflito achado: o desenho pedia abrir no Montador "o encerramento das pernas atuais e a mesma
+  estrutura no vencimento seguinte", mas o domínio recusa dois vencimentos numa estrutura
+  (`strategy.py`, decisão nº 6). Autor: **faixa no Montador** com o custo de zerar e o caixa
+  líquido; o encerramento segue pelo Encerrar da Carteira.
+- Ruling: a sugestão de rolagem não é um alerta à parte; é o botão **Rolar** dos alertas de
+  vencimento próximo e de risco de exercício da operação com perna vendida (mesmas condições do
+  §4.1). Motivo: o mesmo gatilho geraria dois itens por perna ("alerta demais", §5). Custo se
+  errado: virar um tipo a mais no `AlertKind` e uma linha na tela.
+- Ruling: dispensado some até o alerta deixar de valer numa avaliação **determinada**; sem preço de
+  zerar ou sem spot, o dispensado fica (o Tryd piscando não faz o alerta voltar).
+- Ruling: vencimento seguinte da rolagem = o próximo mensal quando o atual é mensal; o próximo
+  qualquer quando é semanal. Quantidades proporcionais à primeira perna de opção aberta.

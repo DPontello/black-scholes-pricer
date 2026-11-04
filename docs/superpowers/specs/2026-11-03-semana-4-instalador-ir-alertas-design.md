@@ -177,8 +177,20 @@ do app". O glossário ganha o termo `ir-mensal`.
 
 ### 4.3 A confirmar com o autor no início da parte 3
 
-1. Os padrões de 5 dias úteis e 2% do strike.
-2. Se o stop e o alvo valem também para a operação só de ações.
+1. Os padrões de 5 dias úteis e 2% do strike. **(autor, 04/11: 5 du e 2%.)**
+2. Se o stop e o alvo valem também para a operação só de ações. **(autor, 04/11: sim, para
+   todas.)**
+
+Mais duas respostas de 04/11, que mudam o §4.1:
+
+- **Stop e alvo pelo resultado total (autor, 04/11):** realizado com custos + não realizado pelo
+  preço de zerar; depois de um encerramento parcial, o stop segue valendo para a operação toda.
+- **Rolagem por uma faixa no Montador (autor, 04/11):** o Montador não aceita dois vencimentos
+  numa estrutura (`strategy.py`, decisão nº 6: calendar spread é extensão futura), então não dá
+  para abrir "o encerramento das pernas atuais e a estrutura nova" juntos. O Montador abre só a
+  estrutura nova no vencimento seguinte, e uma faixa no topo diz quanto custa zerar as pernas
+  atuais pelo preço de zerar e o caixa líquido da rolagem. O encerramento continua pelo Encerrar
+  da Carteira.
 
 ## 5. Riscos (anti-objetivos)
 
