@@ -217,3 +217,19 @@ def test_hoje_pelo_fuso_da_b3() -> None:
     relogio = _Relogio(_meia_noite_utc(date(2026, 11, 18)) + timedelta(hours=1))
     (alerta,) = _servico(relogio=relogio).evaluate(_carteira(_visao(comprada)), ()).alerts
     assert alerta.business_days == 2
+
+
+def test_vencimento_que_ja_passou_fica_indeterminado() -> None:
+    # Sem aviso de vencimento ainda (o pó roda antes, na Carteira): a perna não vira alerta.
+    vendida = operacao([call(30.0)], [Open(0, D1, Side.SELL, 100, 1.0)], id_="vendida01")
+    depois = _Relogio(datetime(2026, 11, 23, 10, 0, tzinfo=B3))
+    caixa = _Dispensados(frozenset({"vencimento_proximo:vendida01:0"}))
+    assert _servico(caixa, relogio=depois).evaluate(_carteira(_visao(vendida)), ()).alerts == ()
+    assert caixa.gravacoes == []
+
+
+def test_cotacao_sem_ultimo_nem_fechamento_anterior() -> None:
+    vendida = operacao([call(30.0)], [Open(0, D1, Side.SELL, 100, 1.0)], id_="vendida01")
+    mercado = MercadoFalso(quotes={"PETR4": _cotacao(None)})
+    alertas = _servico(mercado=mercado).evaluate(_carteira(_visao(vendida)), ()).alerts
+    assert [a.kind for a in alertas] == [AlertKind.EXPIRY_NEAR]

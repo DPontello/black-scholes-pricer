@@ -344,3 +344,17 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
 - Ruling: o Montador não troca sozinho o vencimento da cadeia para o da rolagem quando não há
   pedido: a faixa diz a data e o usuário a escolhe (custo se errado: um clique a mais).
 - Checagens: `npm run verificar` (tsc + 235 testes; 10 novos) e `npm run build`.
+
+## 2026-11-04: parte 3, Task 9 — gate completo e documentação
+
+- Gate completo: pytest com cobertura (5367 passando, 21 pulados, 1 falha antiga do `test_launch`
+  neste PC Windows; cobertura total 98,65%), mypy, ruff, ruff format e import-linter verdes;
+  frontend `verificar` (tsc + 235 testes) e `build`.
+- Cobertura dos módulos novos: `domain/alerts` 100%; `use_cases/alerts.py` tinha dois caminhos
+  sem teste (vencimento que o calendário recusa; cotação sem último nem fechamento anterior):
+  ganharam `test_vencimento_que_ja_passou_fica_indeterminado` e
+  `test_cotacao_sem_ultimo_nem_fechamento_anterior` e foram a 100%.
+- README (Alertas, stop e alvo, rolagem; planos da semana 4), ROADMAP (parte 3 feita na
+  `feat/alertas`) e HANDOFF (§1, §6, os números esperados no §2 e a seção 10).
+- Falta: o teste no app com o autor; o push, o PR para a `development` e o CI (onde se vê se o
+  `test_launch` falha também fora deste PC).

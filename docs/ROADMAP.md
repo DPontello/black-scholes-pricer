@@ -43,7 +43,11 @@
 >   também está feita: a aba IR mensal da Carteira, com day trade, prejuízo por categoria, DARF
 >   mínimo de R$ 10 e o prazo de pagamento.
 >
->   Depois vêm os alertas (parte 3). Proventos e ajuste de strike ficaram fora da semana 4.
+>   A parte 3, os alertas ([plano](superpowers/plans/2026-11-04-semana-4-parte-3-alertas.md)),
+>   está feita na branch `feat/alertas`: vencimento próximo, risco de exercício, stop e alvo em
+>   reais por operação, os avisos de depois do vencimento, dispensar até mudar de estado, a
+>   contagem no menu e a rolagem para o vencimento seguinte, aberta no Montador com o custo de
+>   zerar. Falta o teste no app com o autor. Proventos e ajuste de strike ficaram fora da semana 4.
 > - **Semana 5:** teste com a mãe e acabamento (ícone do app, entre outros).
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
