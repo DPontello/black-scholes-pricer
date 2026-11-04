@@ -190,7 +190,7 @@ Documentação completa em [`docs/`](docs/):
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
 | 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` |
-| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1, 2 e 3, a melhoria de UX e o instalador (semana 4, parte 1; o Windows ainda a conferir num PC real) feitos (prazo 2026-11-30) |
+| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1, 2 e 3, a melhoria de UX, o instalador (semana 4, parte 1; o Windows ainda a conferir num PC real) e o IR mensal das opções (parte 2) feitos (prazo 2026-11-30) |
 
 ### App de opções (em construção)
 
@@ -282,7 +282,10 @@ IR, a grade de cenários e a probabilidade de lucro. As simulações ficam salva
 perfil. Na **Carteira** ficam as operações executadas na corretora: o registro (também direto
 do montador), as ações que você já tem, o encerramento, o exercício e a atribuição pela regra
 da Receita, o pó automático depois do vencimento e o P&L pelo preço de zerar, ao vivo ou do fim
-de dia. Cada perfil grava a carteira na própria pasta, um arquivo JSON por operação.
+de dia. A aba **IR mensal** estima o imposto das opções mês a mês: day trade a 20% e comum a
+15%, prejuízo compensado em cada tipo, IR abaixo de R$ 10 somado com o dos meses seguintes até
+chegar a R$ 10 e o prazo do DARF (estimativa: sem ações, sem IR retido na fonte e sem prejuízo
+de antes do app). Cada perfil grava a carteira na própria pasta, um arquivo JSON por operação.
 O **Book** varre a lista do perfil no fim de dia (o último COTAHIST importado) e mostra os
 5 melhores de cada estrutura nas quatro famílias: Renda (o ranking do painel de renda),
 Volatilidade (iron condor, borboleta e strangle vendido com vol alta; straddle e strangle

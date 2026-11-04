@@ -115,15 +115,28 @@ logo o que fica pronto, nesta ordem **(autor, 03/11: instalador primeiro)**:
   apuração, esse prêmio só aparece quando a ação for vendida, e o app não o tributa. A tela diz
   isso ao lado do mês em que houve exercício ou atribuição.
 
-### 3.3 A confirmar com o autor no início da parte 2
+### 3.3 Decididas no início da parte 2 (04/11)
 
-Regras que o código vai obrigar a escolher e que mudam o número; vão em enquete antes de codar:
+O autor deixou as três com quem escreveu ("pode seguir com o melhor jeito que você definiria",
+04/11). Ficou o que a Receita faz:
 
-1. **Day trade parcial:** comprou 200 e vendeu 100 da mesma série no mesmo dia. Proposta: 100 são
-   day trade, ao preço daquele dia; o resto segue em operação comum, pelo preço médio.
-2. **DARF mínimo de R$ 10:** IR do mês abaixo de R$ 10 passa para o mês seguinte, como a Receita
-   faz. Proposta: sim.
-3. **Vencimento do DARF:** mostrar "pagar até o último dia útil do mês seguinte". Proposta: sim.
+1. **Day trade parcial:** comprou 200 e vendeu 100 da mesma série no mesmo dia: 100 são day
+   trade, pelos preços médios daquele dia (compras e vendas do dia, com os custos de cada ordem);
+   os outros 100 entram na posição comum pelo preço médio das compras do dia.
+2. **DARF mínimo de R$ 10:** IR do mês abaixo de R$ 10 não se paga; soma com o IR dos meses
+   seguintes até chegar a R$ 10. Prejuízo de um mês depois não abate esse IR já devido.
+3. **Vencimento do DARF:** "pagar até" o último dia útil do mês seguinte, pelo calendário da B3
+   que o app já tem; fora da cobertura do calendário, a tela mostra "—".
+
+Mais duas decisões de quem escreveu, que mudam o número:
+
+- **Preço médio por série no perfil**, como a Receita e o informe da corretora fazem, não por
+  operação da Carteira. Quando a mesma série está em duas operações do mesmo perfil, as compras e
+  vendas das duas entram juntas no preço médio e no day trade. No caso comum (cada série numa só
+  operação) dá o mesmo que a Carteira.
+- **Custos dentro do preço:** o custo da compra soma no custo dela, o da venda sai do valor
+  recebido (custos reais digitados, senão os da tabela, como na Carteira). Pó realiza o preço
+  médio inteiro; o custo do exercício e da atribuição vai para a ação, fora da conta.
 
 ### 3.4 Tela
 

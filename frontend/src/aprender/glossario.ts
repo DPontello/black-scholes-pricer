@@ -275,6 +275,15 @@ export const TERMOS: TermoGlossario[] = [
       "No Montador (custos de montagem, IR estimado e os números líquidos) e nos números líquidos do Book.",
   },
   {
+    id: "ir-mensal",
+    titulo: "IR mensal",
+    texto:
+      "A estimativa do imposto de renda das suas opções, mês a mês. Entra o resultado de cada opção encerrada ou que virou [pó](po), já com os custos. O preço médio é por série: se a mesma série está em duas operações, as duas entram juntas. Operação comum paga 15% e day trade (comprar e vender a mesma série no mesmo dia) paga 20%. O prejuízo de um mês abate o ganho dos meses seguintes, cada tipo com o seu. IR abaixo de R$ 10 não se paga na hora: soma com o IR dos meses seguintes até chegar a R$ 10. O [exercício](exercicio) e a [atribuição](atribuicao) não entram: o prêmio vai para o preço da ação. É estimativa, não o cálculo do imposto: ficam de fora as ações, o IR retido na fonte e o prejuízo de antes do app.",
+    exemplo:
+      "Em outubro, um prejuízo comum de R$ 52,00 e um day trade de R$ 28,00 dão R$ 5,60 de IR, que fica para novembro. Em novembro, um ganho comum de R$ 137,00 menos os R$ 52,00 dá R$ 85,00 de base e R$ 12,75 de IR; com os R$ 5,60 de outubro, o DARF fica em R$ 18,35, até o último dia útil de dezembro.",
+    onde: "Na Carteira, na aba IR mensal.",
+  },
+  {
     id: "anualizado",
     titulo: "Anualizado",
     texto:

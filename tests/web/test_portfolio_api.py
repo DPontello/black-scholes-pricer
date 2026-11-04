@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from pytest import approx
 
 from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.inbound.web.portfolio import router_carteira
@@ -15,10 +16,12 @@ from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.domain.model.chain import OptionQuote
 from options_engine.domain.model.contracts import OptionContract, OptionTerms
+from options_engine.domain.model.enums import Side
+from options_engine.domain.portfolio.model import Close, Exercise, Expired, Open
 from tests.application._fakes import FakeProfileRepository
 from tests.application._mercado_falso import CALENDARIO, INSTANTE, MercadoFalso
 from tests.income._builders import make_cost_schedule
-from tests.portfolio._builders import NOVEMBRO, call, put
+from tests.portfolio._builders import NOVEMBRO, call, operacao, put
 
 B3 = timezone(timedelta(hours=-3))
 AGORA = datetime(2026, 11, 4, 14, 0, tzinfo=B3)
@@ -261,3 +264,73 @@ def test_arquivo_ilegivel_aparece_na_carteira(tmp_path: Path) -> None:
     (tmp_path / "operacoes" / "2026-11-04_PETR4_aaaaaaaa.json").write_text("{", encoding="utf-8")
     (ilegivel,) = _cliente(tmp_path).get("/api/carteira").json()["ilegiveis"]
     assert ilegivel["arquivo"].endswith("aaaaaaaa.json") and "JSON" in ilegivel["motivo"]
+
+
+def test_ir_mensal_mais_recente_primeiro(tmp_path: Path) -> None:
+    venda_de_put = operacao(
+        [put(28.0)],
+        [
+            Open(0, date(2026, 11, 3), Side.SELL, 200, 0.80, 2.00),
+            Close(0, date(2026, 11, 12), 100, 0.20, 1.00),
+            Expired(0, NOVEMBRO),
+        ],
+        id_="venda-de-put-1",
+        nome="venda de put",
+    )
+    JsonOperationRepository(tmp_path).save(venda_de_put)
+    resposta = _cliente(tmp_path).get("/api/carteira/ir-mensal")
+    assert resposta.status_code == 200, resposta.json()
+    corpo = resposta.json()
+    assert [m["mes"] for m in corpo] == ["2026-11"]
+    mes = corpo[0]
+    assert mes["ir_do_mes"] == approx(20.55)
+    assert mes["pagar_ate"] == "2026-12-30"
+    assert mes["pecas"][1] == {
+        "data": "2026-11-19",
+        "ticker": "PETRW280",
+        "categoria": "comum",
+        "tipo": "po",
+        "resultado": approx(79.0),
+        "operacoes": ["venda de put"],
+    }
+    assert mes["exercicios"] == []
+
+
+def test_ir_mensal_com_dois_meses_lista_o_mais_recente_primeiro(tmp_path: Path) -> None:
+    outubro = date(2026, 10, 5)
+    JsonOperationRepository(tmp_path).save(
+        operacao(
+            [call(30.0)],
+            [Open(0, outubro, Side.SELL, 100, 1.00, 0.0), Close(0, outubro, 100, 0.40, 0.0)],
+            id_="day-trade-1",
+            nome="day trade de outubro",
+        )
+    )
+    JsonOperationRepository(tmp_path).save(
+        operacao(
+            [put(28.0)],
+            [Open(0, date(2026, 11, 3), Side.SELL, 100, 0.80, 0.0), Expired(0, NOVEMBRO)],
+            id_="venda-de-put-1",
+            nome="venda de put",
+        )
+    )
+    JsonOperationRepository(tmp_path).save(
+        operacao(
+            [call(32.0)],
+            [Open(0, date(2026, 11, 3), Side.BUY, 100, 0.40, 0.0), Exercise(0, NOVEMBRO, 100, 0.0)],
+            id_="call-exercida-1",
+            nome="call exercida",
+        )
+    )
+    corpo = _cliente(tmp_path).get("/api/carteira/ir-mensal").json()
+    assert [m["mes"] for m in corpo] == ["2026-11", "2026-10"]
+    assert corpo[0]["exercicios"] == [
+        {"data": "2026-11-19", "ticker": "PETRK320", "operacao": "call exercida"}
+    ]
+    assert corpo[1]["ir_do_mes"] == approx(12.0)
+    assert corpo[1]["pagar_ate"] == "2026-11-30"
+
+
+def test_ir_mensal_sem_perfil() -> None:
+    resposta = _cliente(None).get("/api/carteira/ir-mensal")
+    assert (resposta.status_code, resposta.json()["erro"]) == (404, "NoActiveProfileError")

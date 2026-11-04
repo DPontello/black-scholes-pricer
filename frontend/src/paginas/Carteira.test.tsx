@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 
 import type { EstadoAoVivo } from "../api/aoVivo";
 import type { Carteira as CarteiraDados, RascunhoOperacao } from "../api/carteira";
-import { carteira, trava } from "../testes/carteira";
+import { carteira, mesIr, mesIrOutubro, trava } from "../testes/carteira";
 import { simularFetch } from "../testes/fetchFalso";
 import { Carteira } from "./Carteira";
 
@@ -23,6 +23,7 @@ function api(dados: CarteiraDados = carteira()) {
   return simularFetch((url, init) => {
     if (url === "/api/carteira") return { corpo: dados };
     if (url === "/api/carteira/historico") return { corpo: [trava({ id: "op9", nome: "coberta" })] };
+    if (url === "/api/carteira/ir-mensal") return { corpo: [mesIr(), mesIrOutubro()] };
     if (url.startsWith("/api/carteira/operacoes") && init?.method === "POST")
       return { status: 201, corpo: { id: "op1" } };
     return undefined;
@@ -140,6 +141,35 @@ test("o histórico traz as encerradas com os eventos", async () => {
   fireEvent.click(await screen.findByRole("tab", { name: "Histórico" }));
   expect(await screen.findByText("coberta")).toBeTruthy();
   await waitFor(() => expect(screen.getByText(/abertura · PETRK300 · compra · 100 a 1,20/)).toBeTruthy());
+});
+
+test("a aba IR mensal busca e mostra o IR", async () => {
+  const fetchFalso = api();
+  montar();
+  await screen.findByRole("button", { name: /trava de alta/ });
+  const buscouIr = () => fetchFalso.mock.calls.some(([url]) => url === "/api/carteira/ir-mensal");
+  expect(buscouIr()).toBe(false);
+  fireEvent.click(screen.getByRole("tab", { name: "IR mensal" }));
+  expect(await screen.findByText("R$ 18,35 até 30/12/2026")).toBeTruthy();
+  expect(buscouIr()).toBe(true);
+  expect(screen.getByText("abaixo de R$ 10: soma com o IR dos próximos meses")).toBeTruthy();
+  expect(screen.getByRole("tab", { name: "IR mensal" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.queryByRole("button", { name: /trava de alta/ })).toBeNull();
+});
+
+test("a aba IR mensal recarrega quando a Carteira recarrega", async () => {
+  const fetchFalso = api();
+  montar();
+  await screen.findByRole("button", { name: /trava de alta/ });
+  const leiturasDoIr = () =>
+    fetchFalso.mock.calls.filter(([url]) => url === "/api/carteira/ir-mensal").length;
+  fireEvent.click(screen.getByRole("tab", { name: "IR mensal" }));
+  expect(await screen.findByText("R$ 18,35 até 30/12/2026")).toBeTruthy();
+  expect(leiturasDoIr()).toBe(1);
+  fireEvent.click(screen.getByRole("button", { name: "Registrar operação" }));
+  const form = await screen.findByRole("form", { name: "Registrar operação" });
+  fireEvent.click(within(form).getByRole("button", { name: "Cancelar" }));
+  await waitFor(() => expect(leiturasDoIr()).toBe(2));
 });
 
 test("sem perfil ou com a pasta fora do ar aparece o motivo", async () => {

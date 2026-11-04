@@ -1,4 +1,4 @@
-import type { Carteira, OperacaoCarteira, PernaCarteira } from "../api/carteira";
+import type { Carteira, MesIr, OperacaoCarteira, PernaCarteira } from "../api/carteira";
 
 // Trava de alta de PETR4 marcada: a comprada sem bid (só o teórico) e a vendida pelo ask.
 export function perna(parcial: Partial<PernaCarteira> = {}): PernaCarteira {
@@ -84,6 +84,83 @@ export function carteira(parcial: Partial<Carteira> = {}): Carteira {
     ],
     avisos: [],
     ilegiveis: [],
+    ...parcial,
+  };
+}
+
+// Novembro do exemplo conferido à mão: base comum 85 (137 menos os 52 de outubro), 12,75 de IR
+// mais os 5,60 que vieram de outubro dão os 18,35 do DARF.
+export function mesIr(parcial: Partial<MesIr> = {}): MesIr {
+  return {
+    mes: "2026-11",
+    comum: 137,
+    day_trade: 0,
+    base_comum: 85,
+    base_day_trade: 0,
+    prejuizo_comum: 0,
+    prejuizo_day_trade: 0,
+    ir_do_mes: 12.75,
+    ir_de_antes: 5.6,
+    ir_a_pagar: 18.35,
+    ir_para_depois: 0,
+    pagar_ate: "2026-12-30",
+    pecas: [
+      {
+        data: "2026-11-12",
+        ticker: "PETRW280",
+        categoria: "comum",
+        tipo: "encerramento",
+        resultado: 58,
+        operacoes: ["venda de put"],
+      },
+      {
+        data: "2026-11-19",
+        ticker: "PETRW280",
+        categoria: "comum",
+        tipo: "po",
+        resultado: 79,
+        operacoes: ["venda de put"],
+      },
+    ],
+    exercicios: [{ data: "2026-11-19", ticker: "PETRK320", operacao: "call exercida" }],
+    ...parcial,
+  };
+}
+
+// Outubro: o prejuízo comum de 52 abate o ganho de novembro; o day trade de 28 dá 5,60, abaixo de R$ 10.
+export function mesIrOutubro(parcial: Partial<MesIr> = {}): MesIr {
+  return {
+    mes: "2026-10",
+    comum: -52,
+    day_trade: 28,
+    base_comum: 0,
+    base_day_trade: 28,
+    prejuizo_comum: 52,
+    prejuizo_day_trade: 0,
+    ir_do_mes: 5.6,
+    ir_de_antes: 0,
+    ir_a_pagar: 0,
+    ir_para_depois: 5.6,
+    pagar_ate: null,
+    pecas: [
+      {
+        data: "2026-10-01",
+        ticker: "PETRK300",
+        categoria: "day_trade",
+        tipo: "encerramento",
+        resultado: 28,
+        operacoes: ["call de outubro"],
+      },
+      {
+        data: "2026-10-15",
+        ticker: "PETRK300",
+        categoria: "comum",
+        tipo: "encerramento",
+        resultado: -52,
+        operacoes: ["call de outubro"],
+      },
+    ],
+    exercicios: [],
     ...parcial,
   };
 }

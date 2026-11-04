@@ -4,6 +4,8 @@ Desenho: [`specs/2026-11-03-semana-4-instalador-ir-alertas-design.md`](specs/202
 Parte 1, plano: [`plans/2026-11-03-semana-4-parte-1-instalador.md`](plans/2026-11-03-semana-4-parte-1-instalador.md).
 Branch `feat/instalador`, a partir da `development` (`0c8e09b`), com as Tasks 1 a 5 (PR #10). As
 Tasks 6 e 7 seguem na `feat/instalador-linux`, a partir da `development` (`eeb4186`).
+Parte 2, plano: [`plans/2026-11-04-semana-4-parte-2-ir-mensal.md`](plans/2026-11-04-semana-4-parte-2-ir-mensal.md),
+na branch `feat/ir-mensal`, a partir da `development` local (`785d324`).
 
 ## 2026-11-03: Task 1 — caminhos do app empacotado (ponte, tela e log)
 
@@ -110,3 +112,54 @@ Tasks 6 e 7 seguem na `feat/instalador-linux`, a partir da `development` (`eeb41
 - Ficaram para depois:
   - o cabeçalho do `instalar.sh` não cita o caso de refazer o venv;
   - o script não confere a versão do Node (o README pede 22+ para rodar do código).
+
+## 2026-11-04: parte 2 — IR mensal das opções (Tasks 1 a 4 e conferência)
+
+- **As três perguntas do §3.3 do desenho:** o autor delegou ("pode seguir com o melhor jeito que
+  você definiria"). Ficou o que a Receita faz; o desenho registra as respostas.
+  - Ruling: preço médio por série no perfil, e não por operação da Carteira — é como a Receita e o
+    informe da corretora apuram — custo se errado: com a mesma série em duas operações, as peças
+    não batem uma a uma com o "Realizado" de cada operação (o total bate).
+  - Ruling: custos dentro do preço (compra soma, venda desconta), com os custos reais do evento
+    ou os da tabela pela mesma função da Carteira (`event_costs`) — custo se errado: o resultado
+    de uma operação aberta com encerramento parcial difere do "Realizado" da Carteira, que já
+    desconta todo o custo de abertura.
+- **Task 1 (peças por série):** `domain/portfolio/income_tax.py`, `tax_records`. Day trade pelo
+  menor entre o comprado e o vendido no dia, pelos médios do dia; a sobra entra na posição comum;
+  pó a preço zero; exercício e atribuição viram nota.
+  - Ruling: no teste de propriedade, o pó cai só no último dia — uma série vencida não negocia
+    depois do vencimento, e `process_expiries` grava o pó na data do vencimento — custo se errado:
+    a propriedade cobre menos.
+  - Ruling: pó, exercício e atribuição só tiram o que existe do lado da perna na posição da série e
+    nunca levantam erro (com outra operação já tendo casado a diferença, a soma ainda bate com a
+    Carteira).
+- **Task 2 (meses):** `monthly_tax`, com 15% e 20%, prejuízo por tipo, IR de cada tipo arredondado
+  a centavos e o mínimo de R$ 10 comparado depois de arredondar.
+- **Task 3 (serviço e rota):** `PortfolioService.income_tax()` e `GET /api/carteira/ir-mensal`, o
+  mês mais recente primeiro.
+  - Ruling: `income_tax()` não roda o vencimento (como `history()`); a Carteira carrega
+    `/api/carteira`, que grava o pó, antes de a aba poder ser clicada — custo se errado: um pó não
+    gravado só aparece no IR depois de abrir a Carteira.
+- **Task 4 (aba):** `IrMensal.tsx`, a terceira aba da Carteira, o termo `ir-mensal` e a frase na
+  tela Telas.
+- **Revisão final da branch:** nenhum achado crítico; três importantes e sete menores, corrigidos
+  numa rodada; a re-revisão confirmou.
+  - FIXED (importante): o detalhe do mês mostrava "= R$ 0,00" quando o IR acumulado continuava
+    abaixo de R$ 10; agora mostra o total (por exemplo, R$ 3,00 + R$ 5,60 = R$ 8,60) e o aviso.
+  - FIXED (importante): a linha do mês ganhou a coluna Base (o desenho §3.4 a pedia; o plano a
+    tinha deixado só no detalhe) e a marca "com exercício ou atribuição" ao lado do mês (§3.2).
+  - Ruling: os textos mudaram em relação ao plano — "abaixo de R$ 10: soma com o IR dos próximos
+    meses" (antes "soma no mês seguinte", que enganava quando o mês seguinte não tem negociação) e
+    a nota de exercício ("o prêmio vai para o preço da ação, e o resultado da ação fica fora desta
+    conta (o app não apura o IR de ações)"), que também vale para a call vendida atribuída. O
+    plano ficou com os textos antigos, como histórico.
+  - FIXED (menores): a aba recarrega quando a Carteira recarrega; o glossário diz que o preço médio
+    é por série; o "pagar até" de novembro de 2027 (borda do calendário) sai 30/12/2027 em vez de
+    "—"; testes a mais (série compartilhada com pó nas duas pernas, comum antes do day trade no
+    mesmo dia, IR pendente atravessando mês vazio e acumulando até passar de R$ 10, abatimento
+    parcial, day trade abatendo day trade) e docstrings de `tax_records` e `monthly_tax`.
+  - FIXED (conferência na tela): "R$" e o valor não quebram mais de linha (espaço que não quebra).
+- Ficaram para depois:
+  - sem perfil aberto, o aviso aparece duas vezes (no topo da Carteira e na aba);
+  - cada recarga da Carteira remonta a aba, e os meses abertos voltam fechados;
+  - `sinal()` ganhou mais uma cópia (já havia três).
