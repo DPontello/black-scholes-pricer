@@ -13,7 +13,13 @@ export const MODERADO: PresetBook = {
   perda_ilimitada: false,
 };
 
-export const PERFIL: Perfil = { nome: "Hugo", ativos: ["PETR4", "VALE3"], cdi_anual: 0.15, book: MODERADO };
+export const PERFIL: Perfil = {
+  nome: "Hugo",
+  ativos: ["PETR4", "VALE3"],
+  cdi_anual: 0.15,
+  book: MODERADO,
+  alertas: { dias_vencimento: 5, distancia_strike: 0.02 },
+};
 
 export function itemCoberta(extra: Partial<ItemBook> = {}): ItemBook {
   return {

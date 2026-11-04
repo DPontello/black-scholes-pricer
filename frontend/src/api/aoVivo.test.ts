@@ -11,6 +11,8 @@ const VAZIO: EstadoAoVivo = {
   cadeiaIndisponivel: null,
   carteira: null,
   carteiraIndisponivel: null,
+  alertas: null,
+  alertasIndisponiveis: null,
 };
 
 test("status e cotações do app entram no estado", () => {
@@ -71,4 +73,18 @@ test("a carteira do ao vivo entra no estado, e o motivo dela a substitui", () =>
   expect(semPasta.carteira).toBeNull();
   expect(semPasta.carteiraIndisponivel?.mensagem).toBe("pasta do perfil fora do ar");
   expect(aplicar(semPasta, { tipo: "carteira", dados }).carteiraIndisponivel).toBeNull();
+});
+
+test("alertas que não saem trocam a lista pelo motivo, e os que saem limpam o motivo", () => {
+  const lista = { fonte: "ao_vivo" as const, alertas: [], dispensados: 1 };
+  const comAlertas = aplicar(VAZIO, { tipo: "alertas", dados: lista });
+  expect(comAlertas.alertas).toEqual(lista);
+  const semAlertas = aplicar(comAlertas, {
+    tipo: "alertas",
+    erro: "NoActiveProfileError",
+    mensagem: "nenhum perfil aberto",
+  });
+  expect(semAlertas.alertas).toBeNull();
+  expect(semAlertas.alertasIndisponiveis?.mensagem).toBe("nenhum perfil aberto");
+  expect(aplicar(semAlertas, { tipo: "alertas", dados: lista }).alertasIndisponiveis).toBeNull();
 });

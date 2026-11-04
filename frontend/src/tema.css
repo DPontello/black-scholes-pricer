@@ -101,10 +101,6 @@ h1 {
   margin: 0 0 0.75rem;
 }
 
-.em-breve p {
-  color: var(--texto-secundario);
-}
-
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -1015,4 +1011,61 @@ a.ajuda:focus-visible {
   width: 100%;
   height: 300px;
   margin: 0.5rem 0 1rem;
+}
+
+.grupo-alertas {
+  margin: 0.75rem 0;
+  padding: 0.8rem 1rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-left: 4px solid var(--atencao);
+  border-radius: 6px;
+}
+
+.grupo-alertas h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+
+.grupo-alertas ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alerta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+.alerta.stop,
+.alerta.exercicio_a_registrar,
+.alerta.risco_de_exercicio {
+  color: var(--baixa);
+}
+
+.alerta.alvo {
+  color: var(--alta);
+}
+
+.acoes-alerta {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.ajustes-alertas {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.ajustes-alertas input {
+  width: 5rem;
+  margin: 0 0.4rem;
 }

@@ -68,6 +68,8 @@ const AO_VIVO: EstadoAoVivo = {
   cadeiaIndisponivel: null,
   carteira: null,
   carteiraIndisponivel: null,
+  alertas: null,
+  alertasIndisponiveis: null,
 };
 
 function api(analise: unknown = analiseCoberta()) {

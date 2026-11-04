@@ -306,3 +306,23 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
 - Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/web`, `tests/config`,
   `tests/application`, `tests/alerts` e `tests/adapters/storage` (9 testes novos). A única falha é
   a do `test_launch`, a mesma de antes (Task 2).
+
+## 2026-11-04: parte 3, Task 7 — aba Alertas e a contagem no menu
+
+- `api/alertas.ts` (tipos e as quatro rotas), `LimitesAlertas` e `definirLimitesAlertas` em
+  `api/cliente.ts` (o `Perfil` ganhou `alertas`), mensagem `alertas` no `aoVivo.ts`.
+- `paginas/Alertas.tsx`: grupos por operação na ordem do primeiro alerta (a lista já vem por
+  gravidade), uma frase por alerta com **Dispensar**, e por operação **Abrir na Carteira** e
+  **Rolar** (quando algum alerta dela pode rolar); "Mostrar dispensados (N)" restaura todos; os
+  limites no fim da página (dias úteis e % do strike, gravados em fração). Rótulo "pelo fim de dia
+  (B3)" (ou "com preços atrasados") quando a fonte não é ao vivo.
+- Menu: "Alertas (N)" com os alertas não dispensados, pelo WebSocket; sem alertas, só "Alertas".
+- Carteira: `?operacao=<id>` abre a operação e a rola para a vista (`id="operacao-<id>"` na linha).
+- `formatarReais` foi para `formatacao.ts` (era o `reais()` do IR mensal) e serve as duas telas;
+  o `sinal()` ficou como estava.
+- `paginas/EmBreve.tsx` e o CSS `.em-breve` saíram: Alertas era a última área "em breve".
+- Ruling: Rolar navega ao Montador com `state: { pedido, rolagem }`, como o Book (`pedido`); a
+  faixa que usa a `rolagem` é a Task 8. Até lá o Montador abre só o pedido.
+- Ruling: o "?" do glossário nos alertas fica para a Task 8, junto dos termos novos (sem termo, o
+  link levaria a um termo que não existe).
+- Checagens: `npm run verificar` (tsc + 225 testes; 13 novos).

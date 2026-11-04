@@ -5,11 +5,11 @@ import { useAoVivo } from "./api/aoVivo";
 import { type Perfil, perfilAtivo } from "./api/cliente";
 import { BarraStatus } from "./componentes/BarraStatus";
 import { Shell } from "./componentes/Shell";
+import { Alertas } from "./paginas/Alertas";
 import { Carteira } from "./paginas/Carteira";
 import { Aprender } from "./paginas/Aprender";
 import { ArquivosB3 } from "./paginas/ArquivosB3";
 import { Book } from "./paginas/Book";
-import { EmBreve } from "./paginas/EmBreve";
 import { Mercado } from "./paginas/Mercado";
 import { Montador } from "./paginas/Montador";
 import { Perfis } from "./paginas/Perfis";
@@ -57,7 +57,11 @@ type ComPerfilProps = {
 function ComPerfil({ perfil, onPerfil, onAberto }: ComPerfilProps) {
   const { seguirCadeia, ...aoVivo } = useAoVivo();
   return (
-    <Shell status={<BarraStatus status={aoVivo.status} conectado={aoVivo.conectado} />} perfil={perfil.nome}>
+    <Shell
+      status={<BarraStatus status={aoVivo.status} conectado={aoVivo.conectado} />}
+      perfil={perfil.nome}
+      alertas={aoVivo.alertas?.alertas.length ?? 0}
+    >
       <Routes>
         <Route path="/perfis" element={<Perfis onAberto={onAberto} />} />
         <Route path="/" element={<Navigate to="/mercado" replace />} />
@@ -73,7 +77,10 @@ function ComPerfil({ perfil, onPerfil, onAberto }: ComPerfilProps) {
         <Route path="/book" element={<Book perfil={perfil} onPerfil={onPerfil} />} />
         <Route path="/carteira" element={<Carteira aoVivo={aoVivo} />} />
         <Route path="/aprender/*" element={<Aprender comPerfil />} />
-        <Route path="/alertas" element={<EmBreve titulo="Alertas" semana={4} />} />
+        <Route
+          path="/alertas"
+          element={<Alertas aoVivo={aoVivo} perfil={perfil} onPerfil={onPerfil} />}
+        />
         <Route path="*" element={<Navigate to="/mercado" replace />} />
       </Routes>
     </Shell>

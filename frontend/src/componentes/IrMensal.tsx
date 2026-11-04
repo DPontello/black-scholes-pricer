@@ -2,7 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 
 import { type ExercicioIr, lerIrMensal, type MesIr, type PecaIr } from "../api/carteira";
 import { ErroApi } from "../api/cliente";
-import { formatarData, formatarMes, formatarPreco } from "../formatacao";
+import { formatarData, formatarMes, formatarPreco, formatarReais } from "../formatacao";
 import { Ajuda } from "./Ajuda";
 
 const TIPOS: Record<PecaIr["tipo"], string> = { encerramento: "Encerramento", po: "Pó" };
@@ -12,15 +12,10 @@ function sinal(valor: number): string {
   return valor > 0 ? "alta" : valor < 0 ? "baixa" : "";
 }
 
-// Espaço que não quebra: "R$" não fica numa linha e o valor na outra.
-function reais(valor: number): string {
-  return `R$ ${formatarPreco(valor)}`;
-}
-
 function porTipo(comum: number, dayTrade: number): string {
   const partes = [
-    comum > 0 ? `comum ${reais(comum)}` : null,
-    dayTrade > 0 ? `day trade ${reais(dayTrade)}` : null,
+    comum > 0 ? `comum ${formatarReais(comum)}` : null,
+    dayTrade > 0 ? `day trade ${formatarReais(dayTrade)}` : null,
   ].filter((parte) => parte !== null);
   return partes.length === 0 ? "—" : partes.join(" · ");
 }
@@ -35,7 +30,7 @@ function base(mes: MesIr): string {
 
 function aPagar(mes: MesIr): string {
   if (mes.ir_a_pagar > 0) {
-    const valor = reais(mes.ir_a_pagar);
+    const valor = formatarReais(mes.ir_a_pagar);
     return mes.pagar_ate === null ? valor : `${valor} até ${formatarData(mes.pagar_ate)}`;
   }
   if (mes.ir_para_depois > 0) return "abaixo de R$ 10: soma com o IR dos próximos meses";
@@ -83,10 +78,10 @@ function Detalhe({ mes }: { mes: MesIr }) {
   const aviso = mes.ir_para_depois > 0 ? " (abaixo de R$ 10: soma com o IR dos próximos meses)" : "";
   return (
     <>
-      <p>{`Base: comum ${reais(mes.base_comum)} (15%) · day trade ${reais(mes.base_day_trade)} (20%)`}</p>
+      <p>{`Base: comum ${formatarReais(mes.base_comum)} (15%) · day trade ${formatarReais(mes.base_day_trade)} (20%)`}</p>
       {mes.ir_de_antes > 0 && (
         <p>
-          {`IR do mês ${reais(mes.ir_do_mes)} + ${reais(mes.ir_de_antes)} de meses anteriores = ${reais(mes.ir_a_pagar + mes.ir_para_depois)}${aviso}`}
+          {`IR do mês ${formatarReais(mes.ir_do_mes)} + ${formatarReais(mes.ir_de_antes)} de meses anteriores = ${formatarReais(mes.ir_a_pagar + mes.ir_para_depois)}${aviso}`}
         </p>
       )}
       <Pecas pecas={mes.pecas} />

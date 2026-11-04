@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import type { EstadoAoVivo } from "../api/aoVivo";
 import {
@@ -201,13 +201,18 @@ export function Carteira({ aoVivo }: Props) {
   const local = useLocation();
   const navegar = useNavigate();
   const doMontador = (local.state as { registro?: RascunhoOperacao } | null)?.registro;
+  // Os Alertas abrem a Carteira com `?operacao=`: a operação já vem aberta e à vista.
+  const [busca] = useSearchParams();
+  const doAlerta = busca.get("operacao");
   const [carteira, setCarteira] = useState<CarteiraDados | null>(null);
   const [historico, setHistorico] = useState<OperacaoCarteira[] | null>(null);
   const [aba, setAba] = useState<"abertas" | "historico" | "ir">("abertas");
   const [painel, setPainel] = useState<Painel>(
     doMontador === undefined ? null : { tipo: "registrar", inicial: doMontador },
   );
-  const [abertas, setAbertas] = useState<ReadonlySet<string>>(new Set());
+  const [abertas, setAbertas] = useState<ReadonlySet<string>>(
+    new Set(doAlerta === null ? [] : [doAlerta]),
+  );
   const [comEventos, setComEventos] = useState<ReadonlySet<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [leituras, setLeituras] = useState(0);
@@ -231,6 +236,12 @@ export function Carteira({ aoVivo }: Props) {
   useEffect(() => {
     if (aoVivo.carteira !== null) setCarteira(aoVivo.carteira);
   }, [aoVivo.carteira]);
+
+  const carregou = carteira !== null;
+  useEffect(() => {
+    if (carregou && doAlerta !== null)
+      document.getElementById(`operacao-${doAlerta}`)?.scrollIntoView?.({ block: "center" });
+  }, [carregou, doAlerta]);
 
   useEffect(() => {
     if (aba === "historico") lerHistorico().then(setHistorico).catch(() => setHistorico(null));
@@ -352,7 +363,7 @@ export function Carteira({ aoVivo }: Props) {
                   const temOpcao = operacao.pernas.some((p) => p.tipo !== "acao" && p.quantidade > 0);
                   return (
                     <Fragment key={operacao.id}>
-                      <tr>
+                      <tr id={`operacao-${operacao.id}`}>
                         <td>
                           <button
                             type="button"
