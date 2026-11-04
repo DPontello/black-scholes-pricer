@@ -227,3 +227,17 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
 - Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/portfolio`,
   `tests/adapters/storage`, `tests/application`, `tests/web`, `tests/alerts` e `tests/config`
   (627 passando; 15 testes novos).
+
+## 2026-11-04: parte 3, Task 3 — limites dos alertas no perfil
+
+- `Profile` ganhou `alerts: AlertSettings | None` e a propriedade `alert_settings` (5 du e 2%
+  quando `None`), como o `book`.
+- `perfil.json`: campo opcional `"alertas": {"dias_vencimento", "distancia_strike"}`, gravado só
+  depois que o usuário muda os limites; tipo errado ou valor fora da faixa deixa o perfil ilegível
+  com o caminho e o campo, como o `book`.
+- `ProfileUseCase.set_alert_settings`; `PerfilOut.alertas`; rota `PUT /api/perfil/alertas`
+  (fora da faixa dá 422 de domínio e não grava; sem perfil aberto, 404).
+- Três testes antigos da API de perfis comparavam o perfil inteiro: ganharam o `ALERTAS_PADRAO`.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/adapters/storage`,
+  `tests/application`, `tests/web`, `tests/alerts`, `tests/config` e `tests/domain` (1033
+  passando; 14 testes novos). A única falha é a do `test_launch`, a mesma de antes (Task 2).

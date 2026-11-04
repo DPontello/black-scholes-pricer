@@ -12,6 +12,7 @@ from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.adapters.outbound.storage.profiles import JsonProfileRepository
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.application.use_cases.profiles import ProfileService
+from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.errors import (
     DuplicateProfileError,
@@ -360,3 +361,19 @@ def test_perfil_aberto_que_sumiu_da_configuracao_e_erro_claro() -> None:
     del repo.profiles["Hugo"]
     with pytest.raises(UnknownProfileError, match="sumiu"):
         service.active_folder()
+
+
+def test_set_alert_settings_grava_e_mantem_o_resto_do_perfil() -> None:
+    service, repo = make_service_with_profiles("Hugo")
+    service.open("Hugo")
+    novo = service.set_alert_settings(AlertSettings(10, 0.03))
+    assert novo == Profile("Hugo", ("PETR4", "VALE3"), 0.15, alerts=AlertSettings(10, 0.03))
+    assert service.active() == novo
+    assert repo.saved == [("Hugo", novo)]
+
+
+def test_set_alert_settings_sem_perfil_aberto_levanta() -> None:
+    service, repo = make_service_with_profiles("Hugo")
+    with pytest.raises(NoActiveProfileError):
+        service.set_alert_settings(AlertSettings())
+    assert repo.saved == []

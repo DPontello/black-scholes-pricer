@@ -1,4 +1,4 @@
-"""Perfil do usuário do app: nome, watchlist, CDI e os filtros do book.
+"""Perfil do usuário do app: nome, watchlist, CDI, os filtros do book e os limites dos alertas.
 
 O perfil é dado do usuário, não do mercado: vive numa pasta que o usuário
 escolhe (nuvem, pendrive) e viaja entre PCs. Este módulo só diz o que é um
@@ -9,6 +9,7 @@ from collections import Counter
 from dataclasses import dataclass
 from math import isfinite
 
+from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.errors import InvalidDomainValueError
 
@@ -40,13 +41,14 @@ class Profile:
     (API, leitura do arquivo) normaliza antes, e assim o que está salvo é
     igual ao que foi mostrado. ``cdi_annual`` é fração anual (0.15 = 15% a.a.)
     e fica em ``0 <= cdi < 1``. ``book`` é ``None`` até o usuário escolher um preset (o book
-    usa então o Moderado).
+    usa então o Moderado); ``alerts``, até o usuário mudar os limites (valem 5 du e 2%).
     """
 
     name: str
     watchlist: tuple[str, ...]
     cdi_annual: float
     book: BookSettings | None = None
+    alerts: AlertSettings | None = None
 
     def __post_init__(self) -> None:
         if not self.name or self.name != self.name.strip() or len(self.name) > _NOME_MAX:
@@ -77,6 +79,10 @@ class Profile:
     @property
     def book_settings(self) -> BookSettings:
         return self.book if self.book is not None else BookSettings.default(BookPreset.MODERADO)
+
+    @property
+    def alert_settings(self) -> AlertSettings:
+        return self.alerts if self.alerts is not None else AlertSettings()
 
 
 @dataclass(frozen=True, slots=True)

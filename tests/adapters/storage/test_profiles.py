@@ -17,6 +17,7 @@ from options_engine.adapters.outbound.storage.profiles import (
 )
 from options_engine.application.ports.outbound import ProfileRepository
 from options_engine.config.composition import DEFAULT_CDI_ANNUAL
+from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.errors import (
     DuplicateProfileError,
@@ -245,6 +246,23 @@ def test_book_do_perfil_vai_e_volta_pelo_json(tmp_path: Path) -> None:
     }
 
 
+def test_alertas_do_perfil_vao_e_voltam_pelo_json(tmp_path: Path) -> None:
+    repo, pasta = make_repo(tmp_path)
+    repo.save("Hugo", Profile("Hugo", ("PETR4",), 0.15, alerts=AlertSettings(8, 0.035)))
+    assert repo.load("Hugo").alerts == AlertSettings(8, 0.035)
+    gravado = json.loads((pasta / "perfil.json").read_text(encoding="utf-8"))
+    assert gravado["alertas"] == {"dias_vencimento": 8, "distancia_strike": 0.035}
+    assert "book" not in gravado
+
+
+def test_perfil_sem_alertas_usa_o_padrao(tmp_path: Path) -> None:
+    repo, pasta = make_repo(tmp_path)
+    repo.save("Hugo", Profile("Hugo", ("PETR4",), 0.15))
+    assert "alertas" not in json.loads((pasta / "perfil.json").read_text(encoding="utf-8"))
+    perfil = repo.load("Hugo")
+    assert (perfil.alerts, perfil.alert_settings) == (None, AlertSettings(5, 0.02))
+
+
 def test_perfil_antigo_sem_book_e_lido_como_moderado(tmp_path: Path) -> None:
     repo, pasta = make_repo(tmp_path)
     (pasta / "perfil.json").write_text(
@@ -284,6 +302,12 @@ _BOOK_OK = (
 )
 
 
+def _com_alertas(alertas: str) -> str:
+    return (
+        '{"versao": 1, "nome": "Hugo", "ativos": [], "cdi_anual": 0.15, "alertas": ' + alertas + "}"
+    )
+
+
 def _com_book(book: str) -> str:
     return '{"versao": 1, "nome": "Hugo", "ativos": [], "cdi_anual": 0.15, "book": ' + book + "}"
 
@@ -307,6 +331,11 @@ def _com_book(book: str) -> str:
         (_com_book(_BOOK_OK.replace('"vencimentos": 2', '"vencimentos": 2.5')), "vencimentos"),
         (_com_book(_BOOK_OK.replace('"perda_ilimitada": false', '"perda_ilimitada": 0')), "perda"),
         (_com_book(_BOOK_OK.replace('"delta_min": 0.15', '"delta_min": 0.5')), "delta"),
+        (_com_alertas("[]"), "alertas"),
+        (_com_alertas('{"dias_vencimento": 5.5, "distancia_strike": 0.02}'), "dias_vencimento"),
+        (_com_alertas('{"dias_vencimento": 5, "distancia_strike": "2%"}'), "distancia_strike"),
+        (_com_alertas('{"dias_vencimento": true, "distancia_strike": 0.02}'), "dias_vencimento"),
+        (_com_alertas('{"dias_vencimento": 90, "distancia_strike": 0.02}'), "dias"),
     ],
 )
 def test_perfil_json_ilegivel_acusa_com_o_caminho_no_load_e_na_adocao(
