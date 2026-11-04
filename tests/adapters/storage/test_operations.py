@@ -1,6 +1,7 @@
 """``JsonOperationRepository``: ``operacoes/<data>_<ativo>_<id8>.json`` na pasta do perfil."""
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -203,3 +204,49 @@ def test_ida_e_volta_da_transferencia(tmp_path: Path) -> None:
     )
     repositorio.save(a_mao)
     assert repositorio.load(a_mao.id) == a_mao
+
+
+def test_ida_e_volta_com_modelo_stop_e_alvo(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    operacao_ = replace(
+        operacao([call(32.0)], [Open(0, D1, Side.SELL, 100, 1.0)], id_=ID),
+        template="call_coberta",
+        stop_loss=300.0,
+        target=80.0,
+    )
+    repositorio.save(operacao_)
+    assert repositorio.load(operacao_.id) == operacao_
+    (arquivo,) = (tmp_path / "perfil" / "operacoes").iterdir()
+    gravado = json.loads(arquivo.read_text(encoding="utf-8"))
+    assert (gravado["versao"], gravado["modelo"], gravado["stop"], gravado["alvo"]) == (
+        1,
+        "call_coberta",
+        300.0,
+        80.0,
+    )
+
+
+def test_operacao_antiga_sem_campos_novos(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    antiga = operacao([call(32.0)], [Open(0, D1, Side.SELL, 100, 1.0)], id_=ID)
+    repositorio.save(antiga)
+    (arquivo,) = (tmp_path / "perfil" / "operacoes").iterdir()
+    gravado = json.loads(arquivo.read_text(encoding="utf-8"))
+    assert not {"modelo", "stop", "alvo"} & gravado.keys()
+
+    lida = repositorio.load(antiga.id)
+    assert (lida.template, lida.stop_loss, lida.target) == (None, None, None)
+    repositorio.save(lida.with_events(Close(0, D2, 100, 0.5)))
+    regravado = json.loads(arquivo.read_text(encoding="utf-8"))
+    assert not {"modelo", "stop", "alvo"} & regravado.keys()
+
+
+def test_stop_invalido_no_arquivo_e_ilegivel(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    repositorio.save(operacao([call(32.0)], [Open(0, D1, Side.SELL, 100, 1.0)], id_=ID))
+    (arquivo,) = (tmp_path / "perfil" / "operacoes").iterdir()
+    gravado = json.loads(arquivo.read_text(encoding="utf-8"))
+    arquivo.write_text(json.dumps({**gravado, "stop": -5}), encoding="utf-8")
+    (item,) = repositorio.list()
+    assert isinstance(item, UnreadableFile)
+    assert "stop" in item.reason

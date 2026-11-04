@@ -202,3 +202,28 @@ na branch `feat/alertas`, a partir da `development` (`057167d`).
   na call (`strike·(1 + d)` na put), com `total == −stop` e com `total == alvo`.
 - Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/alerts` e
   `tests/portfolio` (108 testes; 27 novos, um deles com hypothesis).
+
+## 2026-11-04: parte 3, Task 2 — modelo, stop e alvo na operação
+
+- `Operation` ganhou `template`, `stop_loss` e `target` (opcionais, no fim, com padrão `None`);
+  stop e alvo precisam ser finitos e maiores que zero. `with_events` e `apply_exercise` os mantêm
+  (usam `replace`).
+- JSON da operação: `"modelo"`, `"stop"` e `"alvo"` só são gravados quando existem; a `versao`
+  continua 1, e o arquivo de antes segue igual ao ser regravado (teste). Stop inválido no arquivo
+  deixa a operação ilegível, como os outros campos.
+- `RegisterOperation` e `POST /api/carteira/operacoes` levam `modelo`, `stop` e `alvo`;
+  `OperacaoOut` os devolve; rota nova `PUT /api/carteira/operacoes/{id}/limites` (`null` apaga;
+  operação desconhecida dá 404; stop ≤ 0 dá 422).
+- O helper `_custos` da gravação virou `_numero_opcional` (agora lê também o stop e o alvo).
+- Ruling: o `modelo` é gravado como veio, mesmo se o catálogo não o tiver; só a rolagem o ignora
+  (Task 5). Motivo: o catálogo pode mudar depois do registro.
+- Risco anotado: um app de versão anterior que regrave a operação (um encerramento feito nele)
+  apaga o stop, o alvo e o modelo, porque não os conhece. Só acontece com dois PCs em versões
+  diferentes no mesmo perfil.
+- Falha que já existia neste PC Windows, sem relação com a Task 2:
+  `tests/web/test_launch.py::test_comando_app_instalado_usa_a_tela_a_ponte_e_o_log_de_dentro_do_executavel`
+  (o `app.log` não aparece). Falha igual no commit `5d366ca`, conferido numa cópia limpa. Fica
+  para investigar à parte.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/portfolio`,
+  `tests/adapters/storage`, `tests/application`, `tests/web`, `tests/alerts` e `tests/config`
+  (627 passando; 15 testes novos).

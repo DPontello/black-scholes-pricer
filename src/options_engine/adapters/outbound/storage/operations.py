@@ -154,7 +154,7 @@ def _evento_json(evento: Event) -> dict[str, object]:
 
 
 def _para_json(operation: Operation) -> dict[str, object]:
-    return {
+    dados: dict[str, object] = {
         "versao": _VERSAO,
         "id": operation.id,
         "ativo": operation.underlying,
@@ -163,6 +163,15 @@ def _para_json(operation: Operation) -> dict[str, object]:
         "pernas": [_perna_json(p) for p in operation.legs],
         "eventos": [_evento_json(e) for e in operation.events],
     }
+    # Opcionais: só gravados quando existem, e o arquivo de antes da semana 4 segue igual.
+    for chave, valor in (
+        ("modelo", operation.template),
+        ("stop", operation.stop_loss),
+        ("alvo", operation.target),
+    ):
+        if valor is not None:
+            dados[chave] = valor
+    return dados
 
 
 def _perna(dados: Any, ativo: str) -> LegRef:
@@ -181,7 +190,7 @@ def _perna(dados: Any, ativo: str) -> LegRef:
     )
 
 
-def _custos(valor: Any) -> float | None:
+def _numero_opcional(valor: Any) -> float | None:
     return None if valor is None else float(valor)
 
 
@@ -195,7 +204,7 @@ def _evento(dados: Any) -> Event:
                 _LADO_DO_TEXTO[dados["lado"]],
                 int(dados["quantidade"]),
                 float(dados["preco"]),
-                _custos(dados["custos"]),
+                _numero_opcional(dados["custos"]),
             )
         case "encerramento":
             return Close(
@@ -203,13 +212,15 @@ def _evento(dados: Any) -> Event:
                 dia,
                 int(dados["quantidade"]),
                 float(dados["preco"]),
-                _custos(dados["custos"]),
-                _custos(dados.get("custo_medio")),
+                _numero_opcional(dados["custos"]),
+                _numero_opcional(dados.get("custo_medio")),
             )
         case "exercicio":
-            return Exercise(perna, dia, int(dados["quantidade"]), _custos(dados["custos"]))
+            return Exercise(perna, dia, int(dados["quantidade"]), _numero_opcional(dados["custos"]))
         case "atribuicao":
-            return Assignment(perna, dia, int(dados["quantidade"]), _custos(dados["custos"]))
+            return Assignment(
+                perna, dia, int(dados["quantidade"]), _numero_opcional(dados["custos"])
+            )
         case "po":
             return Expired(perna, dia)
         case "transferencia":
@@ -235,6 +246,9 @@ def _ler(caminho: Path) -> Operation:
             created_on=date.fromisoformat(dados["criada_em"]),
             legs=tuple(_perna(p, ativo) for p in dados["pernas"]),
             events=tuple(_evento(e) for e in dados["eventos"]),
+            template=None if dados.get("modelo") is None else str(dados["modelo"]),
+            stop_loss=_numero_opcional(dados.get("stop")),
+            target=_numero_opcional(dados.get("alvo")),
         )
     except (KeyError, TypeError, ValueError) as erro:
         raise UnreadableRecordError(f"{caminho}: campo faltando ou inválido ({erro!r})") from erro

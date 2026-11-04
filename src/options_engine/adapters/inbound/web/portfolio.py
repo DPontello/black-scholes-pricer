@@ -70,12 +70,20 @@ class AcaoRegistroIn(BaseModel):
     execucoes: Annotated[list[ExecucaoIn], Field(max_length=MAX_EXECUCOES)] = []
 
 
-class RegistroIn(BaseModel):
+class LimitesIn(BaseModel):
+    """Stop (perda) e alvo (ganho) em R$; ``None`` apaga."""
+
+    stop: float | None = Field(default=None, gt=0)
+    alvo: float | None = Field(default=None, gt=0)
+
+
+class RegistroIn(LimitesIn):
     ativo: str
     nome: str
     data: date
     pernas: Annotated[list[PernaRegistroIn], Field(max_length=MAX_PERNAS)] = []
     acao: AcaoRegistroIn | None = None
+    modelo: str | None = None
 
 
 class AcoesIn(BaseModel):
@@ -149,6 +157,9 @@ class OperacaoOut(BaseModel):
     eventos: list[EventoOut]
     realizado: float
     nao_realizado: float | None
+    modelo: str | None
+    stop: float | None
+    alvo: float | None
 
 
 class TotalOut(BaseModel):
@@ -290,6 +301,9 @@ def _operacao_out(view: OperationView) -> OperacaoOut:
         eventos=[_evento_out(e) for e in operacao.events],
         realizado=view.realized,
         nao_realizado=view.unrealized,
+        modelo=operacao.template,
+        stop=operacao.stop_loss,
+        alvo=operacao.target,
     )
 
 
@@ -387,6 +401,9 @@ def _registro(corpo: RegistroIn, terms: Terms) -> RegisterOperation:
         None
         if acao is None
         else RegisterStock(_LADO[acao.lado], StockOrigin(acao.origem), _fills(acao.execucoes)),
+        template=corpo.modelo,
+        stop_loss=corpo.stop,
+        target=corpo.alvo,
     )
 
 
@@ -422,6 +439,10 @@ def router_carteira(portfolio: PortfolioUseCase, *, closes: Closes, terms: Terms
             operacao_id, corpo.perna, corpo.quantidade, corpo.preco, corpo.data, corpo.custos
         )
         return OperacaoSalvaOut(id=operacao.id)
+
+    @router.put("/operacoes/{operacao_id}/limites")
+    def limites(operacao_id: str, corpo: LimitesIn) -> OperacaoSalvaOut:
+        return OperacaoSalvaOut(id=portfolio.set_limits(operacao_id, corpo.stop, corpo.alvo).id)
 
     @router.post("/operacoes/{operacao_id}/exercer")
     def exercer(operacao_id: str, corpo: ExercicioIn) -> OperacaoSalvaOut:

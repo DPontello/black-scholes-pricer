@@ -58,11 +58,16 @@ class RegisterStock:
 
 @dataclass(frozen=True, slots=True)
 class RegisterOperation:
+    """``template``: o modelo do Montador, quando o registro veio de lá."""
+
     underlying: str
     name: str
     on: date
     legs: tuple[RegisterOptionLeg, ...]
     stock: RegisterStock | None = None
+    template: str | None = None
+    stop_loss: float | None = None
+    target: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +167,12 @@ class PortfolioUseCase(Protocol):
     def assign(
         self, operation_id: str, leg: int, quantity: int, on: date, costs: float | None = None
     ) -> Operation: ...
+
+    def set_limits(
+        self, operation_id: str, stop_loss: float | None, target: float | None
+    ) -> Operation:
+        """Troca o stop e o alvo (em R$); ``None`` apaga."""
+        ...
 
     def open_operations(self) -> PortfolioView: ...
 

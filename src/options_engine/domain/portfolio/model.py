@@ -121,16 +121,27 @@ class LegState:
 
 @dataclass(frozen=True, slots=True)
 class Operation:
+    """``template``: a chave do modelo do Montador de onde veio (para a rolagem).
+    ``stop_loss`` e ``target``: em R$, positivos, comparados com o resultado total."""
+
     id: str
     underlying: str
     name: str
     created_on: date
     legs: tuple[LegRef, ...]
     events: tuple[Event, ...]
+    template: str | None = None
+    stop_loss: float | None = None
+    target: float | None = None
 
     def __post_init__(self) -> None:
         if not self.id.strip() or not self.name.strip():
             raise InvalidDomainValueError("operação precisa de id e nome")
+        for nome, limite in (("stop", self.stop_loss), ("alvo", self.target)):
+            if limite is not None and not (isfinite(limite) and limite > 0.0):
+                raise InvalidDomainValueError(
+                    f"{nome} deve ser um valor em R$ maior que zero; recebido {limite!r}"
+                )
         if not self.legs:
             raise InvalidDomainValueError(f"operação {self.name!r} sem perna nenhuma")
         for leg in self.legs:

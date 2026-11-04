@@ -2,6 +2,7 @@
 
 import threading
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from math import fsum
 
@@ -118,6 +119,9 @@ class PortfolioService:
             command.on,
             tuple(pernas),
             tuple(eventos),
+            command.template,
+            command.stop_loss,
+            command.target,
         )
         repositorio = self._repository_for()
         if acao is not None and acao.origin is StockOrigin.CARTEIRA:
@@ -167,6 +171,15 @@ class PortfolioService:
     ) -> Operation:
         with self._lock:
             return self._exercer(operation_id, leg, quantity, on, costs, Side.SELL)
+
+    def set_limits(
+        self, operation_id: str, stop_loss: float | None, target: float | None
+    ) -> Operation:
+        with self._lock:
+            repositorio = self._repository_for()
+            operacao = replace(repositorio.load(operation_id), stop_loss=stop_loss, target=target)
+            repositorio.save(operacao)
+        return operacao
 
     def open_operations(self) -> PortfolioView:
         itens = self._repository_for().list()
