@@ -23,5 +23,13 @@ a = Analysis(
     excludes=["tkinter", "options_engine", "fastapi", "uvicorn"],
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PonteTryd", console=True)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="PonteTryd",
+    console=True,
+    icon=str(RAIZ / "packaging" / "icone" / "painel-opcoes.ico"),
+)
 coll = COLLECT(exe, a.binaries, a.datas, name="ponte")

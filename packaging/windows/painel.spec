@@ -23,5 +23,13 @@ a = Analysis(
     excludes=["tkinter", "pythoncom", "pywintypes", "win32com"],
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PainelOpcoes", console=False)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="PainelOpcoes",
+    console=False,
+    icon=str(RAIZ / "packaging" / "icone" / "painel-opcoes.ico"),
+)
 coll = COLLECT(exe, a.binaries, a.datas, name="PainelOpcoes")

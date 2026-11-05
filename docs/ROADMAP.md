@@ -48,7 +48,12 @@
 >   reais por operação, os avisos de depois do vencimento, dispensar até mudar de estado, a
 >   contagem no menu e a rolagem para o vencimento seguinte, aberta no Montador com o custo de
 >   zerar. Falta o teste no app com o autor. Proventos e ajuste de strike ficaram fora da semana 4.
-> - **Semana 5:** teste com a mãe e acabamento (ícone do app, entre outros).
+> - **Semana 5 (acabamento, 2026-11-05):** [desenho](superpowers/specs/2026-11-05-semana-5-acabamento-design.md),
+>   [plano](superpowers/plans/2026-11-05-semana-5-acabamento.md) e [ledger](superpowers/ledger-semana-5.md).
+>   Feito: o ícone do app (janela, atalho e instalador), o "Escolher pasta…" no perfil novo, o
+>   Montador que rola até a montagem, preços com "R$" e milhar, e mensagens mais claras. Também o
+>   [roteiro do teste com a mãe](teste-usabilidade.md). Falta o autor fazer o teste com ela e
+>   conferir o instalador num PC Windows; depois, a versão 1.0.0 (HANDOFF §11).
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
 >   vitrine (benchmark, ADRs de apresentação) saíram do escopo.

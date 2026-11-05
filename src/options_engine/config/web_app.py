@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import logging
 import platform
+import shutil
 import threading
 import uuid
 from collections.abc import AsyncIterator, Sequence
@@ -21,6 +22,7 @@ from options_engine.adapters.inbound.web.aprender import router_aprender
 from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
 from options_engine.adapters.inbound.web.book import router_book
 from options_engine.adapters.inbound.web.builder import router_montador
+from options_engine.adapters.inbound.web.folder_picker import folder_picker
 from options_engine.adapters.inbound.web.market import router_mercado
 from options_engine.adapters.inbound.web.portfolio import router_carteira
 from options_engine.adapters.inbound.web.profiles import router_perfis
@@ -198,7 +200,7 @@ def build_web_app(
         process = BridgeProcess(command, cwd, client)
     importer = None if downloads_dir is None else DownloadsImporter(library, downloads_dir, clock)
     routers = [
-        router_perfis(profiles),
+        router_perfis(profiles, folder_picker(platform.system(), shutil.which, Path.home())),
         router_aprender(),
         router_arquivos_b3(library, importer),
         router_mercado(

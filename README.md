@@ -190,7 +190,7 @@ Documentação completa em [`docs/`](docs/):
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
 | 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` |
-| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1, 2 e 3, a melhoria de UX, e a semana 4 (instalador, com o Windows ainda a conferir num PC real; IR mensal das opções; alertas) feitos (prazo 2026-11-30) |
+| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1 a 5 feitas: a melhoria de UX, a semana 4 (instalador, IR mensal das opções, alertas) e o acabamento da semana 5 (ícone, "Escolher pasta…", correções do caminho de quem começa). Faltam os testes do autor: o instalador num PC Windows real e o teste de usabilidade com a mãe (prazo 2026-11-30) |
 
 ### App de opções (em construção)
 
@@ -210,6 +210,10 @@ ordens: você executa no home broker e registra a operação no app.
   [IR mensal](docs/superpowers/plans/2026-11-04-semana-4-parte-2-ir-mensal.md) e dos
   [alertas](docs/superpowers/plans/2026-11-04-semana-4-parte-3-alertas.md), e o
   [ledger](docs/superpowers/ledger-semana-4.md).
+- **Semana 5 (acabamento para o teste com a mãe):** [desenho](docs/superpowers/specs/2026-11-05-semana-5-acabamento-design.md),
+  [plano](docs/superpowers/plans/2026-11-05-semana-5-acabamento.md),
+  [ledger](docs/superpowers/ledger-semana-5.md) e o
+  [roteiro do teste de usabilidade](docs/teste-usabilidade.md).
 - **Estado e como retomar:** [`docs/superpowers/HANDOFF-2026-11-02.md`](docs/superpowers/HANDOFF-2026-11-02.md).
 - **Ponte do Tryd (RTD → TCP local):** [`src/options_ponte/README.md`](src/options_ponte/README.md).
   No Linux, o ambiente Wine é montado por [`scripts/linux/preparar_ponte_wine.sh`](scripts/linux/preparar_ponte_wine.sh).

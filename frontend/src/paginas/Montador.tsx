@@ -62,10 +62,16 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
   const [simulacoes, setSimulacoes] = useState<Simulacao[]>([]);
   const [nome, setNome] = useState("");
   const pendente = useRef<PedidoAnalise | null>(doBook);
+  const resultado = useRef<HTMLDivElement>(null);
+  // De fora da cadeia (book, modelo pronto, simulação salva); o + e a tabela de pernas não contam.
+  const [chegadas, setChegadas] = useState(0);
+  const [respostas, setRespostas] = useState(0);
+  const rolarPara = useRef<PedidoAnalise | null>(null);
   // O Aprender abre o Montador com `?modelo=`: o modelo entra uma vez só, quando a cadeia chega.
   const [modeloDoEndereco, setModeloDoEndereco] = useState(busca.get("modelo"));
 
   useEffect(() => {
+    if (pendente.current !== null) setChegadas((n) => n + 1);
     setPedido(pendente.current ?? vazio(ativo));
     pendente.current = null;
     setVencimentos(null);
@@ -90,6 +96,19 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
     recarregarSimulacoes();
   }, []);
 
+  // Cada chegada marca o pedido novo; a rolagem espera a análise dele (ou o erro), com a página já alta.
+  useEffect(() => {
+    if (chegadas > 0) rolarPara.current = pedido;
+  }, [chegadas]);
+
+  // Abaixo de 1780 px o resultado fica sob a cadeia, e o clique pareceria não fazer nada.
+  useEffect(() => {
+    if (rolarPara.current !== pedido || resultado.current === null) return;
+    rolarPara.current = null;
+    if (resultado.current.getBoundingClientRect().top > window.innerHeight / 2)
+      resultado.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [respostas]);
+
   const horaDaCadeia = aoVivo.cadeia?.hora;
   useEffect(() => {
     if (pedido.pernas.length === 0 && pedido.acao === null) {
@@ -103,11 +122,13 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
           if (cancelado) return;
           setAnalise(nova);
           setErro(null);
+          setRespostas((n) => n + 1);
         })
         .catch((e: unknown) => {
           if (cancelado) return;
           setAnalise(null);
           setErro(mensagem(e, "Não foi possível analisar a estrutura."));
+          setRespostas((n) => n + 1);
         });
     }, ESPERA_MS);
     return () => {
@@ -150,6 +171,7 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
     if (ativo === null || vencimentoDoModelo === undefined) return;
     try {
       setPedido(await sugerir(ativo, chave, vencimentoDoModelo));
+      setChegadas((n) => n + 1);
       setErro(null);
     } catch (e) {
       setErro(mensagem(e, "Não foi possível montar o modelo com esta cadeia."));
@@ -176,7 +198,9 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
 
   function abrir(simulacao: Simulacao) {
     if (simulacao.pedido.ativo === ativo) {
-      setPedido(simulacao.pedido);
+      // Cópia: o mesmo objeto já carregado faria o React ignorar o set, sem análise nem rolagem.
+      setPedido({ ...simulacao.pedido });
+      setChegadas((n) => n + 1);
       return;
     }
     pendente.current = simulacao.pedido;
@@ -298,7 +322,7 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
             onEscolherSerie={porSerie}
           />
         </div>
-        <div className="montador-resultado">
+        <div className="montador-resultado" ref={resultado}>
           <TabelaPernas pedido={pedido} analise={analise} onMudar={setPedido} />
           <div className="acoes-montador">
             <input

@@ -16,8 +16,9 @@ import pytest
 RAIZ = Path(__file__).resolve().parents[2]
 SCRIPT = RAIZ / "scripts" / "linux" / "instalar.sh"
 TEMPLATE = RAIZ / "scripts" / "linux" / "painel-opcoes.desktop.in"
+ICONE = RAIZ / "packaging" / "icone"
 BASH = shutil.which("bash") or ""
-SISTEMA = ("dirname", "ln", "mkdir", "sed")
+SISTEMA = ("cp", "dirname", "ln", "mkdir", "sed")
 
 pytestmark = pytest.mark.skipif(
     sys.platform == "win32" or not BASH, reason="roteiro de bash, para o Linux"
@@ -53,6 +54,10 @@ class Cenario:
     @property
     def desktop(self) -> Path:
         return self.home / ".local" / "share" / "applications" / "painel-opcoes.desktop"
+
+    @property
+    def icones(self) -> Path:
+        return self.home / ".local" / "share" / "icons"
 
     def rodar(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -140,6 +145,15 @@ def test_simular_mostra_o_atalho_com_o_python_do_venv(tmp_path: Path) -> None:
     assert "Name=Painel de Opções" in r.stdout
 
 
+def test_simular_mostra_o_icone(tmp_path: Path) -> None:
+    c = _montar(tmp_path)
+    r = c.rodar("--simular")
+    assert r.returncode == 0, r.stderr
+    assert f"{c.icones}/hicolor/scalable/apps/painel-opcoes.svg" in r.stdout
+    assert f"{c.icones}/hicolor/256x256/apps/painel-opcoes.png" in r.stdout
+    assert not (c.icones / "hicolor").exists()
+
+
 def test_simular_lembra_da_ponte_do_tryd(tmp_path: Path) -> None:
     r = _montar(tmp_path).rodar("--simular")
     assert r.returncode == 0, r.stderr
@@ -215,7 +229,7 @@ def test_modelo_do_atalho() -> None:
     assert "Name=Painel de Opções" in linhas
     assert "Exec=@PYTHON@ -m options_engine app" in linhas
     assert "Terminal=false" in linhas
-    assert not [linha for linha in linhas if linha.startswith("Icon=")]  # sem ícone até a semana 5
+    assert "Icon=painel-opcoes" in linhas
 
 
 def test_instala_de_verdade_e_uma_segunda_vez_reaproveita_o_ambiente(tmp_path: Path) -> None:
@@ -236,6 +250,13 @@ def test_instala_de_verdade_e_uma_segunda_vez_reaproveita_o_ambiente(tmp_path: P
     assert any(chamada.endswith("run build") and "/frontend" in chamada for chamada in chamadas)
     texto = c.desktop.read_text(encoding="utf-8")
     assert f"Exec={python_venv} -m options_engine app\n" in texto
+    hicolor = c.icones / "hicolor"
+    assert (hicolor / "scalable" / "apps" / "painel-opcoes.svg").read_bytes() == (
+        ICONE / "painel-opcoes.svg"
+    ).read_bytes()
+    assert (hicolor / "256x256" / "apps" / "painel-opcoes.png").read_bytes() == (
+        ICONE / "painel-opcoes-256.png"
+    ).read_bytes()
 
     segunda = c.rodar()
     assert segunda.returncode == 0, segunda.stderr

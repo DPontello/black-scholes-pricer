@@ -48,4 +48,7 @@ def test_termos_da_serie_vem_do_cadastro_com_o_ativo_da_operacao_de_reserva(tmp_
     assert (
         loaded.option_terms("PETRK340", "PETR4") == "PETRK340: sem estilo de exercício no cadastro"
     )
-    assert loaded.option_terms("VALEK600", "VALE3") == "VALEK600: série desconhecida no cadastro"
+    assert loaded.option_terms("VALEK600", "VALE3") == (
+        "VALEK600: série não encontrada no Cadastro da B3. Confira o código na nota da corretora;"
+        " se a série for nova, importe o Cadastro mais recente em Arquivos B3."
+    )

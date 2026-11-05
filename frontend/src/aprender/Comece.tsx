@@ -9,7 +9,7 @@ export const PASSOS: Passo[] = [
   {
     titulo: "Crie o seu perfil",
     texto:
-      "Na tela de perfis, crie o seu perfil com um nome e escolha a pasta onde ficam a sua carteira e as simulações (pode ser uma pasta na nuvem ou num pendrive). Cada pessoa usa o próprio perfil, com a própria carteira.",
+      "Na tela de perfis, crie o seu perfil com um nome e, em \"Escolher pasta…\", escolha a pasta onde ficam a sua carteira e as simulações (pode ser uma pasta na nuvem ou num pendrive). Cada pessoa usa o próprio perfil, com a própria carteira.",
     link: { para: "/perfis", nome: "Abrir os perfis" },
   },
   {
