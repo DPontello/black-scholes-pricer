@@ -2,6 +2,8 @@
 
 import logging
 import logging.handlers
+import os
+import platform
 import socket
 import sys
 import urllib.error
@@ -151,6 +153,16 @@ def test_console_do_app_instalado_guarda_so_a_ultima_execucao(tmp_path: Path) ->
     assert (tmp_path / "logs" / "console.log").read_text(encoding="utf-8") == "segunda\n"
 
 
+def _config_isolada(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Tira a configuração da pasta do usuário real, nos dois sistemas, e devolve a que o app vai
+    usar. No Linux pelo home: o ``XDG_CONFIG_HOME`` só vale com caminho POSIX, e o ``tmp_path`` do
+    Windows não é um. No Windows pelo ``APPDATA``."""
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    return launch.platform_config_dir(platform.system(), os.environ, Path.home())
+
+
 def test_comando_app_instalado_usa_a_tela_a_ponte_e_o_log_de_dentro_do_executavel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -171,7 +183,7 @@ def test_comando_app_instalado_usa_a_tela_a_ponte_e_o_log_de_dentro_do_executave
     monkeypatch.setattr(sys, "executable", str(programa / "PainelOpcoes.exe"))
     monkeypatch.setattr(sys, "stdout", None)
     monkeypatch.setattr("platform.system", lambda: "Linux")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    config = _config_isolada(monkeypatch, tmp_path)
     monkeypatch.setattr(web_app, "build_web_app", build_falso)
     monkeypatch.setattr(launch, "find_free_port", lambda porta: 8765)
     monkeypatch.setattr(launch, "already_running", lambda porta: False)
@@ -189,7 +201,7 @@ def test_comando_app_instalado_usa_a_tela_a_ponte_e_o_log_de_dentro_do_executave
 
     assert recebido["static_dir"] == meipass / "static"
     assert recebido["frozen_dir"] == programa
-    logs = tmp_path / "cfg" / "painel-opcoes" / "logs"
+    logs = config / "logs"
     assert (logs / "app.log").exists()
     assert "Painel de Opções em http://127.0.0.1:8765/" in (logs / "console.log").read_text(
         encoding="utf-8"
@@ -211,7 +223,7 @@ def test_comando_app_fora_do_executavel_nao_passa_pasta_do_programa(
         return object()
 
     monkeypatch.delattr(sys, "frozen", raising=False)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    config = _config_isolada(monkeypatch, tmp_path)
     monkeypatch.setattr(launch, "default_static_dir", lambda meipass=None: estatico)
     monkeypatch.setattr(web_app, "build_web_app", build_falso)
     monkeypatch.setattr(launch, "find_free_port", lambda porta: 8765)
@@ -219,7 +231,7 @@ def test_comando_app_fora_do_executavel_nao_passa_pasta_do_programa(
     monkeypatch.setattr(launch, "serve", lambda *a, **k: None)
     assert main(["app", "--sem-janela", "--sem-ponte"]) == 0
     assert recebido["frozen_dir"] is None
-    assert not (tmp_path / "cfg" / "painel-opcoes" / "logs").exists()
+    assert not (config / "logs").exists()
 
 
 # --------------------------------------------------------------------------- já está aberto
@@ -277,7 +289,7 @@ def test_comando_app_ja_aberto_so_abre_a_janela_na_porta_dele(
     def nao_pode(*args: object, **kwargs: object) -> object:
         raise AssertionError("não deveria subir outro servidor")
 
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    _config_isolada(monkeypatch, tmp_path)
     monkeypatch.setattr(launch, "default_static_dir", lambda meipass=None: estatico)
     monkeypatch.setattr(launch, "already_running", lambda porta: porta == 8770)
     monkeypatch.setattr(launch, "open_window", lambda comando, url: janelas.append(url))
