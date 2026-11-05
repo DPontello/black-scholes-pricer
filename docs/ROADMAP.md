@@ -44,7 +44,7 @@
 >   mínimo de R$ 10 e o prazo de pagamento.
 >
 >   A parte 3, os alertas ([plano](superpowers/plans/2026-11-04-semana-4-parte-3-alertas.md)),
->   está feita na branch `feat/alertas`: vencimento próximo, risco de exercício, stop e alvo em
+>   está feita e mergeada na `development` (PR #11): vencimento próximo, risco de exercício, stop e alvo em
 >   reais por operação, os avisos de depois do vencimento, dispensar até mudar de estado, a
 >   contagem no menu e a rolagem para o vencimento seguinte, aberta no Montador com o custo de
 >   zerar. Falta o teste no app com o autor. Proventos e ajuste de strike ficaram fora da semana 4.
