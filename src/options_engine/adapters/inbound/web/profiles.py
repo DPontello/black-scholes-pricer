@@ -7,9 +7,13 @@ resposta em ``errors.py``. Os endpoints são ``def`` síncronos: tocam arquivos,
 e o Starlette os roda no threadpool.
 """
 
+import threading
+
 from fastapi import APIRouter, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from options_engine.adapters.inbound.web.folder_picker import FolderPicker
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.book.presets import BookPreset, BookSettings
@@ -121,9 +125,15 @@ def _perfil_out(perfil: Profile) -> PerfilOut:
     )
 
 
-def router_perfis(service: ProfileUseCase) -> APIRouter:
-    """Rotas ``/api/perfis`` (cadastro deste PC) e ``/api/perfil`` (o perfil aberto)."""
+def router_perfis(service: ProfileUseCase, escolher_pasta: FolderPicker | None = None) -> APIRouter:
+    """Rotas ``/api/perfis`` (cadastro deste PC) e ``/api/perfil`` (o perfil aberto).
+
+    ``escolher_pasta`` abre a janela de escolha de pasta do sistema; ``None`` quando este PC não
+    tem como (a rota responde 501)."""
     router = APIRouter(prefix="/api", tags=["perfis"])
+    # Uma janela por vez: com ela aberta, outro pedido não abre uma segunda nem fica preso até o
+    # limite do seletor.
+    janela_aberta = threading.Lock()
 
     @router.get("/perfis")
     def listar() -> list[EntradaPerfilOut]:
@@ -132,6 +142,24 @@ def router_perfis(service: ProfileUseCase) -> APIRouter:
     @router.post("/perfis", status_code=201)
     def criar(corpo: NovoPerfilIn) -> PerfilOut:
         return _perfil_out(service.create(corpo.nome, corpo.pasta))
+
+    @router.post("/perfis/escolher-pasta")
+    def escolher() -> JSONResponse:
+        if escolher_pasta is None:
+            return JSONResponse(
+                status_code=501,
+                content={
+                    "erro": "SemSeletorDePasta",
+                    "mensagem": "Este PC não tem como abrir a escolha de pasta. "
+                    "Digite o caminho completo da pasta.",
+                },
+            )
+        if not janela_aberta.acquire(blocking=False):
+            return JSONResponse({"pasta": None})
+        try:
+            return JSONResponse({"pasta": escolher_pasta()})
+        finally:
+            janela_aberta.release()
 
     # ``:path``: o nome do perfil é livre (pode ter "/"), e o cliente o manda
     # codificado; o Starlette decodifica antes de casar a rota.

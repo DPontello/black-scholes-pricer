@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import type { Cadeia, EstadoAoVivo } from "../api/aoVivo";
 import { rolagem } from "../testes/alertas";
@@ -73,7 +73,7 @@ const AO_VIVO: EstadoAoVivo = {
   alertasIndisponiveis: null,
 };
 
-function api(analise: unknown = analiseCoberta()) {
+function api(analise: unknown = analiseCoberta(), simulacoes: unknown[] = []) {
   return simularFetch((url, init) => {
     if (url === "/api/montador/modelos") return { corpo: MODELOS };
     if (url === "/api/simulacoes" && init?.method === "POST")
@@ -81,7 +81,7 @@ function api(analise: unknown = analiseCoberta()) {
         status: 201,
         corpo: { id: "a1", nome: "x", criada_em: "2026-11-04T11:00:00Z", pedido: SUGESTAO },
       };
-    if (url === "/api/simulacoes") return { corpo: { simulacoes: [], ilegiveis: [] } };
+    if (url === "/api/simulacoes") return { corpo: { simulacoes, ilegiveis: [] } };
     if (url.startsWith("/api/montador/sugestao")) return { corpo: SUGESTAO };
     if (url === "/api/montador/analise") return analise as never;
     return undefined;
@@ -353,4 +353,200 @@ test("?modelo= desconhecido é ignorado", async () => {
   expect(sugestoes(fetch)).toEqual([]);
   expect(screen.queryByRole("status")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+// O jsdom não tem layout nem scrollIntoView: finge onde a montagem está e espia a rolagem.
+let desfazerRolagem: (() => void) | null = null;
+
+afterEach(() => {
+  desfazerRolagem?.();
+  desfazerRolagem = null;
+});
+
+function espiarRolagem(topDaMontagem: number) {
+  const rolar = vi.fn();
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = rolar;
+  const posicao = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockReturnValue({ top: topDaMontagem } as DOMRect);
+  desfazerRolagem = () => {
+    posicao.mockRestore();
+    if (original === undefined) Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    else Element.prototype.scrollIntoView = original;
+  };
+  return rolar;
+}
+
+// A altura da janela do jsdom é 768: a montagem "abaixo" fica em 1400, "à vista" em 200.
+const ABAIXO = 1400;
+const A_VISTA = 200;
+
+// Segura a resposta da análise até `liberar()`: a página só fica alta quando ela chega.
+function segurarAnalise(fetch: ReturnType<typeof simularFetch>) {
+  const original = fetch.getMockImplementation();
+  if (original === undefined) throw new Error("fetch sem implementação");
+  let liberar = () => {};
+  const porta = new Promise<void>((resolve) => {
+    liberar = resolve;
+  });
+  fetch.mockImplementation(async (entrada, init) => {
+    if (String(entrada) === "/api/montador/analise") await porta;
+    return original(entrada, init);
+  });
+  return liberar;
+}
+
+const RESUMO = /Você paga/;
+
+test("o modelo pronto rola a tela até a montagem quando ela está abaixo da cadeia", async () => {
+  const rolar = espiarRolagem(ABAIXO);
+  const resumoAoRolar: boolean[] = [];
+  rolar.mockImplementation(() => resumoAoRolar.push(screen.queryByText(RESUMO) !== null));
+  const fetch = api({ corpo: analiseCoberta() });
+  const liberar = segurarAnalise(fetch);
+  montar();
+  const modelo = await screen.findByLabelText("Modelo pronto");
+  await screen.findByRole("option", { name: "venda coberta" });
+  fireEvent.change(modelo, { target: { value: "venda_coberta" } });
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").at(-1)).toEqual(SUGESTAO), FOLGA);
+  expect(rolar).not.toHaveBeenCalled();
+  liberar();
+  await screen.findByText(RESUMO);
+  await waitFor(() => expect(rolar).toHaveBeenCalledTimes(1));
+  expect(rolar).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  expect((rolar.mock.contexts[0] as HTMLElement).classList.contains("montador-resultado")).toBe(true);
+  expect(resumoAoRolar).toEqual([true]);
+});
+
+test("o pedido que vem do book rola até a montagem", async () => {
+  const rolar = espiarRolagem(ABAIXO);
+  const fetch = api({ corpo: analiseCoberta() });
+  const liberar = segurarAnalise(fetch);
+  render(
+    <MemoryRouter
+      initialEntries={[{ pathname: "/montador", search: "?ativo=PETR4", state: { pedido: SUGESTAO } }]}
+    >
+      <Montador aoVivo={AO_VIVO} seguirCadeia={vi.fn()} />
+    </MemoryRouter>,
+  );
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1), FOLGA);
+  expect(rolar).not.toHaveBeenCalled();
+  liberar();
+  await screen.findByText(RESUMO);
+  await waitFor(() => expect(rolar).toHaveBeenCalledTimes(1));
+});
+
+test("o + da cadeia não rola a tela", async () => {
+  const rolar = espiarRolagem(ABAIXO);
+  const fetch = api({ corpo: analiseCoberta() });
+  montar();
+  fireEvent.click(await screen.findByRole("tab", { name: "19/11 (15 du)" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Pôr PETRK541 no montador" }));
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1), FOLGA);
+  expect(rolar).not.toHaveBeenCalled();
+});
+
+test("com a montagem à vista, o modelo pronto não rola", async () => {
+  const rolar = espiarRolagem(A_VISTA);
+  const fetch = api({ corpo: analiseCoberta() });
+  montar();
+  const modelo = await screen.findByLabelText("Modelo pronto");
+  await screen.findByRole("option", { name: "venda coberta" });
+  fireEvent.change(modelo, { target: { value: "venda_coberta" } });
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").at(-1)).toEqual(SUGESTAO), FOLGA);
+  expect(rolar).not.toHaveBeenCalled();
+});
+
+test("abrir uma simulação salva de outro ativo rola depois de trocar o ativo", async () => {
+  const rolar = espiarRolagem(ABAIXO);
+  const deVale = {
+    ativo: "VALE3",
+    pernas: [{ ticker: "VALEK620", lado: "compra", quantidade: 100, preco: null }],
+    acao: null,
+    modelo: null,
+  };
+  const fetch = api({ corpo: analiseCoberta() }, [
+    { id: "s1", nome: "vale julho", criada_em: "2026-11-04T11:00:00Z", pedido: deVale },
+  ]);
+  const liberar = segurarAnalise(fetch);
+  montar();
+  fireEvent.click(await screen.findByRole("button", { name: "vale julho" }));
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").at(-1)).toEqual(deVale), FOLGA);
+  expect(rolar).not.toHaveBeenCalled();
+  liberar();
+  await screen.findByText(RESUMO);
+  await waitFor(() => expect(rolar).toHaveBeenCalledTimes(1));
+});
+
+test("se a análise falha, o erro também é o que faz a tela rolar, uma vez só", async () => {
+  const rolar = espiarRolagem(ABAIXO);
+  const fetch = api({
+    status: 422,
+    corpo: { erro: "InvalidStrategyError", mensagem: "as pernas não formam o modelo venda coberta" },
+  });
+  const liberar = segurarAnalise(fetch);
+  montar();
+  const modelo = await screen.findByLabelText("Modelo pronto");
+  await screen.findByRole("option", { name: "venda coberta" });
+  fireEvent.change(modelo, { target: { value: "venda_coberta" } });
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1), FOLGA);
+  expect(rolar).not.toHaveBeenCalled();
+  liberar();
+  await screen.findByRole("alert");
+  await waitFor(() => expect(rolar).toHaveBeenCalledTimes(1));
+});
+
+test("o + depois do modelo pronto, antes da análise, não deixa uma rolagem pendente", async () => {
+  const rolar = espiarRolagem(ABAIXO);
+  const fetch = api({ corpo: analiseCoberta() });
+  const liberar = segurarAnalise(fetch);
+  montar();
+  const modelo = await screen.findByLabelText("Modelo pronto");
+  await screen.findByRole("option", { name: "venda coberta" });
+  fireEvent.change(modelo, { target: { value: "venda_coberta" } });
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1), FOLGA);
+  fireEvent.click(await screen.findByRole("tab", { name: "19/11 (15 du)" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Pôr PETRK541 no montador" }));
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(2), FOLGA);
+  liberar();
+  await screen.findByText(RESUMO);
+  expect(rolar).not.toHaveBeenCalled();
+});
+
+test("abrir a mesma simulação salva duas vezes rola uma vez por abertura, sem rolagem sobrando no tique da cadeia", async () => {
+  const rolar = espiarRolagem(ABAIXO);
+  const fetch = api({ corpo: analiseCoberta() }, [
+    { id: "s1", nome: "coberta julho", criada_em: "2026-11-04T11:00:00Z", pedido: SUGESTAO },
+  ]);
+  const liberarPrimeira = segurarAnalise(fetch);
+  const tela = (aoVivo: EstadoAoVivo) => (
+    <MemoryRouter initialEntries={["/montador?ativo=PETR4"]}>
+      <Montador aoVivo={aoVivo} seguirCadeia={vi.fn()} />
+    </MemoryRouter>
+  );
+  const { rerender } = render(tela(AO_VIVO));
+
+  fireEvent.click(await screen.findByRole("button", { name: "coberta julho" }));
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(1), FOLGA);
+  expect(rolar).not.toHaveBeenCalled();
+  liberarPrimeira();
+  await screen.findByText(RESUMO);
+  await waitFor(() => expect(rolar).toHaveBeenCalledTimes(1));
+
+  // Mesma simulação, mesmo ativo: o pedido é o mesmo objeto, e cada abertura tem a sua análise.
+  const liberarSegunda = segurarAnalise(fetch);
+  fireEvent.click(screen.getByRole("button", { name: "coberta julho" }));
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(2), FOLGA);
+  expect(rolar).toHaveBeenCalledTimes(1);
+  liberarSegunda();
+  await waitFor(() => expect(rolar).toHaveBeenCalledTimes(2));
+
+  // Um tique qualquer da cadeia reanalisa, mas não rola: nenhuma abertura ficou pendente.
+  rerender(tela({ ...AO_VIVO, cadeia: { ...CADEIA, hora: "2026-10-28T18:05:00-03:00" } }));
+  await waitFor(() => expect(corpos(fetch, "/api/montador/analise").length).toBe(3), FOLGA);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(rolar).toHaveBeenCalledTimes(2);
 });

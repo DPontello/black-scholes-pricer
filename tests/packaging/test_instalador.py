@@ -59,6 +59,10 @@ def test_app_id_fixo_para_a_versao_nova_instalar_por_cima() -> None:
     assert _diretiva("AppId") == "{{B68E5C59-513D-4167-93BB-309549E6ECFC}"
 
 
+def test_instalador_tem_o_icone() -> None:
+    assert _diretiva("SetupIconFile") == r"..\icone\painel-opcoes.ico"
+
+
 def test_fecha_o_app_antes_de_atualizar() -> None:
     assert _diretiva("CloseApplications") == "yes"
 

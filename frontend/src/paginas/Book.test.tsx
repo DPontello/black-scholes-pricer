@@ -61,6 +61,17 @@ test("o título é Melhores operações de hoje, com o pregão", async () => {
   expect(await screen.findByText("pregão de 23/10/2026 · fim de dia (B3)")).toBeTruthy();
 });
 
+test("enquanto o book não chega, avisa que a primeira varredura pode demorar", async () => {
+  api();
+  montar();
+  expect(
+    screen.getByText(
+      "Varrendo o fim de dia… Na primeira vez depois de um arquivo novo da B3, pode levar alguns minutos.",
+    ),
+  ).toBeTruthy();
+  expect(await screen.findByText("pregão de 23/10/2026 · fim de dia (B3)")).toBeTruthy();
+});
+
 test("os ativos indisponíveis ficam recolhidos no fim, com o motivo de cada um", async () => {
   api(
     bookFalso({

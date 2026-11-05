@@ -40,6 +40,8 @@ UninstallDisplayName=Painel de Opções
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+; Relativo à pasta deste .iss.
+SetupIconFile=..\icone\painel-opcoes.ico
 
 [Languages]
 Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"

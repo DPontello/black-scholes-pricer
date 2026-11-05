@@ -44,6 +44,11 @@ test("Comece aqui tem os sete passos, nesta ordem", () => {
   expect(titulos).toEqual(PASSOS);
 });
 
+test("o passo do perfil manda escolher a pasta pelo botão, sem digitar o caminho", () => {
+  montar("/aprender/comece");
+  expect(passo("Crie o seu perfil").getByText(/em "Escolher pasta…", escolha a pasta/)).toBeTruthy();
+});
+
 test("o passo dos arquivos leva a Arquivos B3 e fala dos dois arquivos da semana", () => {
   montar("/aprender/comece");
   const arquivos = passo("Baixe os arquivos da semana");

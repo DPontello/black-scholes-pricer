@@ -105,6 +105,15 @@ export function criarPerfil(nome: string, pasta: string): Promise<Perfil> {
   return pedir("/api/perfis", json("POST", { nome, pasta }));
 }
 
+// Abre a janela de escolha de pasta do sistema (o servidor é local); null se a pessoa cancelou.
+export async function escolherPasta(): Promise<string | null> {
+  const { pasta } = await pedir<{ pasta: string | null }>(
+    "/api/perfis/escolher-pasta",
+    json("POST", {}),
+  );
+  return pasta;
+}
+
 export function abrirPerfil(nome: string, forcar: boolean): Promise<Perfil> {
   return pedir(`/api/perfis/${encodeURIComponent(nome)}/abrir`, json("POST", { forcar }));
 }

@@ -2,6 +2,7 @@
 Type=Application
 Name=Painel de Opções
 Comment=Calculadora e simulador de opções
+Icon=painel-opcoes
 Exec=@PYTHON@ -m options_engine app
 Terminal=false
 Categories=Office;Finance;

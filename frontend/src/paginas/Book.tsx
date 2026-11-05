@@ -83,7 +83,12 @@ export function Book({ perfil, onPerfil }: Props) {
           {erro}
         </p>
       )}
-      {book === null && erro === null && <p className="secundario">Varrendo o fim de dia…</p>}
+      {book === null && erro === null && (
+        <p className="secundario">
+          Varrendo o fim de dia… Na primeira vez depois de um arquivo novo da B3, pode levar alguns
+          minutos.
+        </p>
+      )}
       {book !== null && (
         <>
           <EtiquetasVol contextos={book.contextos} />

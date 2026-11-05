@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from options_engine.adapters.inbound.web.app import create_app
@@ -16,6 +17,7 @@ from options_engine.adapters.outbound.b3files.library import B3FileLibrary
 from options_engine.adapters.outbound.b3files.loaded import LibraryLoader
 from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.config import web_app as modulo
 from options_engine.config.web_app import (
     MARKET_DIR_NAME,
     _close,
@@ -57,6 +59,25 @@ def test_desligar_o_app_solta_a_trava_do_perfil_aberto(tmp_path: Path) -> None:
         assert cliente.post("/api/perfis/Hugo/abrir", json={"forcar": False}).is_success
         assert (pasta / "perfil.lock").is_file()
     assert not (pasta / "perfil.lock").exists()
+
+
+def test_app_monta_o_seletor_de_pasta_na_rota_de_escolher_pasta(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nunca o seletor de verdade: nenhuma janela do sistema pode abrir no teste.
+    monkeypatch.setattr(modulo, "folder_picker", lambda *_: lambda: "/x")
+    with _app(tmp_path) as cliente:
+        r = cliente.post("/api/perfis/escolher-pasta")
+    assert (r.status_code, r.json()) == (200, {"pasta": "/x"})
+
+
+def test_app_sem_seletor_de_pasta_responde_501(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(modulo, "folder_picker", lambda *_: None)
+    with _app(tmp_path) as cliente:
+        r = cliente.post("/api/perfis/escolher-pasta")
+    assert (r.status_code, r.json()["erro"]) == (501, "SemSeletorDePasta")
 
 
 @dataclass

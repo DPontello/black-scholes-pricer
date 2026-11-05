@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <clipPath id="ganho"><rect x="0" y="0" width="256" height="150"/></clipPath>
+    <clipPath id="perda"><rect x="0" y="150" width="256" height="106"/></clipPath>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#171a21" stroke="#2f3542" stroke-width="8"/>
+  <line x1="40" y1="150" x2="216" y2="150" stroke="#9aa3b2" stroke-width="10" stroke-linecap="round" opacity="0.5"/>
+  <polyline points="48,186 118,186 206,62" fill="none" stroke="#ef5350" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#perda)"/>
+  <polyline points="48,186 118,186 206,62" fill="none" stroke="#26a69a" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#ganho)"/>
+</svg>

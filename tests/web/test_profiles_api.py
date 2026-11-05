@@ -1,12 +1,15 @@
 """API de perfis — ``ProfileService`` e ``JsonProfileRepository`` reais atrás do FastAPI."""
 
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
+import pytest
 from fastapi.testclient import TestClient
 
 from options_engine.adapters.inbound.web.app import create_app
+from options_engine.adapters.inbound.web.folder_picker import FolderPicker
 from options_engine.adapters.inbound.web.profiles import router_perfis
 from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.adapters.outbound.storage.profiles import JsonProfileRepository
@@ -27,9 +30,11 @@ BOOK_MODERADO = {
 ALERTAS_PADRAO = {"dias_vencimento": 5, "distancia_strike": 0.02}
 
 
-def _cliente(config: Path, maquina: str = "PC-SALA") -> TestClient:
+def _cliente(
+    config: Path, maquina: str = "PC-SALA", escolher_pasta: FolderPicker | None = None
+) -> TestClient:
     servico = ProfileService(JsonProfileRepository(config), FixedClock(AGORA), maquina)
-    return TestClient(create_app([router_perfis(servico)]))
+    return TestClient(create_app([router_perfis(servico, escolher_pasta)]))
 
 
 def _pasta(tmp_path: Path, nome: str = "hugo") -> str:
@@ -302,3 +307,96 @@ def test_alertas_sem_perfil_aberto_devolve_404(tmp_path: Path) -> None:
         "/api/perfil/alertas", json={"dias_vencimento": 5, "distancia_strike": 0.02}
     )
     assert (r.status_code, r.json()["erro"]) == (404, "NoActiveProfileError")
+
+
+def test_escolher_pasta_devolve_o_caminho(tmp_path: Path) -> None:
+    cliente = _cliente(tmp_path / "config.json", escolher_pasta=lambda: "/nuvem/Mãe")
+    r = cliente.post("/api/perfis/escolher-pasta")
+    assert (r.status_code, r.json()) == (200, {"pasta": "/nuvem/Mãe"})
+
+
+def test_escolher_pasta_cancelada(tmp_path: Path) -> None:
+    cliente = _cliente(tmp_path / "config.json", escolher_pasta=lambda: None)
+    r = cliente.post("/api/perfis/escolher-pasta")
+    assert (r.status_code, r.json()) == (200, {"pasta": None})
+
+
+def test_escolher_pasta_com_a_janela_aberta_nao_abre_outra(tmp_path: Path) -> None:
+    aberta, liberar = threading.Event(), threading.Event()
+    aberturas: list[int] = []
+
+    def seletor() -> str | None:
+        aberturas.append(1)
+        aberta.set()
+        assert liberar.wait(5), "a janela falsa não foi liberada"
+        return "/nuvem/primeira"
+
+    cliente = _cliente(tmp_path / "config.json", escolher_pasta=seletor)
+    primeira: list[tuple[int, object]] = []
+
+    def pedir_primeira() -> None:
+        r = cliente.post("/api/perfis/escolher-pasta")
+        primeira.append((r.status_code, r.json()))
+
+    fio = threading.Thread(target=pedir_primeira)
+    fio.start()
+    try:
+        assert aberta.wait(5), "a primeira janela não abriu"
+        segunda = cliente.post("/api/perfis/escolher-pasta")
+        assert (segunda.status_code, segunda.json()) == (200, {"pasta": None})
+        assert len(aberturas) == 1  # a segunda não abriu janela
+    finally:
+        liberar.set()
+        fio.join(5)
+    assert primeira == [(200, {"pasta": "/nuvem/primeira"})]
+    # Fechada a janela, a próxima escolha abre de novo.
+    de_novo = cliente.post("/api/perfis/escolher-pasta")
+    assert (de_novo.json(), len(aberturas)) == ({"pasta": "/nuvem/primeira"}, 2)
+
+
+def test_escolher_pasta_que_falha_solta_a_vez_da_proxima(tmp_path: Path) -> None:
+    chamadas: list[int] = []
+
+    def seletor() -> str | None:
+        chamadas.append(1)
+        if len(chamadas) == 1:
+            raise RuntimeError("janela caiu")
+        return "/nuvem/Mãe"
+
+    cliente = _cliente(tmp_path / "config.json", escolher_pasta=seletor)
+    with pytest.raises(RuntimeError):
+        cliente.post("/api/perfis/escolher-pasta")
+    r = cliente.post("/api/perfis/escolher-pasta")
+    assert (r.status_code, r.json()) == (200, {"pasta": "/nuvem/Mãe"})
+
+
+def test_cada_router_tem_a_sua_vez_de_escolher_pasta(tmp_path: Path) -> None:
+    aberta, liberar = threading.Event(), threading.Event()
+
+    def travado() -> str | None:
+        aberta.set()
+        liberar.wait(5)
+        return "/a"
+
+    um = _cliente(tmp_path / "um.json", escolher_pasta=travado)
+    outro = _cliente(tmp_path / "outro.json", escolher_pasta=lambda: "/b")
+    fio = threading.Thread(target=lambda: um.post("/api/perfis/escolher-pasta"))
+    fio.start()
+    try:
+        assert aberta.wait(5)
+        assert outro.post("/api/perfis/escolher-pasta").json() == {"pasta": "/b"}
+    finally:
+        liberar.set()
+        fio.join(5)
+
+
+def test_sem_seletor_de_pasta(tmp_path: Path) -> None:
+    r = _cliente(tmp_path / "config.json").post("/api/perfis/escolher-pasta")
+    assert (r.status_code, r.json()) == (
+        501,
+        {
+            "erro": "SemSeletorDePasta",
+            "mensagem": "Este PC não tem como abrir a escolha de pasta. "
+            "Digite o caminho completo da pasta.",
+        },
+    )

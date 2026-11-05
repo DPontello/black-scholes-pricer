@@ -6,6 +6,7 @@ import {
   criarPerfil,
   type EntradaPerfil,
   ErroApi,
+  escolherPasta,
   listarPerfis,
   type Perfil,
   type Trava,
@@ -25,6 +26,7 @@ export function Perfis({ onAberto }: Props) {
   const [criando, setCriando] = useState(false);
   const [nome, setNome] = useState("");
   const [pasta, setPasta] = useState("");
+  const [escolhendo, setEscolhendo] = useState(false);
 
   const carregar = useCallback(() => {
     listarPerfis()
@@ -60,6 +62,19 @@ export function Perfis({ onAberto }: Props) {
       carregar();
     } catch (e) {
       setErro(mensagemDe(e));
+    }
+  }
+
+  async function escolher() {
+    setErro(null);
+    setEscolhendo(true);
+    try {
+      const escolhida = await escolherPasta();
+      if (escolhida !== null) setPasta(escolhida);
+    } catch (e) {
+      setErro(mensagemDe(e));
+    } finally {
+      setEscolhendo(false);
     }
   }
 
@@ -111,6 +126,9 @@ export function Perfis({ onAberto }: Props) {
             Pasta de dados
             <input value={pasta} onChange={(e) => setPasta(e.target.value)} required />
           </label>
+          <button type="button" disabled={escolhendo} onClick={() => void escolher()}>
+            Escolher pasta…
+          </button>
           <button type="submit">Criar perfil</button>{" "}
           <button type="button" onClick={() => setCriando(false)}>
             Cancelar
@@ -122,8 +140,8 @@ export function Perfis({ onAberto }: Props) {
         </button>
       )}
       <p className="dica secundario">
-        Use uma pasta da sua nuvem (Google Drive, OneDrive, Dropbox) para ver a carteira em
-        qualquer PC.
+        Em &quot;Escolher pasta…&quot;, use uma pasta da sua nuvem (Google Drive, OneDrive,
+        Dropbox) para ver a carteira em qualquer PC.
       </p>
       <p>
         <Link to="/aprender/comece">Como usar o app</Link>

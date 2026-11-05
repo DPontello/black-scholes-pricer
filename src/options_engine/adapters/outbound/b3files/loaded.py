@@ -61,7 +61,10 @@ class LoadedLibrary:
         """Termos da série pelo cadastro; sem o ativo-objeto nele, vale ``underlying``."""
         info = self.instruments.get(symbol)
         if info is None or info.option_type is None or info.strike is None or info.expiry is None:
-            return f"{symbol}: série desconhecida no cadastro"
+            return (
+                f"{symbol}: série não encontrada no Cadastro da B3. Confira o código na nota da"
+                " corretora; se a série for nova, importe o Cadastro mais recente em Arquivos B3."
+            )
         if info.exercise_style is None:
             return f"{symbol}: sem estilo de exercício no cadastro"
         return OptionTerms(

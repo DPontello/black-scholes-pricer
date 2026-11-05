@@ -15,18 +15,20 @@
 # por preparar_ponte_wine.sh.
 #
 # Variáveis: PYTHON (python3), DIR_APP ($HOME/.local/share/painel-opcoes),
-# DIR_MENU ($HOME/.local/share/applications).
+# DIR_MENU ($HOME/.local/share/applications), DIR_ICONES ($HOME/.local/share/icons).
 
 set -euo pipefail
 
 PYTHON="${PYTHON:-python3}"
 DIR_APP="${DIR_APP:-$HOME/.local/share/painel-opcoes}"
 DIR_MENU="${DIR_MENU:-$HOME/.local/share/applications}"
+DIR_ICONES="${DIR_ICONES:-$HOME/.local/share/icons}"
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VENV="$DIR_APP/venv"
 MODELO="$RAIZ/scripts/linux/painel-opcoes.desktop.in"
 ATALHO="$DIR_MENU/painel-opcoes.desktop"
+ICONE="$RAIZ/packaging/icone"
 
 uso() {
     sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -82,6 +84,15 @@ mostrar() {
 executar() {
     mostrar "$@"
     ((SIMULAR)) || "$@"
+}
+
+# --- ícone ----------------------------------------------------------------------------------
+
+instalar_icone() {
+    local hicolor="$DIR_ICONES/hicolor"
+    executar mkdir -p "$hicolor/scalable/apps" "$hicolor/256x256/apps"
+    executar cp "$ICONE/painel-opcoes.svg" "$hicolor/scalable/apps/painel-opcoes.svg"
+    executar cp "$ICONE/painel-opcoes-256.png" "$hicolor/256x256/apps/painel-opcoes.png"
 }
 
 # --- atalho ---------------------------------------------------------------------------------
@@ -145,6 +156,9 @@ executar "$VENV/bin/python" -m pip install -e "$RAIZ[app]"
 info "Tela (frontend)"
 executar npm --prefix "$RAIZ/frontend" ci
 executar npm --prefix "$RAIZ/frontend" run build
+
+info "Ícone: $DIR_ICONES/hicolor"
+instalar_icone
 
 info "Atalho no menu de aplicativos: $ATALHO"
 instalar_atalho
