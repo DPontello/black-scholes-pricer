@@ -304,3 +304,30 @@ def test_book_do_app_usa_o_fim_de_dia_e_o_historico_da_biblioteca(tmp_path: Path
     itens = [i for familia in corpo["familias"].values() for i in familia["itens"]]
     assert any(i["resultado"] is not None for i in itens)
     assert (tmp_path / "config" / MARKET_DIR_NAME / "vol_history.sqlite").exists()
+
+
+def test_alertas_e_rolagem_do_app_montados(tmp_path: Path) -> None:
+    biblioteca(tmp_path / "config" / MARKET_DIR_NAME, cadastro=cadastro_com_objetos())
+    pasta = tmp_path / "perfil-hugo"
+    pasta.mkdir()
+    venda = {
+        "ativo": "PETR4",
+        "nome": "call vendida",
+        "data": REFERENCE_SESSION.isoformat(),
+        "pernas": [
+            {"ticker": "PETRK300", "lado": "venda", "execucoes": [{"quantidade": 100, "preco": 1}]}
+        ],
+    }
+    with _app(tmp_path / "config") as cliente:
+        assert cliente.post("/api/perfis", json={"nome": "Hugo", "pasta": str(pasta)}).is_success
+        assert cliente.post("/api/perfis/Hugo/abrir", json={"forcar": False}).is_success
+        operacao = cliente.post("/api/carteira/operacoes", json=venda).json()["id"]
+        alertas = cliente.get("/api/alertas")
+        rolagem = cliente.get(f"/api/alertas/rolagem/{operacao}")
+    assert alertas.status_code == 200, alertas.json()
+    assert alertas.json()["fonte"] == "fim_de_dia"
+    assert rolagem.status_code == 200, rolagem.json()
+    assert (rolagem.json()["vencimento_atual"], rolagem.json()["pedido"]) == (
+        NOVEMBRO.isoformat(),
+        None,  # registrada sem modelo
+    )

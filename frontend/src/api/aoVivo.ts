@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { Alertas } from "./alertas";
 import type { Carteira } from "./carteira";
 import type { Fonte, StatusMercado } from "./cliente";
 
@@ -55,6 +56,8 @@ export type CadeiaIndisponivel = { ativo: string; erro: string; mensagem: string
 
 export type CarteiraIndisponivel = { erro: string; mensagem: string };
 
+export type AlertasIndisponiveis = { erro: string; mensagem: string };
+
 export type EstadoAoVivo = {
   conectado: boolean;
   status: StatusMercado | null;
@@ -64,6 +67,8 @@ export type EstadoAoVivo = {
   cadeiaIndisponivel: CadeiaIndisponivel | null;
   carteira: Carteira | null;
   carteiraIndisponivel: CarteiraIndisponivel | null;
+  alertas: Alertas | null;
+  alertasIndisponiveis: AlertasIndisponiveis | null;
 };
 
 type Mensagem =
@@ -73,6 +78,8 @@ type Mensagem =
   | ({ tipo: "cadeia" } & CadeiaIndisponivel)
   | { tipo: "carteira"; dados: Carteira }
   | ({ tipo: "carteira" } & CarteiraIndisponivel)
+  | { tipo: "alertas"; dados: Alertas }
+  | ({ tipo: "alertas" } & AlertasIndisponiveis)
   | { tipo: "erro"; erro: string; mensagem: string };
 
 const RECONEXAO_MS = 2000;
@@ -86,6 +93,8 @@ const INICIAL: EstadoAoVivo = {
   cadeiaIndisponivel: null,
   carteira: null,
   carteiraIndisponivel: null,
+  alertas: null,
+  alertasIndisponiveis: null,
 };
 
 export function aplicar(estado: EstadoAoVivo, mensagem: Mensagem): EstadoAoVivo {
@@ -115,6 +124,14 @@ export function aplicar(estado: EstadoAoVivo, mensagem: Mensagem): EstadoAoVivo 
             ...estado,
             carteira: null,
             carteiraIndisponivel: { erro: mensagem.erro, mensagem: mensagem.mensagem },
+          };
+    case "alertas":
+      return "dados" in mensagem
+        ? { ...estado, alertas: mensagem.dados, alertasIndisponiveis: null }
+        : {
+            ...estado,
+            alertas: null,
+            alertasIndisponiveis: { erro: mensagem.erro, mensagem: mensagem.mensagem },
           };
     case "erro":
       return estado; // pedido inválido do próprio frontend: nada a mostrar ao usuário

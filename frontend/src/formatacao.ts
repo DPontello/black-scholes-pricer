@@ -50,6 +50,11 @@ export function formatarPreco(v: number | null): string {
   return v === null ? AUSENTE : preco.format(v);
 }
 
+// Espaço que não quebra: "R$" não fica numa linha e o valor na outra.
+export function formatarReais(valor: number): string {
+  return `R$ ${formatarPreco(valor)}`;
+}
+
 // Recebe fração decimal: -0.0059 → "-0,59%".
 export function formatarPercentual(v: number | null): string {
   return v === null ? AUSENTE : percentual.format(v).replace(/−/g, "-");

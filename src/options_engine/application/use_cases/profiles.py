@@ -11,6 +11,7 @@ from datetime import timedelta, timezone, tzinfo
 from pathlib import Path
 
 from options_engine.application.ports.outbound import Clock, ProfileRepository
+from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.book.presets import BookSettings
 from options_engine.domain.model.errors import (
     InvalidDomainValueError,
@@ -103,6 +104,11 @@ class ProfileService:
         with self._lock:
             key, current = self._require_active()
             return self._save(key, replace(current, book=settings))
+
+    def set_alert_settings(self, settings: AlertSettings) -> Profile:
+        with self._lock:
+            key, current = self._require_active()
+            return self._save(key, replace(current, alerts=settings))
 
     def close(self) -> None:
         with self._lock:

@@ -1,4 +1,4 @@
-"""Router de perfis — abrir, criar e editar a watchlist e o book do perfil deste PC.
+"""Router de perfis — abrir, criar e editar a watchlist, o book e os alertas do perfil deste PC.
 
 Os DTOs pydantic moram só aqui: o domínio devolve ``Profile``/``ProfileEntry``
 e este módulo os traduz para o JSON em português da API. Erros de regra
@@ -11,6 +11,7 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
 from options_engine.application.ports.inbound import ProfileUseCase
+from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.profile import Profile, ProfileEntry
 
@@ -37,11 +38,19 @@ class BookOut(ValoresBook):
     preset: BookPreset
 
 
+class AlertasPerfil(BaseModel):
+    """``distancia_strike``: fração do strike (0.02 = 2%)."""
+
+    dias_vencimento: int
+    distancia_strike: float
+
+
 class PerfilOut(BaseModel):
     nome: str
     ativos: list[str]
     cdi_anual: float
     book: BookOut
+    alertas: AlertasPerfil
 
 
 class BookIn(BaseModel):
@@ -105,6 +114,10 @@ def _perfil_out(perfil: Profile) -> PerfilOut:
         ativos=list(perfil.watchlist),
         cdi_anual=perfil.cdi_annual,
         book=book_out(perfil.book_settings),
+        alertas=AlertasPerfil(
+            dias_vencimento=perfil.alert_settings.expiry_days,
+            distancia_strike=perfil.alert_settings.strike_distance,
+        ),
     )
 
 
@@ -137,6 +150,11 @@ def router_perfis(service: ProfileUseCase) -> APIRouter:
     @router.put("/perfil/book")
     def definir_book(corpo: BookIn) -> PerfilOut:
         return _perfil_out(service.set_book_settings(_book_settings(corpo)))
+
+    @router.put("/perfil/alertas")
+    def definir_alertas(corpo: AlertasPerfil) -> PerfilOut:
+        limites = AlertSettings(corpo.dias_vencimento, corpo.distancia_strike)
+        return _perfil_out(service.set_alert_settings(limites))
 
     @router.post("/perfil/fechar", status_code=204)
     def fechar() -> Response:

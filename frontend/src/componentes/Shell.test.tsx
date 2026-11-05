@@ -29,3 +29,22 @@ test("barra superior mostra o perfil aberto e o espaço do status", () => {
   expect(screen.getByText("Ao vivo (Tryd)")).toBeTruthy();
   expect(screen.getByText("conteúdo")).toBeTruthy();
 });
+
+test("o menu mostra quantos alertas há, e nada sem alertas", () => {
+  const { rerender } = render(
+    <MemoryRouter>
+      <Shell status={null} alertas={3}>
+        <div />
+      </Shell>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole("link", { name: "Alertas (3)" })).toBeTruthy();
+  rerender(
+    <MemoryRouter>
+      <Shell status={null} alertas={0}>
+        <div />
+      </Shell>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole("link", { name: "Alertas" })).toBeTruthy();
+});

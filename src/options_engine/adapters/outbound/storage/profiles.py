@@ -6,8 +6,9 @@ Dois níveis de arquivo, por desenho:
   [{"nome": ..., "pasta": ...}]}`` — quais perfis este PC conhece e onde
   moram;
 - na pasta do perfil (que pode ser nuvem ou pendrive e viaja entre PCs):
-  ``perfil.json`` com os dados e ``perfil.lock`` com a trava de uso. O campo ``book`` do
-  ``perfil.json`` é opcional: os perfis gravados antes da semana 3 não o têm.
+  ``perfil.json`` com os dados e ``perfil.lock`` com a trava de uso. Os campos ``book`` e
+  ``alertas`` do ``perfil.json`` são opcionais: os perfis gravados antes das semanas 3 e 4 não os
+  têm.
 
 O nome do perfil é só a chave do cadastro: nunca vira nome de pasta ou de
 arquivo (a pasta é a que o usuário escolheu), então não há o que sanitizar
@@ -19,6 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from options_engine.adapters.outbound.storage.json_files import write_json_atomic
+from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.model.errors import (
     DuplicateProfileError,
@@ -244,6 +246,7 @@ def _read_profile(path: Path) -> Profile | None:
             tuple(normalize_ticker(t) for t in tickers),
             float(cdi),
             _book_from_json(data.get("book"), path),
+            _alerts_from_json(data.get("alertas"), path),
         )
     except InvalidDomainValueError as erro:
         raise _invalid(path, str(erro)) from erro
@@ -285,6 +288,19 @@ def _book_from_json(raw: object, path: Path) -> BookSettings | None:
     )
 
 
+def _alerts_from_json(raw: object, path: Path) -> AlertSettings | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise _invalid(path, "campo 'alertas' não é objeto")
+    dias, distancia = raw.get("dias_vencimento"), raw.get("distancia_strike")
+    if isinstance(dias, bool) or not isinstance(dias, int):
+        raise _invalid(path, "campo 'alertas.dias_vencimento' ausente ou não é inteiro")
+    if isinstance(distancia, bool) or not isinstance(distancia, int | float):
+        raise _invalid(path, "campo 'alertas.distancia_strike' ausente ou não é número")
+    return AlertSettings(dias, float(distancia))
+
+
 def _book_to_json(book: BookSettings) -> dict[str, object]:
     return {
         "preset": book.preset.value,
@@ -308,6 +324,11 @@ def _profile_to_json(profile: Profile) -> dict[str, object]:
     }
     if profile.book is not None:
         data["book"] = _book_to_json(profile.book)
+    if profile.alerts is not None:
+        data["alertas"] = {
+            "dias_vencimento": profile.alerts.expiry_days,
+            "distancia_strike": profile.alerts.strike_distance,
+        }
     return data
 
 

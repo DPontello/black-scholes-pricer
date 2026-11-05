@@ -494,3 +494,46 @@ def test_simbolos_da_carteira_aberta_e_preco_medio_das_acoes() -> None:
     assert servico.open_operations().symbols.series == ("PETRK320",)
     assert servico.average_price("PETR4") == 29.0
     assert servico.average_price("ITUB4") is None
+
+
+def test_registro_guarda_modelo_stop_e_alvo() -> None:
+    repositorio = FakeOperationRepository()
+    servico = _servico(repositorio)
+    comando = RegisterOperation(
+        "PETR4",
+        "trava",
+        D1,
+        (_perna(30.0, _C, Fill(100, 1.2)), _perna(32.0, _V, Fill(100, 0.6))),
+        template="trava_alta_call",
+        stop_loss=50.0,
+        target=100.0,
+    )
+    operacao = servico.register(comando)
+    assert (operacao.template, operacao.stop_loss, operacao.target) == (
+        "trava_alta_call",
+        50.0,
+        100.0,
+    )
+    assert repositorio.load(operacao.id) == operacao
+
+
+def test_limites_trocam_e_apagam() -> None:
+    repositorio = FakeOperationRepository()
+    servico = _servico(repositorio)
+    operacao = servico.register(
+        RegisterOperation("PETR4", "call", D1, (_perna(30.0, _C, Fill(100, 1.2)),))
+    )
+    trocada = servico.set_limits(operacao.id, 80.0, 120.0)
+    assert (trocada.stop_loss, trocada.target) == (80.0, 120.0)
+    assert repositorio.load(operacao.id) == trocada
+    apagada = servico.set_limits(operacao.id, None, None)
+    assert (apagada.stop_loss, apagada.target, apagada.events) == (None, None, operacao.events)
+
+
+def test_limites_invalidos_recusados() -> None:
+    servico = _servico(FakeOperationRepository())
+    operacao = servico.register(
+        RegisterOperation("PETR4", "call", D1, (_perna(30.0, _C, Fill(100, 1.2)),))
+    )
+    with pytest.raises(InvalidDomainValueError, match="stop"):
+        servico.set_limits(operacao.id, 0.0, None)

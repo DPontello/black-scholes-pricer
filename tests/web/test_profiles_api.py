@@ -24,6 +24,7 @@ BOOK_MODERADO = {
     "piso_protecao": 0.90,
     "perda_ilimitada": False,
 }
+ALERTAS_PADRAO = {"dias_vencimento": 5, "distancia_strike": 0.02}
 
 
 def _cliente(config: Path, maquina: str = "PC-SALA") -> TestClient:
@@ -53,6 +54,7 @@ def test_cria_e_lista_perfil(tmp_path: Path) -> None:
         "ativos": ["PETR4", "VALE3"],
         "cdi_anual": 0.15,
         "book": BOOK_MODERADO,
+        "alertas": ALERTAS_PADRAO,
     }
 
     r = cliente.get("/api/perfis")
@@ -91,6 +93,7 @@ def test_abrir_perfil_devolve_o_perfil_e_ele_vira_o_ativo(tmp_path: Path) -> Non
         "ativos": ["PETR4", "VALE3"],
         "cdi_anual": 0.15,
         "book": BOOK_MODERADO,
+        "alertas": ALERTAS_PADRAO,
     }
     assert r.json() == esperado
     assert cliente.get("/api/perfil").json() == esperado
@@ -155,6 +158,7 @@ def test_ativos_sao_normalizados_sem_repeticao_e_ficam_gravados(tmp_path: Path) 
         "ativos": ["PETR4", "BBAS3"],
         "cdi_anual": 0.15,
         "book": BOOK_MODERADO,
+        "alertas": ALERTAS_PADRAO,
     }
     assert r.json() == esperado
     assert cliente.get("/api/perfil").json() == esperado
@@ -269,4 +273,32 @@ def test_book_com_preset_desconhecido_e_requisicao_invalida(tmp_path: Path) -> N
 
 def test_book_sem_perfil_aberto_devolve_404(tmp_path: Path) -> None:
     r = _cliente(tmp_path / "config.json").put("/api/perfil/book", json={"preset": "moderado"})
+    assert (r.status_code, r.json()["erro"]) == (404, "NoActiveProfileError")
+
+
+def test_perfil_mostra_os_alertas_padrao(tmp_path: Path) -> None:
+    cliente, _ = _aberto(tmp_path)
+    assert cliente.get("/api/perfil").json()["alertas"] == ALERTAS_PADRAO
+
+
+def test_alertas_editados_ficam_salvos(tmp_path: Path) -> None:
+    cliente, config = _aberto(tmp_path)
+    corpo = {"dias_vencimento": 10, "distancia_strike": 0.03}
+    r = cliente.put("/api/perfil/alertas", json=corpo)
+    assert (r.status_code, r.json()["alertas"]) == (200, corpo)
+    outro = _cliente(config)
+    assert outro.post("/api/perfis/Hugo/abrir", json={"forcar": False}).json()["alertas"] == corpo
+
+
+def test_alertas_fora_da_faixa_devolvem_422_e_nao_gravam(tmp_path: Path) -> None:
+    cliente, _ = _aberto(tmp_path)
+    r = cliente.put("/api/perfil/alertas", json={"dias_vencimento": 5, "distancia_strike": 0.5})
+    assert (r.status_code, r.json()["erro"]) == (422, "InvalidDomainValueError")
+    assert cliente.get("/api/perfil").json()["alertas"]["distancia_strike"] == 0.02
+
+
+def test_alertas_sem_perfil_aberto_devolve_404(tmp_path: Path) -> None:
+    r = _cliente(tmp_path / "config.json").put(
+        "/api/perfil/alertas", json={"dias_vencimento": 5, "distancia_strike": 0.02}
+    )
     assert (r.status_code, r.json()["erro"]) == (404, "NoActiveProfileError")

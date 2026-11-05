@@ -15,6 +15,7 @@ from typing import Final, Protocol
 from fastapi import FastAPI
 
 import options_ponte
+from options_engine.adapters.inbound.web.alerts import router_alertas
 from options_engine.adapters.inbound.web.app import Lifespan, create_app
 from options_engine.adapters.inbound.web.aprender import router_aprender
 from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
@@ -40,6 +41,7 @@ from options_engine.adapters.outbound.cost_schedules import StaticCostScheduleTa
 from options_engine.adapters.outbound.cotahist.vol_history import CotahistVolHistory
 from options_engine.adapters.outbound.fallback_market import FallbackMarket
 from options_engine.adapters.outbound.storage import JsonProfileRepository
+from options_engine.adapters.outbound.storage.dismissed_alerts import JsonDismissedAlerts
 from options_engine.adapters.outbound.storage.operations import JsonOperationRepository
 from options_engine.adapters.outbound.storage.simulations import JsonSimulationRepository
 from options_engine.adapters.outbound.tryd import (
@@ -52,12 +54,14 @@ from options_engine.adapters.outbound.tryd.feed import TrydMarketFeed
 from options_engine.adapters.outbound.tryd.settings import PORTA_PONTE
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
+from options_engine.application.use_cases.alerts import AlertService
 from options_engine.application.use_cases.book import BookService
 from options_engine.application.use_cases.market_analysis import MarketAnalysisService
 from options_engine.application.use_cases.market_view import MarketViewService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.application.use_cases.rank_income import RankIncomeOpportunitiesService
+from options_engine.application.use_cases.roll import RollService
 from options_engine.application.use_cases.simulations import SimulationService
 from options_engine.application.use_cases.strategy_builder import StrategyBuilderService
 from options_engine.domain.model.contracts import OptionTerms
@@ -147,6 +151,17 @@ def build_web_app(
         lots=lambda symbol: _lot(loader, symbol),
         portfolio_average=portfolio.average_price,
     )
+    alerts = AlertService(
+        lambda: JsonDismissedAlerts(profiles.active_folder()),
+        lambda: profiles.active().alert_settings,
+        clock,
+        B3_UTC_OFFSET,
+        market=market,
+        calendar=calendar,
+    )
+    roll = RollService(
+        portfolio.open_operations, builder.suggest, clock, B3_UTC_OFFSET, market=market
+    )
     vol_history = CotahistVolHistory(loader, calendar, cdi_annual)
     book_builder = StrategyBuilderService(
         end_of_day,
@@ -192,6 +207,7 @@ def build_web_app(
             portfolio=portfolio,
             closes=lambda symbol, day: _close(loader, symbol, day),
             analysis=MarketAnalysisService(market, vol_history, calendar, B3_UTC_OFFSET),
+            alerts=alerts,
         ),
         router_montador(builder, simulations),
         router_book(book, profiles),
@@ -199,6 +215,9 @@ def build_web_app(
             portfolio,
             closes=lambda symbol, day: _close(loader, symbol, day),
             terms=lambda symbol, underlying: _terms(loader, symbol, underlying),
+        ),
+        router_alertas(
+            alerts, roll, portfolio, closes=lambda symbol, day: _close(loader, symbol, day)
         ),
     ]
     lifespan = _lifespan(profiles, client, process, importer)

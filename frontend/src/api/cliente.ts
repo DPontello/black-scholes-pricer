@@ -19,7 +19,16 @@ export type ValoresBook = {
 
 export type PresetBook = ValoresBook & { preset: NomePreset };
 
-export type Perfil = { nome: string; ativos: string[]; cdi_anual: number; book: PresetBook };
+/** `distancia_strike` em fração do strike (0,02 = 2%). */
+export type LimitesAlertas = { dias_vencimento: number; distancia_strike: number };
+
+export type Perfil = {
+  nome: string;
+  ativos: string[];
+  cdi_anual: number;
+  book: PresetBook;
+  alertas: LimitesAlertas;
+};
 
 export type ArquivoB3 = {
   tipo: "cotahist" | "cadastro";
@@ -116,6 +125,10 @@ export function definirAtivos(ativos: string[]): Promise<Perfil> {
 // Sem `valores`, a API grava os padrões do preset: é o "voltar ao padrão" e a troca de preset.
 export function definirBook(preset: NomePreset, valores?: ValoresBook): Promise<Perfil> {
   return pedir("/api/perfil/book", json("PUT", valores === undefined ? { preset } : { preset, valores }));
+}
+
+export function definirLimitesAlertas(limites: LimitesAlertas): Promise<Perfil> {
+  return pedir("/api/perfil/alertas", json("PUT", limites));
 }
 
 export function listarArquivos(): Promise<ArquivoB3[]> {

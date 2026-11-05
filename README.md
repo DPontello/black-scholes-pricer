@@ -190,7 +190,7 @@ Documentação completa em [`docs/`](docs/):
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
 | 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` |
-| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1, 2 e 3, a melhoria de UX, o instalador (semana 4, parte 1; o Windows ainda a conferir num PC real) e o IR mensal das opções (parte 2) feitos (prazo 2026-11-30) |
+| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1, 2 e 3, a melhoria de UX, e a semana 4 (instalador, com o Windows ainda a conferir num PC real; IR mensal das opções; alertas) feitos (prazo 2026-11-30) |
 
 ### App de opções (em construção)
 
@@ -206,7 +206,9 @@ ordens: você executa no home broker e registra a operação no app.
   [plano](docs/superpowers/plans/2026-11-02-app-semana-3-book-analise.md) e
   [ledger](docs/superpowers/ledger-semana-3.md).
 - **Semana 4 (instalador, IR mensal e alertas):** [desenho](docs/superpowers/specs/2026-11-03-semana-4-instalador-ir-alertas-design.md),
-  [plano do instalador](docs/superpowers/plans/2026-11-03-semana-4-parte-1-instalador.md) e
+  planos do [instalador](docs/superpowers/plans/2026-11-03-semana-4-parte-1-instalador.md), do
+  [IR mensal](docs/superpowers/plans/2026-11-04-semana-4-parte-2-ir-mensal.md) e dos
+  [alertas](docs/superpowers/plans/2026-11-04-semana-4-parte-3-alertas.md), e o
   [ledger](docs/superpowers/ledger-semana-4.md).
 - **Estado e como retomar:** [`docs/superpowers/HANDOFF-2026-11-02.md`](docs/superpowers/HANDOFF-2026-11-02.md).
 - **Ponte do Tryd (RTD → TCP local):** [`src/options_ponte/README.md`](src/options_ponte/README.md).
@@ -286,6 +288,15 @@ de dia. A aba **IR mensal** estima o imposto das opções mês a mês: day trade
 15%, prejuízo compensado em cada tipo, IR abaixo de R$ 10 somado com o dos meses seguintes até
 chegar a R$ 10 e o prazo do DARF (estimativa: sem ações, sem IR retido na fonte e sem prejuízo
 de antes do app). Cada perfil grava a carteira na própria pasta, um arquivo JSON por operação.
+Cada operação pode ter um **stop** e um **alvo** em reais, comparados com o resultado total
+(realizado com custos + não realizado pelo preço de zerar).
+Os **Alertas** avisam, do mais grave para o mais leve, a opção vencida que espera o registro do
+exercício, o stop, o risco de exercício (opção vendida dentro do dinheiro ou a menos de 2% do
+strike, a 5 dias úteis ou menos do vencimento), o vencimento próximo e o alvo; os dois limites
+ficam editáveis no perfil, e o menu mostra quantos alertas há. Um alerta dispensado volta quando
+deixa de valer e vale de novo. **Rolar** abre no Montador a mesma estrutura no vencimento
+seguinte, com uma faixa que mostra o custo de zerar as pernas atuais e o caixa líquido; nada é
+enviado.
 O **Book** varre a lista do perfil no fim de dia (o último COTAHIST importado) e mostra os
 5 melhores de cada estrutura nas quatro famílias: Renda (o ranking do painel de renda),
 Volatilidade (iron condor, borboleta e strangle vendido com vol alta; straddle e strangle

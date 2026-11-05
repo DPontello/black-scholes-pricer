@@ -31,6 +31,7 @@ from options_engine.domain.portfolio.model import Operation
 __all__ = [
     "CadastroFreshness",
     "Clock",
+    "DismissedAlertsRepository",
     "LiveFeedPort",
     "MarketDataPort",
     "MarketPort",
@@ -294,6 +295,17 @@ class OperationRepository(Protocol):
     def save(self, operation: Operation) -> None: ...
 
     def load(self, operation_id: str) -> Operation: ...
+
+
+@runtime_checkable
+class DismissedAlertsRepository(Protocol):
+    """As chaves dos alertas dispensados de UM perfil. ``load`` de arquivo ausente ou ilegível
+    devolve vazio; ``save`` sobre arquivo ilegível levanta ``UnreadableRecordError`` (nunca
+    sobrescreve)."""
+
+    def load(self) -> frozenset[str]: ...
+
+    def save(self, keys: frozenset[str]) -> None: ...
 
 
 @runtime_checkable

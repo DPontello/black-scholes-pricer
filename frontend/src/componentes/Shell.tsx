@@ -14,10 +14,12 @@ export const AREAS: ReadonlyArray<{ caminho: string; nome: string }> = [
 type Props = {
   status: ReactNode;
   perfil?: string | null;
+  /** Alertas não dispensados: aparece ao lado de "Alertas" no menu. */
+  alertas?: number;
   children: ReactNode;
 };
 
-export function Shell({ status, perfil = null, children }: Props) {
+export function Shell({ status, perfil = null, alertas = 0, children }: Props) {
   return (
     <div className="shell">
       <header className="barra-superior">
@@ -30,7 +32,7 @@ export function Shell({ status, perfil = null, children }: Props) {
       <nav className="menu-lateral" aria-label="Áreas do app">
         {AREAS.map((area) => (
           <NavLink key={area.caminho} to={area.caminho}>
-            {area.nome}
+            {area.caminho === "/alertas" && alertas > 0 ? `${area.nome} (${alertas})` : area.nome}
           </NavLink>
         ))}
       </nav>

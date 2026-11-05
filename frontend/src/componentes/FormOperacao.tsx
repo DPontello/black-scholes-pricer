@@ -80,6 +80,8 @@ function faltando(rascunho: RascunhoOperacao): string | null {
   }
   if (rascunho.acao?.origem === "compra" && rascunho.acao.execucoes.some((e) => e.preco === null))
     return "Preencha o preço da ação.";
+  if ((rascunho.stop ?? 1) <= 0 || (rascunho.alvo ?? 1) <= 0)
+    return "Stop e alvo são valores em R$ maiores que zero (ou em branco).";
   return null;
 }
 
@@ -256,6 +258,26 @@ export function FormOperacao({ inicial, onRegistrada, onCancelar }: Props) {
         {acao?.origem === "carteira" && (
           <span className="secundario">usa as ações livres do perfil, pelo preço médio</span>
         )}
+      </div>
+      <div className="campos">
+        <label>
+          Stop (perda em R$){" "}
+          <CampoPreco
+            rotulo="Stop da operação"
+            valor={rascunho.stop ?? null}
+            placeholder="opcional"
+            onMudar={(stop) => setRascunho((atual) => ({ ...atual, stop }))}
+          />
+        </label>
+        <label>
+          Alvo (ganho em R$){" "}
+          <CampoPreco
+            rotulo="Alvo da operação"
+            valor={rascunho.alvo ?? null}
+            placeholder="opcional"
+            onMudar={(alvo) => setRascunho((atual) => ({ ...atual, alvo }))}
+          />
+        </label>
       </div>
       {erro !== null && (
         <p className="erro" role="alert">

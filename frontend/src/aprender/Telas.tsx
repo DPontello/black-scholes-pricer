@@ -22,7 +22,7 @@ export const TELAS: Tela[] = [
   {
     titulo: "Carteira",
     texto:
-      "As operações que você executou na corretora e as ações que você já tem. Mostra o resultado realizado e o não realizado, pelo [preço de zerar](preco-de-zerar), e é onde você encerra uma operação ou registra o [exercício](exercicio) e a [atribuição](atribuicao). Os avisos de vencimento aparecem no topo. Na aba IR mensal, uma estimativa do [imposto das opções](ir-mensal) mês a mês, com o prazo do DARF.",
+      "As operações que você executou na corretora e as ações que você já tem. Mostra o resultado realizado e o não realizado, pelo [preço de zerar](preco-de-zerar), e é onde você encerra uma operação ou registra o [exercício](exercicio) e a [atribuição](atribuicao). Os avisos de vencimento aparecem no topo, e o botão Stop e alvo põe os [limites em reais](stop-e-alvo) da operação. Na aba IR mensal, uma estimativa do [imposto das opções](ir-mensal) mês a mês, com o prazo do DARF.",
   },
   {
     titulo: "Aprender",
@@ -32,7 +32,7 @@ export const TELAS: Tela[] = [
   {
     titulo: "Alertas",
     texto:
-      "Ainda em construção: avisos de vencimento próximo, risco de exercício, proventos e o calendário.",
+      "Os avisos da sua carteira, do mais grave para o mais leve: vencimento próximo, [risco de exercício](risco-de-exercicio), [stop e alvo](stop-e-alvo) e as opções vencidas que esperam o registro. Cada aviso some com Dispensar até mudar de novo. Rolar abre no Montador a [rolagem](rolagem) da operação. Os limites (dias úteis e distância do strike) ficam no fim da página. O número ao lado de Alertas, no menu, é quantos avisos há agora.",
   },
   {
     titulo: "Arquivos B3",

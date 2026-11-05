@@ -1,6 +1,7 @@
 """Operação e posições: preço médio ponderado, encerramento, pó e as regras dos eventos."""
 
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 
@@ -162,3 +163,23 @@ def test_transferencia_tira_acoes_pelo_preco_medio_sem_resultado() -> None:
 def test_transferencia_impossivel(pernas: list[object], eventos: list[object], motivo: str) -> None:
     with pytest.raises(InvalidDomainValueError, match=motivo):
         operacao(pernas, eventos)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("valor", [0.0, -10.0, float("nan"), float("inf")])
+def test_stop_e_alvo_positivos(valor: float) -> None:
+    base = operacao([call(30.0)], [Open(0, D1, Side.BUY, 100, 1.0)])
+    with pytest.raises(InvalidDomainValueError, match="stop"):
+        replace(base, stop_loss=valor)
+    with pytest.raises(InvalidDomainValueError, match="alvo"):
+        replace(base, target=valor)
+
+
+def test_eventos_novos_mantem_modelo_stop_e_alvo() -> None:
+    base = replace(
+        operacao([call(30.0)], [Open(0, D1, Side.BUY, 100, 1.0)]),
+        template="trava_alta_call",
+        stop_loss=200.0,
+        target=150.0,
+    )
+    nova = base.with_events(Close(0, D2, 100, 1.5))
+    assert (nova.template, nova.stop_loss, nova.target) == ("trava_alta_call", 200.0, 150.0)

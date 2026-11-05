@@ -17,6 +17,8 @@ const AO_VIVO: EstadoAoVivo = {
   cadeiaIndisponivel: null,
   carteira: null,
   carteiraIndisponivel: null,
+  alertas: null,
+  alertasIndisponiveis: null,
 };
 
 function api(dados: CarteiraDados = carteira()) {
@@ -176,4 +178,25 @@ test("sem perfil ou com a pasta fora do ar aparece o motivo", async () => {
   simularFetch(() => ({ status: 422, corpo: { erro: "ProfileFolderUnavailableError", mensagem: "pasta do perfil fora do ar" } }));
   montar();
   expect((await screen.findByRole("alert")).textContent).toBe("pasta do perfil fora do ar");
+});
+
+test("vindo dos alertas, a operação do endereço já vem aberta", async () => {
+  api();
+  render(
+    <MemoryRouter initialEntries={["/carteira?operacao=op1"]}>
+      <Carteira aoVivo={AO_VIVO} />
+    </MemoryRouter>,
+  );
+  const botao = await screen.findByRole("button", { name: /trava de alta/ });
+  expect(botao.getAttribute("aria-expanded")).toBe("true");
+  expect(document.getElementById("operacao-op1")).not.toBeNull();
+});
+
+test("a operação mostra o stop e o alvo, e o botão abre o diálogo deles", async () => {
+  api(carteira({ operacoes: [trava({ stop: 200, alvo: 90 })] }));
+  montar();
+  const linha = (await screen.findByRole("button", { name: /trava de alta/ })).closest("tr") as HTMLElement;
+  expect(linha.textContent).toContain("stop R$\u00a0-200,00 · alvo R$\u00a090,00");
+  fireEvent.click(within(linha).getByRole("button", { name: "Stop e alvo" }));
+  expect(screen.getByRole("form", { name: "Stop e alvo de trava de alta" })).toBeTruthy();
 });

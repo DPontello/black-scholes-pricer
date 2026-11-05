@@ -6,6 +6,8 @@ Branch `feat/instalador`, a partir da `development` (`0c8e09b`), com as Tasks 1 
 Tasks 6 e 7 seguem na `feat/instalador-linux`, a partir da `development` (`eeb4186`).
 Parte 2, plano: [`plans/2026-11-04-semana-4-parte-2-ir-mensal.md`](plans/2026-11-04-semana-4-parte-2-ir-mensal.md),
 na branch `feat/ir-mensal`, a partir da `development` local (`785d324`).
+Parte 3, plano: [`plans/2026-11-04-semana-4-parte-3-alertas.md`](plans/2026-11-04-semana-4-parte-3-alertas.md),
+na branch `feat/alertas`, a partir da `development` (`057167d`).
 
 ## 2026-11-03: Task 1 — caminhos do app empacotado (ponte, tela e log)
 
@@ -163,3 +165,196 @@ na branch `feat/ir-mensal`, a partir da `development` local (`785d324`).
   - sem perfil aberto, o aviso aparece duas vezes (no topo da Carteira e na aba);
   - cada recarga da Carteira remonta a aba, e os meses abertos voltam fechados;
   - `sinal()` ganhou mais uma cópia (já havia três).
+
+## 2026-11-04: parte 3 (alertas) — enquetes e plano
+
+- Respostas do autor (§4.3 do desenho): padrões de **5 dias úteis e 2%**; stop e alvo em **todas**
+  as operações, também a só de ações; comparados com o **resultado total** (realizado com custos +
+  não realizado pelo preço de zerar).
+- Conflito achado: o desenho pedia abrir no Montador "o encerramento das pernas atuais e a mesma
+  estrutura no vencimento seguinte", mas o domínio recusa dois vencimentos numa estrutura
+  (`strategy.py`, decisão nº 6). Autor: **faixa no Montador** com o custo de zerar e o caixa
+  líquido; o encerramento segue pelo Encerrar da Carteira.
+- Ruling: a sugestão de rolagem não é um alerta à parte; é o botão **Rolar** dos alertas de
+  vencimento próximo e de risco de exercício da operação com perna vendida (mesmas condições do
+  §4.1). Motivo: o mesmo gatilho geraria dois itens por perna ("alerta demais", §5). Custo se
+  errado: virar um tipo a mais no `AlertKind` e uma linha na tela.
+- Ruling: dispensado some até o alerta deixar de valer numa avaliação **determinada**; sem preço de
+  zerar ou sem spot, o dispensado fica (o Tryd piscando não faz o alerta voltar).
+- Ruling: vencimento seguinte da rolagem = o próximo mensal quando o atual é mensal; o próximo
+  qualquer quando é semanal. Quantidades proporcionais à primeira perna de opção aberta.
+
+## 2026-11-04: parte 3, Task 1 — regras dos alertas no domínio
+
+- `domain/alerts/model.py`: `AlertSettings` (5 du e 2% por padrão; dias de 0 a 60, distância de 0 a
+  20%), `AlertKind` na ordem de gravidade, `OperationSnapshot`, `AfterExpiry`, `Alert` e
+  `Evaluation` (alertas + chaves indeterminadas).
+- `domain/alerts/rules.py`: `evaluate(operações, avisos, spots, dias_úteis, limites)`.
+- Mudança em relação ao plano: o `OperationSnapshot` leva o `stop_loss` e o `target` (antes viriam
+  da `Operation`, que só os ganha na Task 2). Assim a Task 1 não depende da 2, e o domínio dos
+  alertas recebe só o que usa. Também nasceu o `AfterExpiry` no domínio, porque o domínio não pode
+  importar o `ExpiryNotice` da aplicação (import-linter).
+- Ruling: a perna com aviso de depois do vencimento (registrar exercício, aguardando fechamento)
+  só tem o aviso; o vencimento próximo e o risco de exercício dela não se repetem.
+- Ruling: aviso de uma operação que não está entre as abertas é erro (`InvalidDomainValueError`),
+  não é ignorado: a perna do aviso está aberta por definição.
+- Ruling: borda inclusiva nos dois limites: dispara com `du == dias`, com `spot == strike·(1 − d)`
+  na call (`strike·(1 + d)` na put), com `total == −stop` e com `total == alvo`.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/alerts` e
+  `tests/portfolio` (108 testes; 27 novos, um deles com hypothesis).
+
+## 2026-11-04: parte 3, Task 2 — modelo, stop e alvo na operação
+
+- `Operation` ganhou `template`, `stop_loss` e `target` (opcionais, no fim, com padrão `None`);
+  stop e alvo precisam ser finitos e maiores que zero. `with_events` e `apply_exercise` os mantêm
+  (usam `replace`).
+- JSON da operação: `"modelo"`, `"stop"` e `"alvo"` só são gravados quando existem; a `versao`
+  continua 1, e o arquivo de antes segue igual ao ser regravado (teste). Stop inválido no arquivo
+  deixa a operação ilegível, como os outros campos.
+- `RegisterOperation` e `POST /api/carteira/operacoes` levam `modelo`, `stop` e `alvo`;
+  `OperacaoOut` os devolve; rota nova `PUT /api/carteira/operacoes/{id}/limites` (`null` apaga;
+  operação desconhecida dá 404; stop ≤ 0 dá 422).
+- O helper `_custos` da gravação virou `_numero_opcional` (agora lê também o stop e o alvo).
+- Ruling: o `modelo` é gravado como veio, mesmo se o catálogo não o tiver; só a rolagem o ignora
+  (Task 5). Motivo: o catálogo pode mudar depois do registro.
+- Risco anotado: um app de versão anterior que regrave a operação (um encerramento feito nele)
+  apaga o stop, o alvo e o modelo, porque não os conhece. Só acontece com dois PCs em versões
+  diferentes no mesmo perfil.
+- Falha que já existia neste PC Windows, sem relação com a Task 2:
+  `tests/web/test_launch.py::test_comando_app_instalado_usa_a_tela_a_ponte_e_o_log_de_dentro_do_executavel`
+  (o `app.log` não aparece). Falha igual no commit `5d366ca`, conferido numa cópia limpa. Fica
+  para investigar à parte.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/portfolio`,
+  `tests/adapters/storage`, `tests/application`, `tests/web`, `tests/alerts` e `tests/config`
+  (627 passando; 15 testes novos).
+
+## 2026-11-04: parte 3, Task 3 — limites dos alertas no perfil
+
+- `Profile` ganhou `alerts: AlertSettings | None` e a propriedade `alert_settings` (5 du e 2%
+  quando `None`), como o `book`.
+- `perfil.json`: campo opcional `"alertas": {"dias_vencimento", "distancia_strike"}`, gravado só
+  depois que o usuário muda os limites; tipo errado ou valor fora da faixa deixa o perfil ilegível
+  com o caminho e o campo, como o `book`.
+- `ProfileUseCase.set_alert_settings`; `PerfilOut.alertas`; rota `PUT /api/perfil/alertas`
+  (fora da faixa dá 422 de domínio e não grava; sem perfil aberto, 404).
+- Três testes antigos da API de perfis comparavam o perfil inteiro: ganharam o `ALERTAS_PADRAO`.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/adapters/storage`,
+  `tests/application`, `tests/web`, `tests/alerts`, `tests/config` e `tests/domain` (1033
+  passando; 14 testes novos). A única falha é a do `test_launch`, a mesma de antes (Task 2).
+
+## 2026-11-04: parte 3, Task 4 — `AlertService` e os dispensados
+
+- `application/ports/alerts.py`: `AlertsView` (alertas visíveis, quantos dispensados, fonte) e
+  `AlertUseCase` (`evaluate(view, notices)`, `dismiss`, `restore_all`).
+- Porta `DismissedAlertsRepository` (`load`, `save`) em `ports/outbound.py`.
+- `application/use_cases/alerts.py`: `AlertService(dismissed_for, settings_for, clock, tz,
+  market=, calendar=)`. O total é `realizado + não realizado` (`fsum`); o spot só dos ativos com
+  opção vendida aberta (`last`, senão `previous_close`); "hoje" pelo fuso da B3; vencimento que o
+  calendário recusa vira `None` (indeterminado).
+- Dispensados: mantém só `dispensados ∩ (ativos ∪ indeterminados)` e grava só quando muda (o
+  WebSocket avalia a cada ciclo).
+- `adapters/outbound/storage/dismissed_alerts.py`: `alertas.json` na pasta do perfil
+  (`{"versao": 1, "dispensados": [...]}`, ordenado, escrita atômica). Ilegível é lido como vazio e
+  nunca sobrescrito (`UnreadableRecordError` no `save`); pasta fora do ar no `save` dá
+  `ProfileFolderUnavailableError`.
+- Ruling: o `AlertService` recebe `settings_for` (uma função) em vez do `ProfileUseCase` inteiro:
+  só precisa dos limites, e o teste fica sem perfil falso.
+- Ruling: sem log quando o `alertas.json` está ilegível; o aviso chega ao usuário quando ele tenta
+  dispensar (422 com o caminho). Custo se errado: um arquivo quebrado passa despercebido até o
+  primeiro "Dispensar".
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/application`,
+  `tests/adapters/storage` e `tests/alerts` (394 passando; 21 testes novos).
+
+## 2026-11-04: parte 3, Task 5 — rolagem
+
+- `RollSuggestion` e `RollUseCase` em `application/ports/alerts.py`; `RollService` em
+  `application/use_cases/roll.py`, com `open_operations` (a Carteira marcada) e `suggest` (o
+  `StrategyBuilderService.suggest`) injetados como funções.
+- Vencimento atual: o mais próximo entre as opções vendidas abertas. Seguinte, pela cadeia do ativo
+  (`list_expiries`): o próximo mensal se a vendida é mensal; o próximo qualquer se é semanal.
+- Estrutura nova: `suggest(ativo, modelo, seguinte)` com as quantidades multiplicadas por
+  `round(opções abertas / opções sugeridas)` (no mínimo 1); sem modelo, modelo fora do catálogo
+  ou sem vencimento seguinte, `request = None`.
+- Caixa de zerar: comprada recebe o bid, vendida paga o ask, pelas marcas da Carteira; `None` se
+  alguma perna de opção está sem preço de zerar.
+- Ruling: a ação do modelo (venda coberta, put protetora, collar) entra como **da carteira**
+  quando a operação já tem ação comprada aberta, para a rolagem não sugerir comprar as ações de
+  novo. Custo se errado: o Montador mostraria a compra da ação junto da opção nova.
+- Ruling: a escala usa a soma das quantidades de opção (abertas ÷ sugeridas), não a primeira perna:
+  dá o mesmo nas estruturas 1×1 e segue certo na borboleta (1×2×1). Operação com pernas
+  desiguais (encerramento parcial de uma perna) arredonda para o inteiro mais perto.
+- Ruling: erro da cadeia (ativo sem cadeia) sobe como está; a rota vira o 404/422 de sempre.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/application` e
+  `tests/alerts` (287 passando; 13 testes novos).
+
+## 2026-11-04: parte 3, Task 6 — rotas e WebSocket
+
+- `adapters/inbound/web/portfolio.py`: `carteira_atual` deu lugar a `ler_carteira` (vencimento +
+  carteira aberta, devolve `CarteiraLida` com a visão e os avisos) e `carteira_out` (pública). A
+  rota `GET /api/carteira` e o WebSocket usam as duas.
+- `adapters/inbound/web/alerts.py`: `GET /api/alertas`, `POST /api/alertas/{chave}/dispensar`
+  (204), `POST /api/alertas/restaurar` (204) e `GET /api/alertas/rolagem/{operacao_id}`; o
+  `pedido` da rolagem sai pelo `pedido_out` do Montador (o mesmo formato que o Book manda).
+- WebSocket: mensagem `alertas`, da mesma leitura da carteira (uma consulta de mercado para as
+  duas), enviada só quando muda. Sem perfil aberto ou pasta fora do ar, a mensagem leva o erro,
+  como a da carteira.
+- `config/web_app.py`: `AlertService` (dispensados em `JsonDismissedAlerts` na pasta do perfil,
+  limites de `profiles.active().alert_settings`) e `RollService` (`portfolio.open_operations` e
+  `builder.suggest`, o do mercado ao vivo).
+- Ruling: a rolagem usa o `builder` do mercado ao vivo (com recuo para o fim de dia), não o
+  `book_builder` só de fim de dia: a sugestão é para agir no pregão.
+- Checagens: ruff, ruff format, mypy, import-linter e as suítes `tests/web`, `tests/config`,
+  `tests/application`, `tests/alerts` e `tests/adapters/storage` (9 testes novos). A única falha é
+  a do `test_launch`, a mesma de antes (Task 2).
+
+## 2026-11-04: parte 3, Task 7 — aba Alertas e a contagem no menu
+
+- `api/alertas.ts` (tipos e as quatro rotas), `LimitesAlertas` e `definirLimitesAlertas` em
+  `api/cliente.ts` (o `Perfil` ganhou `alertas`), mensagem `alertas` no `aoVivo.ts`.
+- `paginas/Alertas.tsx`: grupos por operação na ordem do primeiro alerta (a lista já vem por
+  gravidade), uma frase por alerta com **Dispensar**, e por operação **Abrir na Carteira** e
+  **Rolar** (quando algum alerta dela pode rolar); "Mostrar dispensados (N)" restaura todos; os
+  limites no fim da página (dias úteis e % do strike, gravados em fração). Rótulo "pelo fim de dia
+  (B3)" (ou "com preços atrasados") quando a fonte não é ao vivo.
+- Menu: "Alertas (N)" com os alertas não dispensados, pelo WebSocket; sem alertas, só "Alertas".
+- Carteira: `?operacao=<id>` abre a operação e a rola para a vista (`id="operacao-<id>"` na linha).
+- `formatarReais` foi para `formatacao.ts` (era o `reais()` do IR mensal) e serve as duas telas;
+  o `sinal()` ficou como estava.
+- `paginas/EmBreve.tsx` e o CSS `.em-breve` saíram: Alertas era a última área "em breve".
+- Ruling: Rolar navega ao Montador com `state: { pedido, rolagem }`, como o Book (`pedido`); a
+  faixa que usa a `rolagem` é a Task 8. Até lá o Montador abre só o pedido.
+- Ruling: o "?" do glossário nos alertas fica para a Task 8, junto dos termos novos (sem termo, o
+  link levaria a um termo que não existe).
+- Checagens: `npm run verificar` (tsc + 225 testes; 13 novos).
+
+## 2026-11-04: parte 3, Task 8 — stop e alvo na tela, faixa de rolagem e glossário
+
+- Registro: campos "Stop (perda em R$)" e "Alvo (ganho em R$)", opcionais; zero ou negativo é
+  recusado na tela. Vindo do Montador, o registro leva o `modelo` (`rascunhoDaAnalise`).
+- Carteira: a linha da operação mostra "stop R$ -X · alvo R$ Y" quando há; o botão **Stop e alvo**
+  abre o `DialogoLimites` (`PUT .../limites`, em branco apaga).
+- Montador: `FaixaRolagem` pelo `state.rolagem` (custo de zerar, vencimento novo e o caixa líquido
+  = caixa de zerar + `no_vencimento.caixa` da estrutura nova), com "Fechar a faixa". Sem modelo,
+  pede para montar pela cadeia; sem vencimento seguinte ou sem preço de zerar, diz qual.
+- Glossário: `stop-e-alvo`, `risco-de-exercicio` e `rolagem`; o "?" em cada alerta (vencimento →
+  `vencimento`, exercício a registrar → `exercicio`), no diálogo de stop e alvo e na faixa. A tela
+  Telas do Aprender descreve a aba Alertas (era "em construção") e o botão Stop e alvo da Carteira.
+- Ruling: o formulário de registro não tem o "?" do stop e alvo: ele é montado fora de um Router
+  nos testes e em nenhum lugar precisa de link; o "?" fica no diálogo da Carteira e nos Alertas.
+- Ruling: o Montador não troca sozinho o vencimento da cadeia para o da rolagem quando não há
+  pedido: a faixa diz a data e o usuário a escolhe (custo se errado: um clique a mais).
+- Checagens: `npm run verificar` (tsc + 235 testes; 10 novos) e `npm run build`.
+
+## 2026-11-04: parte 3, Task 9 — gate completo e documentação
+
+- Gate completo: pytest com cobertura (5367 passando, 21 pulados, 1 falha antiga do `test_launch`
+  neste PC Windows; cobertura total 98,65%), mypy, ruff, ruff format e import-linter verdes;
+  frontend `verificar` (tsc + 235 testes) e `build`.
+- Cobertura dos módulos novos: `domain/alerts` 100%; `use_cases/alerts.py` tinha dois caminhos
+  sem teste (vencimento que o calendário recusa; cotação sem último nem fechamento anterior):
+  ganharam `test_vencimento_que_ja_passou_fica_indeterminado` e
+  `test_cotacao_sem_ultimo_nem_fechamento_anterior` e foram a 100%.
+- README (Alertas, stop e alvo, rolagem; planos da semana 4), ROADMAP (parte 3 feita na
+  `feat/alertas`) e HANDOFF (§1, §6, os números esperados no §2 e a seção 10).
+- Falta: o teste no app com o autor; o push, o PR para a `development` e o CI (onde se vê se o
+  `test_launch` falha também fora deste PC).

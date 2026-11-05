@@ -334,3 +334,46 @@ def test_ir_mensal_com_dois_meses_lista_o_mais_recente_primeiro(tmp_path: Path) 
 def test_ir_mensal_sem_perfil() -> None:
     resposta = _cliente(None).get("/api/carteira/ir-mensal")
     assert (resposta.status_code, resposta.json()["erro"]) == (404, "NoActiveProfileError")
+
+
+def test_registro_api_com_modelo_stop_e_alvo(tmp_path: Path) -> None:
+    cliente = _cliente(tmp_path)
+    _registrar(cliente, {**TRAVA, "modelo": "trava_alta_call", "stop": 40.0, "alvo": 90.0})
+    (operacao,) = cliente.get("/api/carteira").json()["operacoes"]
+    assert (operacao["modelo"], operacao["stop"], operacao["alvo"]) == (
+        "trava_alta_call",
+        40.0,
+        90.0,
+    )
+
+
+def test_registro_api_sem_limites(tmp_path: Path) -> None:
+    cliente = _cliente(tmp_path)
+    _registrar(cliente, TRAVA)
+    (operacao,) = cliente.get("/api/carteira").json()["operacoes"]
+    assert (operacao["modelo"], operacao["stop"], operacao["alvo"]) == (None, None, None)
+
+
+def test_registro_api_com_stop_negativo_422(tmp_path: Path) -> None:
+    resposta = _cliente(tmp_path).post("/api/carteira/operacoes", json={**TRAVA, "stop": -1})
+    assert resposta.status_code == 422
+
+
+def test_limites_api_trocam_e_apagam(tmp_path: Path) -> None:
+    cliente = _cliente(tmp_path)
+    trava = _registrar(cliente, TRAVA)
+    resposta = cliente.put(f"/api/carteira/operacoes/{trava}/limites", json={"stop": 30.0})
+    assert resposta.status_code == 200, resposta.json()
+    (operacao,) = cliente.get("/api/carteira").json()["operacoes"]
+    assert (operacao["stop"], operacao["alvo"]) == (30.0, None)
+
+    cliente.put(f"/api/carteira/operacoes/{trava}/limites", json={"stop": None, "alvo": None})
+    (operacao,) = cliente.get("/api/carteira").json()["operacoes"]
+    assert (operacao["stop"], operacao["alvo"]) == (None, None)
+
+
+def test_limites_em_operacao_desconhecida(tmp_path: Path) -> None:
+    resposta = _cliente(tmp_path).put(
+        "/api/carteira/operacoes/naoexiste123/limites", json={"stop": 30.0}
+    )
+    assert resposta.status_code == 404

@@ -39,6 +39,7 @@ test("o formulário vindo do montador traz pernas, ação e preços da análise"
         { ticker: "PETRK541", lado: "venda", execucoes: [{ quantidade: 100, preco: 1.72, custos: 0.37 }] },
       ],
       acao: { lado: "compra", origem: "compra", execucoes: [{ quantidade: 100, preco: 52.52, custos: null }] },
+      modelo: "venda_coberta",
     },
   ]);
 });
@@ -98,4 +99,20 @@ test("o erro de regra da API aparece no formulário", async () => {
   render(<FormOperacao inicial={inicial} onRegistrada={vi.fn()} onCancelar={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "Registrar" }));
   expect((await screen.findByRole("alert")).textContent).toContain("0 ações livres");
+});
+
+
+test("stop e alvo vão no registro, e stop zero é recusado", async () => {
+  const fetch = simularFetch(() => ({ status: 201, corpo: { id: "op1" } }));
+  const registrada = vi.fn();
+  const inicial = rascunhoDaAnalise(PEDIDO, analiseCoberta(), "2026-11-04");
+  render(<FormOperacao inicial={inicial} onRegistrada={registrada} onCancelar={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("Stop da operação"), { target: { value: "0" } });
+  fireEvent.click(screen.getByRole("button", { name: "Registrar" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("maiores que zero");
+  fireEvent.change(screen.getByLabelText("Stop da operação"), { target: { value: "200" } });
+  fireEvent.change(screen.getByLabelText("Alvo da operação"), { target: { value: "150,5" } });
+  fireEvent.click(screen.getByRole("button", { name: "Registrar" }));
+  await waitFor(() => expect(registrada).toHaveBeenCalledWith("op1"));
+  expect(corpos(fetch)[0]).toMatchObject({ stop: 200, alvo: 150.5 });
 });

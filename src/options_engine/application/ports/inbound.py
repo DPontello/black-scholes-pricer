@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.domain.alerts.model import AlertSettings
 from options_engine.domain.analytics.volatility import DailyVol, VolContext
 from options_engine.domain.book.presets import BookSettings
 from options_engine.domain.income.costs import REFERENCE_POSITION_SHARES
@@ -215,6 +216,8 @@ class ProfileUseCase(Protocol):
     def set_watchlist(self, tickers: Sequence[str]) -> Profile: ...
 
     def set_book_settings(self, settings: BookSettings) -> Profile: ...
+
+    def set_alert_settings(self, settings: AlertSettings) -> Profile: ...
 
     def close(self) -> None: ...
 

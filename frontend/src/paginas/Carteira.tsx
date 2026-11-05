@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import type { EstadoAoVivo } from "../api/aoVivo";
 import {
@@ -18,10 +18,11 @@ import { ErroApi } from "../api/cliente";
 import { AdicionarAcoes } from "../componentes/AdicionarAcoes";
 import { Ajuda } from "../componentes/Ajuda";
 import { DialogoEncerrar } from "../componentes/DialogoEncerrar";
+import { DialogoLimites } from "../componentes/DialogoLimites";
 import { DialogoExercicio } from "../componentes/DialogoExercicio";
 import { FormOperacao } from "../componentes/FormOperacao";
 import { IrMensal } from "../componentes/IrMensal";
-import { formatarData, formatarPreco, hojeNaB3 } from "../formatacao";
+import { formatarData, formatarPreco, formatarReais, hojeNaB3 } from "../formatacao";
 
 const FONTES = { ao_vivo: "ao vivo (Tryd)", atrasado: "atrasado", fim_de_dia: "fim de dia (B3)" };
 const EVENTOS: Record<Evento["tipo"], string> = {
@@ -38,6 +39,7 @@ type Painel =
   | { tipo: "acoes" }
   | { tipo: "encerrar"; operacao: OperacaoCarteira }
   | { tipo: "exercicio"; operacao: OperacaoCarteira; perna?: number }
+  | { tipo: "limites"; operacao: OperacaoCarteira }
   | null;
 
 type Props = { aoVivo: EstadoAoVivo };
@@ -201,13 +203,18 @@ export function Carteira({ aoVivo }: Props) {
   const local = useLocation();
   const navegar = useNavigate();
   const doMontador = (local.state as { registro?: RascunhoOperacao } | null)?.registro;
+  // Os Alertas abrem a Carteira com `?operacao=`: a operação já vem aberta e à vista.
+  const [busca] = useSearchParams();
+  const doAlerta = busca.get("operacao");
   const [carteira, setCarteira] = useState<CarteiraDados | null>(null);
   const [historico, setHistorico] = useState<OperacaoCarteira[] | null>(null);
   const [aba, setAba] = useState<"abertas" | "historico" | "ir">("abertas");
   const [painel, setPainel] = useState<Painel>(
     doMontador === undefined ? null : { tipo: "registrar", inicial: doMontador },
   );
-  const [abertas, setAbertas] = useState<ReadonlySet<string>>(new Set());
+  const [abertas, setAbertas] = useState<ReadonlySet<string>>(
+    new Set(doAlerta === null ? [] : [doAlerta]),
+  );
   const [comEventos, setComEventos] = useState<ReadonlySet<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   const [leituras, setLeituras] = useState(0);
@@ -231,6 +238,12 @@ export function Carteira({ aoVivo }: Props) {
   useEffect(() => {
     if (aoVivo.carteira !== null) setCarteira(aoVivo.carteira);
   }, [aoVivo.carteira]);
+
+  const carregou = carteira !== null;
+  useEffect(() => {
+    if (carregou && doAlerta !== null)
+      document.getElementById(`operacao-${doAlerta}`)?.scrollIntoView?.({ block: "center" });
+  }, [carregou, doAlerta]);
 
   useEffect(() => {
     if (aba === "historico") lerHistorico().then(setHistorico).catch(() => setHistorico(null));
@@ -283,6 +296,9 @@ export function Carteira({ aoVivo }: Props) {
           onFeito={feito}
           onCancelar={() => setPainel(null)}
         />
+      )}
+      {painel?.tipo === "limites" && (
+        <DialogoLimites operacao={painel.operacao} onFeito={feito} onCancelar={() => setPainel(null)} />
       )}
       {indisponivel !== null && carteira === null && (
         <p className="erro" role="alert">
@@ -352,7 +368,7 @@ export function Carteira({ aoVivo }: Props) {
                   const temOpcao = operacao.pernas.some((p) => p.tipo !== "acao" && p.quantidade > 0);
                   return (
                     <Fragment key={operacao.id}>
-                      <tr>
+                      <tr id={`operacao-${operacao.id}`}>
                         <td>
                           <button
                             type="button"
@@ -363,6 +379,17 @@ export function Carteira({ aoVivo }: Props) {
                             {aberta ? "▾" : "▸"} {operacao.nome}
                           </button>{" "}
                           <span className="secundario">{operacao.ativo}</span>
+                          {(operacao.stop !== null || operacao.alvo !== null) && (
+                            <span className="secundario">
+                              {" · "}
+                              {[
+                                operacao.stop === null ? null : `stop ${formatarReais(-operacao.stop)}`,
+                                operacao.alvo === null ? null : `alvo ${formatarReais(operacao.alvo)}`,
+                              ]
+                                .filter((parte) => parte !== null)
+                                .join(" · ")}
+                            </span>
+                          )}
                         </td>
                         <td>{formatarData(operacao.criada_em)}</td>
                         <td className={`num ${sinal(operacao.realizado)}`}>
@@ -387,6 +414,9 @@ export function Carteira({ aoVivo }: Props) {
                               Exercício
                             </button>
                           )}
+                          <button type="button" onClick={() => setPainel({ tipo: "limites", operacao })}>
+                            Stop e alvo
+                          </button>
                           <button
                             type="button"
                             aria-pressed={comEventos.has(operacao.id)}
