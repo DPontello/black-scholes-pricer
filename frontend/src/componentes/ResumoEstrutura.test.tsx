@@ -28,9 +28,21 @@ test("perda ilimitada diz ilimitada, crédito diz recebe, e sem preço o resumo 
   expect(frase(analiseCoberta({ no_vencimento: null }))).toMatch(/Falta o preço/);
 });
 
+// O número ao lado do rótulo, sem o "?".
+function numero(rotulo: string): string {
+  return screen.getByText(rotulo).closest(".numero")?.querySelector("strong")?.textContent ?? "";
+}
+
+test("ganho e perda máximos são os brutos, como na corretora; custos à parte e sem IR", () => {
+  render(<ResumoEstrutura analise={analiseCoberta()} />);
+  expect(numero("Ganho máximo")).toBe("R$ 211,00");
+  expect(numero("Perda máxima")).toBe("R$ -5.080,00");
+  expect(numero("Custos de montagem")).toBe("R$ 1,81");
+  expect(screen.queryByText(/IR/)).toBeNull();
+});
+
 test("números, gregas e avisos aparecem; sem hoje, o motivo", () => {
   const { rerender } = render(<ResumoEstrutura analise={analiseCoberta()} />);
-  expect(screen.getByText("R$ 183,43")).toBeTruthy();
   expect(screen.getByText("68,0%")).toBeTruthy();
   expect(screen.getByText("Theta por dia útil")).toBeTruthy();
   expect(screen.getByText(/ADR-0002/)).toBeTruthy();

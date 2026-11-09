@@ -26,16 +26,9 @@ type Ponto = [number, number];
 
 export function seriesDoGrafico(analise: Analise): { nome: string; pontos: Ponto[]; tracejada: boolean }[] {
   const series = [];
-  const liquido = analise.curva.filter((p) => p.liquido !== null);
-  if (liquido.length > 0)
-    series.push({
-      nome: "Vencimento (líquido)",
-      pontos: liquido.map((p): Ponto => [p.spot, p.liquido as number]),
-      tracejada: false,
-    });
   const resultado = analise.curva.map((p): Ponto => [p.spot, p.resultado ?? p.payoff]);
   series.push({
-    nome: analise.no_vencimento === null ? "Vencimento (bruto, sem prêmio)" : "Vencimento (bruto)",
+    nome: analise.no_vencimento === null ? "Vencimento (sem prêmio)" : "Vencimento",
     pontos: resultado,
     tracejada: false,
   });

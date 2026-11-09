@@ -28,24 +28,22 @@ __all__ = ["renda_items"]
 
 _PORQUE = {
     "venda_coberta": (
-        "Venda coberta de {serie}: o prêmio de {premio} por ação rende {anual_liquido} ao ano, "
-        "líquido de custos e IR, com {prob_exercicio} de probabilidade de exercício em "
-        "{dias_uteis}."
+        "Venda coberta de {serie}: o prêmio de {premio} por ação rende {anual} ao ano, com "
+        "{prob_exercicio} de probabilidade de exercício em {dias_uteis}."
     ),
     "put_coberta": (
-        "Put coberta de {serie}: o prêmio de {premio} por ação rende {anual_liquido} ao ano sobre "
-        "o caixa reservado, líquido de custos e IR, com {prob_exercicio} de probabilidade de "
-        "exercício em {dias_uteis}."
+        "Put coberta de {serie}: o prêmio de {premio} por ação rende {anual} ao ano sobre o "
+        "caixa reservado, com {prob_exercicio} de probabilidade de exercício em {dias_uteis}."
     ),
     "trava_alta_put": (
         "Trava de alta com put {serie}: o crédito de {premio} por ação rende {retorno_risco} "
-        "sobre o risco, líquido de custos e IR, com {prob_exercicio} de probabilidade de "
-        "exercício da vendida em {dias_uteis}."
+        "sobre o risco, com {prob_exercicio} de probabilidade de exercício da vendida em "
+        "{dias_uteis}."
     ),
     "trava_baixa_call": (
         "Trava de baixa com call {serie}: o crédito de {premio} por ação rende {retorno_risco} "
-        "sobre o risco, líquido de custos e IR, com {prob_exercicio} de probabilidade de "
-        "exercício da vendida em {dias_uteis}."
+        "sobre o risco, com {prob_exercicio} de probabilidade de exercício da vendida em "
+        "{dias_uteis}."
     ),
 }
 
@@ -84,16 +82,11 @@ def _item(candidate: IncomeCandidate, context: VolContext | None) -> BookItem:
     metricas = candidate.metrics
     vendida = candidate.legs[0]
     if chave in ("venda_coberta", "put_coberta"):
-        assert metricas.net_yield_annual_252 is not None  # du >= 1: há anualização
-        criterio = Metric(
-            "anual_liquido", "anualizado líquido", metricas.net_yield_annual_252, MetricUnit.PERCENT
-        )
+        assert metricas.yield_annual_252 is not None  # du >= 1: há anualização
+        criterio = Metric("anual", "anualizado", metricas.yield_annual_252, MetricUnit.PERCENT)
     else:
         criterio = Metric(
-            "retorno_risco",
-            "retorno sobre o risco, líquido",
-            metricas.net_yield_period,
-            MetricUnit.PERCENT,
+            "retorno_risco", "retorno sobre o risco", metricas.yield_period, MetricUnit.PERCENT
         )
     apoio = [
         Metric("premio", "prêmio por ação", metricas.premium_per_share, MetricUnit.CURRENCY),

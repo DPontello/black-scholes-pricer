@@ -85,8 +85,9 @@ def resultado_no_vencimento(
         breakevens=(),
         max_gain=ganho,
         max_loss=perda,
-        net_max_gain=ganho,
-        net_max_loss=perda,
+        # O líquido diferente do bruto: o book tem de levar o bruto.
+        net_max_gain=None if ganho is None else ganho - 40.0,
+        net_max_loss=None if perda is None else perda - 40.0,
         setup_costs=0.0,
         income_tax_at_max_gain=None,
         probability_of_profit=chance,
@@ -153,6 +154,5 @@ def servico_do_book(
         lambda: carteira,
         CALENDARIO,
         B3_UTC_OFFSET,
-        (TABELA,),
         builder=builder,
     )

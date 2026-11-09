@@ -74,8 +74,8 @@ class RotuloOut(BaseModel):
 
 
 class ResultadoOut(BaseModel):
-    """Ganho e perda líquidos de custos e IR no vencimento; ``null`` em ``ganha_ate``/``perde_ate``
-    = sem limite. A chance de lucro é bruta: o resultado sem custos nem IR."""
+    """Ganho e perda brutos no vencimento, sem custos nem IR; ``null`` em ``ganha_ate`` e
+    ``perde_ate`` = sem limite. A chance de lucro também é bruta."""
 
     ganha_ate: float | None
     perde_ate: float | None

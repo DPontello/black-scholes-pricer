@@ -269,10 +269,9 @@ export const TERMOS: TermoGlossario[] = [
     id: "custos-ir",
     titulo: "Custos e IR",
     texto:
-      "O que sai do resultado além do prêmio. Custos: os emolumentos da B3 em cada ordem e a corretagem, se houver. IR: o imposto de renda sobre o ganho, estimado em 15%. O IR do app é uma estimativa por operação, não o cálculo do imposto.",
+      "O que sai da sua conta além do prêmio. Custos: os emolumentos da B3 em cada ordem e a corretagem, se houver. IR: o imposto de renda sobre o ganho do mês. No Montador e no Book, os números são brutos, como a corretora mostra: os custos aparecem à parte e o IR não é descontado. O IR fica no [IR mensal](ir-mensal), onde o prejuízo de um mês abate o ganho dos seguintes.",
     exemplo: "Numa venda de 100 calls a R$ 1,14 (R$ 114,00), os emolumentos ficam em uns R$ 0,15.",
-    onde:
-      "No Montador (custos de montagem, IR estimado e os números líquidos) e nos números líquidos do Book.",
+    onde: "No Montador, em Custos de montagem; o IR, na Carteira, na aba IR mensal.",
   },
   {
     id: "ir-mensal",
@@ -316,7 +315,7 @@ export const TERMOS: TermoGlossario[] = [
     texto:
       "O retorno de uma operação levado para o prazo de um ano, com juros compostos, para comparar operações de prazos diferentes entre si e com o CDI. Usa 252 [dias úteis](dias-uteis) por ano.",
     exemplo: "Ganhar 1% em 21 dias úteis equivale a uns 12,7% ao ano.",
-    onde: "No critério da família Renda do Book (\"anualizado líquido\").",
+    onde: "No critério da família Renda do Book.",
   },
   {
     id: "retorno-sobre-risco",
@@ -359,7 +358,7 @@ export const TERMOS: TermoGlossario[] = [
     id: "ganho-perda-maximos",
     titulo: "Ganho e perda máximos",
     texto:
-      "O máximo que a operação pode ganhar e o máximo que pode perder no vencimento. No Book e no Montador, eles são líquidos de [custos e IR](custos-ir); nos exemplos do Aprender, são sem custos nem IR. \"Sem limite\" quer dizer que não há teto.",
+      "O máximo que a operação pode ganhar e o máximo que pode perder no vencimento, sem [custos nem IR](custos-ir), como a corretora mostra. \"Sem limite\" quer dizer que não há teto.",
     exemplo:
       "Na venda coberta do exemplo do Aprender, o ganho máximo é R$ 314,00 e a perda máxima é R$ 4.886,00.",
     onde: "Nos cartões e na tabela do Book (ganha até e perde até) e no Montador.",

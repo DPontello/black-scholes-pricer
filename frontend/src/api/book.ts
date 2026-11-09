@@ -18,7 +18,7 @@ export type PernaBook = {
 };
 
 /**
- * Ganho e perda líquidos de custos e IR no vencimento; a chance de lucro é bruta (sem custos nem IR).
+ * Ganho e perda brutos no vencimento, sem custos nem IR (como a corretora mostra); a chance de lucro também.
  * `null` em `ganha_ate`/`perde_ate` = sem limite. Os textos já vêm formatados.
  */
 export type ResultadoBook = {

@@ -2,8 +2,8 @@
 
 A posição é a das ações compradas do perfil ou 100 hipotéticas, rotuladas. A put vai do piso do
 preset até o strike no dinheiro; o collar vende a call na faixa de delta. Critério: custo mensal
-equivalente, ``custo líquido / valor da posição x 21 / dias úteis`` (menor primeiro; collar de
-crédito antes de todos). O custo conta só as ordens de opção: a posição já existe.
+equivalente, ``custo / valor da posição x 21 / dias úteis`` (menor primeiro; collar de crédito
+antes de todos). O custo é só o prêmio pago menos o recebido, sem custos nem IR.
 """
 
 from collections.abc import Mapping, Sequence
@@ -28,16 +28,13 @@ from options_engine.domain.book.scan import (
     ScannedSeries,
     approximation_labels,
     book_legs,
-    evaluate,
     keeps_liquidity,
     price_leg,
     scan_chain,
 )
-from options_engine.domain.income.costs import CostSchedule
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.enums import OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError
-from options_engine.domain.model.strategy import StockLeg
 from options_engine.domain.model.templates import Family
 
 __all__ = ["HYPOTHETICAL_SHARES", "ProtectedPosition", "protection_items"]
@@ -71,7 +68,6 @@ def protection_items(
     chain: OptionChain,
     position: ProtectedPosition,
     settings: BookSettings,
-    schedule: CostSchedule,
     business_days: Mapping[date, int],
 ) -> FamilyResult:
     lote = position.quantity // _LOTE * _LOTE
@@ -91,7 +87,7 @@ def protection_items(
     for vencimento in vencimentos:
         for chave, pedido in _candidatas(vencimento, settings, lote):
             pernas = _precificar(vencimento, settings, fora, pedido)
-            item = pernas and _item(chain, position, schedule, vencimento, chave, pernas, lote)
+            item = pernas and _item(chain, position, vencimento, chave, pernas, lote)
             if item:
                 itens.append(item)
     return FamilyResult.of(itens, fora)
@@ -136,32 +132,21 @@ def _precificar(
 def _item(
     chain: OptionChain,
     position: ProtectedPosition,
-    schedule: CostSchedule,
     expiry: ScannedExpiry,
     chave: str,
     pernas: list[PricedLeg],
     lote: int,
 ) -> BookItem:
     spot = chain.underlying.spot
-    preco = position.average_price if position.average_price is not None else spot
-    resultado = evaluate(
-        chave,
-        pernas,
-        chain,
-        expiry,
-        schedule,
-        stock=StockLeg(position.underlying, Side.BUY, lote, preco),
-        stock_already_held=True,
-    )
     caixa_opcoes = fsum(
         leg.premium.premium * leg.quantity * (1.0 if leg.side is Side.SELL else -1.0)
         for leg in pernas
     )
-    custo = resultado.setup_costs - caixa_opcoes
+    custo = -caixa_opcoes
     valor = spot * lote
     put = pernas[0].series
     apoio = [
-        Metric("custo", "custo líquido da proteção", custo, MetricUnit.CURRENCY),
+        Metric("custo", "custo da proteção", custo, MetricUnit.CURRENCY),
         Metric("custo_pct", "custo em % da posição", custo / valor, MetricUnit.PERCENT),
         Metric("piso", "piso por ação", put.strike, MetricUnit.CURRENCY),
         Metric("piso_pct", "piso em % do spot", put.strike / spot, MetricUnit.PERCENT),
@@ -179,7 +164,7 @@ def _item(
         ]
         frase = (
             f"{posicao}: o collar {put.symbol}/{call.symbol} trava o piso em {{piso}} "
-            "({piso_pct} do spot) e o teto em {teto} ({teto_pct}), com custo líquido de {custo} "
+            "({piso_pct} do spot) e o teto em {teto} ({teto_pct}), com custo de {custo} "
             "({custo_pct} da posição), o equivalente a {custo_mensal} ao mês."
         )
     else:

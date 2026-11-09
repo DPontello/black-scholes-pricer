@@ -19,8 +19,7 @@ from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.templates import Family
 from tests._tolerances import ABS_MATH_IDENTITY_FLOOR, REL_MATH_IDENTITY, assert_close
 from tests.application._mercado_falso import NOVEMBRO, serie
-from tests.book._cadeias import DEZEMBRO, MODERADO, TABELA, cadeia_larga, du
-from tests.income._builders import zero_cost_schedule
+from tests.book._cadeias import DEZEMBRO, MODERADO, cadeia_larga, du
 
 DIAS = {NOVEMBRO: du(NOVEMBRO), DEZEMBRO: du(DEZEMBRO)}
 LARGO = replace(MODERADO, max_spread_pct=1.5)
@@ -34,7 +33,7 @@ def _perto(atual: float, esperado: float) -> None:
 
 
 def _baratas(contexto: VolContext, chain: OptionChain | None = None) -> FamilyResult:
-    return cheap_options(chain or cadeia_larga(), contexto, LARGO, TABELA, DIAS)
+    return cheap_options(chain or cadeia_larga(), contexto, LARGO, DIAS)
 
 
 def _visao(
@@ -44,7 +43,6 @@ def _visao(
         chain or cadeia_larga(),
         view,
         campos.get("settings", LARGO),  # type: ignore[arg-type]  # justificativa: kwargs de teste
-        campos.get("tabela", TABELA),  # type: ignore[arg-type]  # justificativa: idem
         DIAS,
     )
 
@@ -84,9 +82,7 @@ def test_sem_visao_vazio_com_iv_acima_da_hv_ou_rank_alto_ou_sem_rank() -> None:
 
 
 def test_sem_visao_respeita_o_risco_maximo() -> None:
-    resultado = cheap_options(
-        cadeia_larga(), VOL_BARATA, replace(LARGO, max_risk=1.0), TABELA, DIAS
-    )
+    resultado = cheap_options(cadeia_larga(), VOL_BARATA, replace(LARGO, max_risk=1.0), DIAS)
     assert resultado.items == ()
 
 
@@ -94,11 +90,12 @@ def test_sem_visao_respeita_o_risco_maximo() -> None:
 
 
 def test_visao_de_alta_ordena_call_e_trava_pelo_resultado_no_alvo_sobre_o_risco() -> None:
-    """Sem custos, alvo 33: a call 30 custa d = ask x 100 e dá 300 - d; a trava 30/34 custa
-    (ask 30 - bid 34) x 100 e dá 300 - débito; o critério é o resultado sobre o débito."""
+    """Bruto, sem custos nem IR, alvo 33: a call 30 custa d = ask x 100 e dá 300 - d; a trava
+    30/34 custa (ask 30 - bid 34) x 100 e dá 300 - débito; o critério é o resultado sobre o
+    débito."""
     chain = cadeia_larga()
     q = {quote.contract.symbol: quote for quote in chain.quotes}
-    itens = _por_simbolos(_visao(chain=chain, tabela=zero_cost_schedule()).items)
+    itens = _por_simbolos(_visao(chain=chain).items)
 
     call = itens[("PETRK300",)]
     debito_call = 100 * q["PETRK300"].ask  # type: ignore[operator]

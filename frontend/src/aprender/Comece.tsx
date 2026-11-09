@@ -32,7 +32,7 @@ export const PASSOS: Passo[] = [
   {
     titulo: "Confira e ajuste no Montador",
     texto:
-      "Em \"Abrir no montador\", a operação abre com os preços do momento. Confira o resultado no vencimento, o [ganho e a perda máximos](ganho-perda-maximos), os [custos e o IR](custos-ir) e a [chance de lucro](chance-de-lucro). Mude as pernas se quiser e salve como simulação.",
+      "Em \"Abrir no montador\", a operação abre com os preços do momento. Confira o resultado no vencimento, o [ganho e a perda máximos](ganho-perda-maximos), os [custos](custos-ir) e a [chance de lucro](chance-de-lucro). Mude as pernas se quiser e salve como simulação.",
     link: { para: "/montador", nome: "Abrir o Montador" },
   },
   {

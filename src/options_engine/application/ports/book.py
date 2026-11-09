@@ -18,8 +18,8 @@ __all__ = ["BookEntry", "BookFamilyView", "BookOutcome", "BookUseCase", "BookVie
 
 @dataclass(frozen=True, slots=True)
 class BookOutcome:
-    """Ganho e perda líquidos de custos e IR no vencimento, em moeda; ``max_loss`` positivo,
-    ``None`` = sem limite. A chance de lucro é bruta (sem custos nem IR)."""
+    """Ganho e perda brutos no vencimento (sem custos nem IR, como a corretora mostra), em moeda;
+    ``max_loss`` positivo, ``None`` = sem limite. A chance de lucro também é bruta."""
 
     max_gain: float | None
     max_loss: float | None

@@ -3,7 +3,7 @@
 Sem visão: as calls e puts com delta (módulo) de 0,30 a 0,60, IV da série abaixo da HV 21 e IV
 rank até 30%, rotuladas como não direcionais. Com visão (ativo, direção, alvo e vencimento): a
 compra a seco e as travas de débito (comprada entre o spot e o alvo, vendida no alvo ou depois,
-de 1 a 3 strikes de largura), pelo resultado líquido no alvo sobre o risco líquido.
+de 1 a 3 strikes de largura), pelo resultado no alvo sobre o risco, brutos (sem custos nem IR).
 """
 
 from collections.abc import Mapping, Sequence
@@ -34,7 +34,6 @@ from options_engine.domain.book.scan import (
     price_leg,
     scan_chain,
 )
-from options_engine.domain.income.costs import CostSchedule
 from options_engine.domain.kernel.black_scholes import d1_d2
 from options_engine.domain.kernel.distributions import norm_cdf
 from options_engine.domain.model.chain import OptionChain
@@ -73,7 +72,6 @@ def cheap_options(
     chain: OptionChain,
     context: VolContext,
     settings: BookSettings,
-    schedule: CostSchedule,
     business_days: Mapping[date, int],
 ) -> FamilyResult:
     """Sem visão: maior desconto da vol primeiro; vazio sem IV rank ou com rank acima de 30%."""
@@ -89,7 +87,7 @@ def cheap_options(
             if iv is None or iv >= context.hv21 or not baixo <= abs(serie.delta) <= alto:
                 continue
             perna = _precificar(vencimento, settings, fora, (serie, Side.BUY, _LOTE))
-            item = perna and _barata(chain, context, settings, schedule, vencimento, perna, iv)
+            item = perna and _barata(chain, context, settings, vencimento, perna, iv)
             if item:
                 itens.append(item)
     return FamilyResult.of(itens, fora)
@@ -99,7 +97,6 @@ def directional_items(
     chain: OptionChain,
     view: DirectionalView,
     settings: BookSettings,
-    schedule: CostSchedule,
     business_days: Mapping[date, int],
 ) -> FamilyResult:
     """Com visão: maior resultado no alvo sobre o risco primeiro. Alvo do lado errado do spot ou
@@ -141,7 +138,7 @@ def directional_items(
         for chave, pedido in candidatas:
             precificadas = _precificar(vencimento, settings, fora, *pedido)
             item = precificadas and _com_visao(
-                chain, view, settings, schedule, vencimento, chave, precificadas
+                chain, view, settings, vencimento, chave, precificadas
             )
             if item:
                 itens.append(item)
@@ -186,15 +183,14 @@ def _barata(
     chain: OptionChain,
     context: VolContext,
     settings: BookSettings,
-    schedule: CostSchedule,
     expiry: ScannedExpiry,
     pernas: list[PricedLeg],
     iv: float,
 ) -> BookItem | None:
     (perna,) = pernas
     chave = "compra_call" if perna.series.option_type is OptionType.CALL else "compra_put"
-    resultado = evaluate(chave, pernas, chain, expiry, schedule)
-    perda = resultado.net_max_loss
+    resultado = evaluate(chave, pernas, chain, expiry)
+    perda = resultado.max_loss
     if perda is None or -perda > settings.max_risk:
         return None
     assert context.iv_rank is not None  # garantido por cheap_options
@@ -233,13 +229,12 @@ def _com_visao(
     chain: OptionChain,
     view: DirectionalView,
     settings: BookSettings,
-    schedule: CostSchedule,
     expiry: ScannedExpiry,
     chave: str,
     pernas: list[PricedLeg],
 ) -> BookItem | None:
-    resultado = evaluate(chave, pernas, chain, expiry, schedule, target=view.target)
-    perda, no_alvo = resultado.net_max_loss, resultado.net_at_target
+    resultado = evaluate(chave, pernas, chain, expiry, target=view.target)
+    perda, no_alvo = resultado.max_loss, resultado.at_target
     if perda is None or no_alvo is None or no_alvo <= 0.0 or -perda > settings.max_risk:
         return None
     risco = -perda
@@ -255,9 +250,9 @@ def _com_visao(
     alta = view.direction is Direction.ALTA
     apoio = [
         Metric("alvo", "alvo", view.target, MetricUnit.CURRENCY),
-        Metric("resultado_alvo", "resultado líquido no alvo", no_alvo, MetricUnit.CURRENCY),
+        Metric("resultado_alvo", "resultado no alvo", no_alvo, MetricUnit.CURRENCY),
         Metric("debito", "débito", -resultado.net_premium, MetricUnit.CURRENCY),
-        Metric("risco", "risco líquido", risco, MetricUnit.CURRENCY),
+        Metric("risco", "risco", risco, MetricUnit.CURRENCY),
         Metric(
             "prob_alvo",
             "probabilidade de chegar ao alvo",
@@ -270,7 +265,7 @@ def _com_visao(
     simbolos = "/".join(leg.series.symbol for leg in pernas)
     frase = (
         f"Visão de {view.direction.value} até {{alvo}}: {template(chave).name} {simbolos} "
-        "custa {debito} e dá {resultado_alvo} líquidos se o ativo chegar ao alvo "
+        "custa {debito} e dá {resultado_alvo} se o ativo chegar ao alvo "
         "({retorno_risco} do risco), com {prob_alvo} de probabilidade de chegar lá pela vol "
         "implícita."
     )

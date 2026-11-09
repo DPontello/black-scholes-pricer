@@ -16,7 +16,7 @@ type Props = {
 
 // O termo do glossário que explica o critério de cada família; critério sem termo fica sem "?".
 export const TERMO_DO_CRITERIO: Record<string, string> = {
-  anual_liquido: "anualizado",
+  anual: "anualizado",
   retorno_risco: "retorno-sobre-risco",
   ganho_risco: "ganho-perda-maximos",
   dist_be: "empate",

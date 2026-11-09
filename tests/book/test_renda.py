@@ -30,7 +30,7 @@ def _simbolos(itens: tuple[BookItem, ...]) -> set[tuple[str, ...]]:
     return {tuple(leg.symbol for leg in i.legs) for i in itens}
 
 
-def test_venda_coberta_vira_item_pelo_anualizado_liquido_com_o_porque() -> None:
+def test_venda_coberta_vira_item_pelo_anualizado_bruto_com_o_porque() -> None:
     r = ranking(cadeia_larga())
     candidato = _do_ranking(r, "PETRK320")
 
@@ -44,8 +44,8 @@ def test_venda_coberta_vira_item_pelo_anualizado_liquido_com_o_porque() -> None:
     assert (item.expiry, item.business_days) == (NOVEMBRO, candidato.metrics.business_days)
     assert item.stock == BookStock(Side.BUY, 100, StockOrigin.COMPRA)
     assert [(leg.side, leg.quantity) for leg in item.legs] == [(Side.SELL, 100)]
-    assert item.criterion.key == "anual_liquido"
-    assert item.criterion.value == candidato.metrics.net_yield_annual_252
+    assert item.criterion.key == "anual"
+    assert item.criterion.value == candidato.metrics.yield_annual_252
     numeros = {m.key: m.value for m in item.metrics}
     assert numeros["premio"] == candidato.metrics.premium_per_share
     assert numeros["prob_exercicio"] == candidato.legs[0].exercise_probability
@@ -53,7 +53,7 @@ def test_venda_coberta_vira_item_pelo_anualizado_liquido_com_o_porque() -> None:
     assert "iv_rank" not in numeros
     texto = item.render_reason(_texto)
     assert "PETRK320" in texto
-    assert f"<anual_liquido={candidato.metrics.net_yield_annual_252:.4f}>" in texto
+    assert f"<anual={candidato.metrics.yield_annual_252:.4f}>" in texto
     assert f"<premio={candidato.metrics.premium_per_share:.4f}>" in texto
 
 
@@ -65,7 +65,7 @@ def test_trava_de_credito_vira_item_pelo_retorno_sobre_o_risco() -> None:
 
     assert (item.template_key, item.expiry, item.stock) == ("trava_alta_put", DEZEMBRO, None)
     assert item.criterion.key == "retorno_risco"
-    assert item.criterion.value == candidato.metrics.net_yield_period
+    assert item.criterion.value == candidato.metrics.yield_period
     assert "PETRX280/PETRX260" in item.render_reason(_texto)
 
 
