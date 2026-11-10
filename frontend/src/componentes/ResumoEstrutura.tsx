@@ -1,6 +1,7 @@
 import type { Analise } from "../api/montador";
 import { formatarDelta, formatarPreco, formatarVol } from "../formatacao";
 import { Ajuda } from "./Ajuda";
+import { GradeCenarios } from "./GradeCenarios";
 
 function reais(v: number): string {
   return `R$ ${formatarPreco(Math.abs(v))}`;
@@ -58,25 +59,37 @@ function maximo(v: number | null): string {
 
 export function ResumoEstrutura({ analise }: { analise: Analise }) {
   const v = analise.no_vencimento;
-  const gregas = analise.hoje?.gregas;
   return (
     <section className="resumo-estrutura">
       <p className="frase">{frase(analise)}</p>
       {v !== null && (
-        <div className="numeros">
+        <div className="numeros numeros-grandes">
           <Numero rotulo="Ganho máximo" valor={maximo(v.ganho_max)} termo="ganho-perda-maximos" />
           <Numero rotulo="Perda máxima" valor={maximo(v.perda_max)} />
-          <Numero
-            rotulo="Custos de montagem"
-            valor={`R$ ${formatarPreco(v.custos_montagem)}`}
-            dica="Emolumentos da B3 e corretagem, pela tabela da ADR-0005; não saem do ganho nem da perda"
-            termo="custos-ir"
-          />
           <Numero
             rotulo="Chance de lucro"
             valor={formatarVol(v.probabilidade)}
             dica="Probabilidade risco-neutra no vencimento, pela vol do smile no dinheiro"
             termo="chance-de-lucro"
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function DetalhesEstrutura({ analise }: { analise: Analise }) {
+  const v = analise.no_vencimento;
+  const gregas = analise.hoje?.gregas;
+  return (
+    <>
+      {v !== null && (
+        <div className="numeros">
+          <Numero
+            rotulo="Custos de montagem"
+            valor={`R$ ${formatarPreco(v.custos_montagem)}`}
+            dica="Emolumentos da B3 e corretagem, pela tabela da ADR-0005; não saem do ganho nem da perda"
+            termo="custos-ir"
           />
           <Numero rotulo="Dias úteis" valor={String(analise.dias_uteis)} />
         </div>
@@ -104,6 +117,15 @@ export function ResumoEstrutura({ analise }: { analise: Analise }) {
           />
         </div>
       )}
+      {analise.hoje !== null && <GradeCenarios grade={analise.hoje.grade} />}
+    </>
+  );
+}
+
+export function AvisosEstrutura({ analise }: { analise: Analise }) {
+  if (analise.hoje_indisponivel === null && analise.avisos.length === 0) return null;
+  return (
+    <>
       {analise.hoje_indisponivel !== null && (
         <p className="secundario">Sem avaliação de hoje: {analise.hoje_indisponivel}.</p>
       )}
@@ -116,6 +138,6 @@ export function ResumoEstrutura({ analise }: { analise: Analise }) {
           ))}
         </ul>
       )}
-    </section>
+    </>
   );
 }

@@ -9,18 +9,24 @@ import {
   formatarPreco,
   formatarVol,
 } from "../formatacao";
+import { PREFERENCIA_COLUNAS, usePreferencia } from "../preferencias";
 import { Ajuda } from "./Ajuda";
 
 type Props = {
   ativo: string | null;
   cadeia: Cadeia | null;
   indisponivel: CadeiaIndisponivel | null;
-  onVencimentos: (datas: string[]) => void;
+  enxuta?: boolean;
+  vencimento?: string;
+  onVencimentos?: (datas: string[]) => void;
   onEscolherSerie?: (serie: Serie) => void;
 };
 
 const FONTES = { ao_vivo: "Ao vivo (Tryd)", atrasado: "Atrasado", fim_de_dia: "Fim de dia (B3)" };
 const AJUDA_DA_COLUNA: Record<string, string> = { IV: "iv", Delta: "delta" };
+const ROTULOS_CALL = ["Compra", "Venda", "Último", "IV", "Delta", "Neg."];
+const ROTULOS_PUT = ["Neg.", "Delta", "IV", "Último", "Venda", "Compra"];
+const nada = () => {};
 
 type Linha = { strike: number; call: Serie | undefined; put: Serie | undefined };
 
@@ -47,7 +53,15 @@ function maisPerto(strikes: number[], spot: number): number | null {
   return melhor;
 }
 
-function Lado({ serie, espelho }: { serie: Serie | undefined; espelho: boolean }) {
+function Lado({
+  serie,
+  espelho,
+  completas,
+}: {
+  serie: Serie | undefined;
+  espelho: boolean;
+  completas: boolean;
+}) {
   const celulas = [
     <td key="compra" className="num compra" title={serie?.ticker}>
       {formatarPreco(serie?.compra ?? null)}
@@ -68,7 +82,8 @@ function Lado({ serie, espelho }: { serie: Serie | undefined; espelho: boolean }
       {serie === undefined ? "—" : formatarInteiro(serie.negocios)}
     </td>,
   ];
-  return <>{espelho ? celulas.reverse() : celulas}</>;
+  const visiveis = completas ? celulas : celulas.slice(0, 2); // só compra e venda
+  return <>{espelho ? visiveis.reverse() : visiveis}</>;
 }
 
 function EscolhaVencimentos({
@@ -134,10 +149,13 @@ export function TabelaCadeia({
   ativo,
   cadeia,
   indisponivel,
-  onVencimentos,
+  enxuta = false,
+  vencimento: vencimentoDeFora,
+  onVencimentos = nada,
   onEscolherSerie,
 }: Props) {
   const [aba, setAba] = useState<string | null>(null);
+  const [colunasCompletas, setColunasCompletas] = usePreferencia(PREFERENCIA_COLUNAS);
 
   if (ativo === null) {
     return <p className="secundario">Escolha um ativo na lista para ver a cadeia de opções.</p>;
@@ -153,7 +171,11 @@ export function TabelaCadeia({
     return <p className="secundario">Carregando a cadeia de {ativo}…</p>;
   }
 
-  const vencimento = cadeia.vencimentos.find((v) => v.data === aba) ?? cadeia.vencimentos[0];
+  const completas = !enxuta || colunasCompletas;
+  const colunasPorLado = completas ? 6 : 2;
+  const vencimento = enxuta
+    ? cadeia.vencimentos.find((v) => v.data === vencimentoDeFora)
+    : (cadeia.vencimentos.find((v) => v.data === aba) ?? cadeia.vencimentos[0]);
   const atm =
     vencimento === undefined
       ? null
@@ -170,22 +192,41 @@ export function TabelaCadeia({
           ({FONTES[cadeia.fonte]}, {formatarHora(cadeia.hora)})
         </span>
       </header>
-      <EscolhaVencimentos cadeia={cadeia} onVencimentos={onVencimentos} onAdicionado={setAba} />
-      <div className="abas" role="tablist">
-        {cadeia.vencimentos.map((v) => (
-          <button
-            key={v.data}
-            type="button"
-            role="tab"
-            aria-selected={v === vencimento}
-            onClick={() => setAba(v.data)}
-          >
-            {formatarData(v.data).slice(0, 5)} ({v.dias_uteis} du)
-          </button>
-        ))}
-      </div>
+      {enxuta ? (
+        <button
+          type="button"
+          className="link"
+          aria-expanded={colunasCompletas}
+          onClick={() => setColunasCompletas(!colunasCompletas)}
+        >
+          {colunasCompletas ? "esconder" : "mostrar"} IV, delta e negócios
+        </button>
+      ) : (
+        <>
+          <EscolhaVencimentos cadeia={cadeia} onVencimentos={onVencimentos} onAdicionado={setAba} />
+          <div className="abas" role="tablist">
+            {cadeia.vencimentos.map((v) => (
+              <button
+                key={v.data}
+                type="button"
+                role="tab"
+                aria-selected={v === vencimento}
+                onClick={() => setAba(v.data)}
+              >
+                {formatarData(v.data).slice(0, 5)} ({v.dias_uteis} du)
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {vencimento === undefined ? (
-        <p className="secundario">Nenhum vencimento com séries no cadastro.</p>
+        <p className="secundario">
+          {enxuta && vencimentoDeFora !== undefined ? (
+            <>Carregando o vencimento {formatarData(vencimentoDeFora).slice(0, 5)}…</>
+          ) : (
+            "Nenhum vencimento com séries no cadastro."
+          )}
+        </p>
       ) : vencimento.series.length === 0 ? (
         <p className="secundario">Nenhuma série deste vencimento chegou ainda.</p>
       ) : (
@@ -193,18 +234,18 @@ export function TabelaCadeia({
           <thead>
             <tr>
               {onEscolherSerie && <th />}
-              <th colSpan={6} className="lado-call">
+              <th colSpan={colunasPorLado} className="lado-call">
                 CALLS
               </th>
               <th />
-              <th colSpan={6} className="lado-put">
+              <th colSpan={colunasPorLado} className="lado-put">
                 PUTS
               </th>
               {onEscolherSerie && <th />}
             </tr>
             <tr>
               {onEscolherSerie && <th />}
-              {["Compra", "Venda", "Último", "IV", "Delta", "Neg."].map((c) => (
+              {ROTULOS_CALL.slice(0, colunasPorLado).map((c) => (
                 <th key={`call-${c}`} className="num">
                   {c}
                   {AJUDA_DA_COLUNA[c] !== undefined && (
@@ -216,7 +257,7 @@ export function TabelaCadeia({
                 </th>
               ))}
               <th className="num">Strike</th>
-              {["Neg.", "Delta", "IV", "Último", "Venda", "Compra"].map((c) => (
+              {ROTULOS_PUT.slice(-colunasPorLado).map((c) => (
                 <th key={`put-${c}`} className="num">
                   {c}
                 </th>
@@ -231,9 +272,9 @@ export function TabelaCadeia({
                 className={linha.strike === atm ? "no-dinheiro" : undefined}
               >
                 {onEscolherSerie && <Escolher serie={linha.call} onEscolher={onEscolherSerie} />}
-                <Lado serie={linha.call} espelho={false} />
+                <Lado serie={linha.call} espelho={false} completas={completas} />
                 <td className="num strike">{formatarPreco(linha.strike)}</td>
-                <Lado serie={linha.put} espelho />
+                <Lado serie={linha.put} espelho completas={completas} />
                 {onEscolherSerie && <Escolher serie={linha.put} onEscolher={onEscolherSerie} />}
               </tr>
             ))}

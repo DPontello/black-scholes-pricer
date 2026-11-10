@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, test } from "vitest";
 
 import { analiseCoberta } from "../testes/analise";
-import { frase, ResumoEstrutura } from "./ResumoEstrutura";
+import { AvisosEstrutura, DetalhesEstrutura, frase, ResumoEstrutura } from "./ResumoEstrutura";
 
 // Os "?" dos rótulos são links: o componente precisa de um roteador em volta.
 function render(ui: ReactElement) {
@@ -33,23 +33,41 @@ function numero(rotulo: string): string {
   return screen.getByText(rotulo).closest(".numero")?.querySelector("strong")?.textContent ?? "";
 }
 
-test("ganho e perda máximos são os brutos, como na corretora; custos à parte e sem IR", () => {
+test("ganho e perda máximos são os brutos, como na corretora; só os três números, sem custos nem IR", () => {
   render(<ResumoEstrutura analise={analiseCoberta()} />);
   expect(numero("Ganho máximo")).toBe("R$ 211,00");
   expect(numero("Perda máxima")).toBe("R$ -5.080,00");
-  expect(numero("Custos de montagem")).toBe("R$ 1,81");
+  expect(numero("Chance de lucro")).toBe("68,0%");
+  expect(screen.queryByText("Custos de montagem")).toBeNull();
   expect(screen.queryByText(/IR/)).toBeNull();
 });
 
-test("números, gregas e avisos aparecem; sem hoje, o motivo", () => {
-  const { rerender } = render(<ResumoEstrutura analise={analiseCoberta()} />);
-  expect(screen.getByText("68,0%")).toBeTruthy();
+test("os detalhes trazem custos, dias úteis, gregas e a grade, só com hoje", () => {
+  const { rerender } = render(<DetalhesEstrutura analise={analiseCoberta()} />);
+  expect(numero("Custos de montagem")).toBe("R$ 1,81");
+  expect(numero("Dias úteis")).toBe("15");
+  expect(screen.getByText("Delta")).toBeTruthy();
   expect(screen.getByText("Theta por dia útil")).toBeTruthy();
+  expect(
+    screen.getByText("Resultado hoje se o preço e a volatilidade mudarem agora"),
+  ).toBeTruthy();
+  rerender(
+    <DetalhesEstrutura analise={analiseCoberta({ hoje: null, hoje_indisponivel: "put americana" })} />,
+  );
+  expect(numero("Custos de montagem")).toBe("R$ 1,81");
+  expect(screen.queryByText("Theta por dia útil")).toBeNull();
+  expect(screen.queryByText(/Resultado hoje se/)).toBeNull();
+});
+
+test("os avisos e, sem hoje, o motivo; sem nenhum dos dois, nada é desenhado", () => {
+  const { container, rerender } = render(<AvisosEstrutura analise={analiseCoberta()} />);
   expect(screen.getByText(/ADR-0002/)).toBeTruthy();
   rerender(
-    <ResumoEstrutura analise={analiseCoberta({ hoje: null, hoje_indisponivel: "put americana" })} />,
+    <AvisosEstrutura analise={analiseCoberta({ hoje: null, hoje_indisponivel: "put americana" })} />,
   );
   expect(screen.getByText("Sem avaliação de hoje: put americana.")).toBeTruthy();
+  rerender(<AvisosEstrutura analise={analiseCoberta({ avisos: [] })} />);
+  expect(container.innerHTML).toBe("");
 });
 
 test("melhor caso negativo diz que ainda perde, e zero diz que empata", () => {
@@ -65,18 +83,17 @@ test("melhor caso negativo diz que ainda perde, e zero diz que empata", () => {
   expect(frase(zero)).toContain("no melhor caso empata");
 });
 
-test("os rótulos com termo no glossário ganham um '?', sem repetir o mesmo termo lado a lado", () => {
-  render(<ResumoEstrutura analise={analiseCoberta()} />);
-  const destinos = screen
+// Os destinos dos "?" na ordem em que aparecem.
+function destinos(): (string | undefined)[] {
+  return screen
     .getAllByRole("link", { name: /^O que é/ })
     .map((link) => link.getAttribute("href")?.replace("/aprender/termos#", ""));
-  expect(destinos).toEqual([
-    "ganho-perda-maximos",
-    "custos-ir",
-    "chance-de-lucro",
-    "delta",
-    "gamma",
-    "theta",
-    "vega",
-  ]);
+}
+
+test("os rótulos com termo no glossário ganham um '?', sem repetir o mesmo termo lado a lado", () => {
+  const { unmount } = render(<ResumoEstrutura analise={analiseCoberta()} />);
+  expect(destinos()).toEqual(["ganho-perda-maximos", "chance-de-lucro"]);
+  unmount();
+  render(<DetalhesEstrutura analise={analiseCoberta()} />);
+  expect(destinos()).toEqual(["custos-ir", "delta", "gamma", "theta", "vega"]);
 });

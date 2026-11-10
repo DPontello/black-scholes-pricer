@@ -17,10 +17,8 @@ import {
   type Simulacao,
   sugerir,
 } from "../api/montador";
+import { CartaoResultado } from "../componentes/CartaoResultado";
 import { FaixaRolagem } from "../componentes/FaixaRolagem";
-import { GradeCenarios } from "../componentes/GradeCenarios";
-import { GraficoPayoff } from "../componentes/GraficoPayoff";
-import { ResumoEstrutura } from "../componentes/ResumoEstrutura";
 import { TabelaCadeia } from "../componentes/TabelaCadeia";
 import { TabelaPernas } from "../componentes/TabelaPernas";
 import { formatarData, formatarInstante, hojeNaB3 } from "../formatacao";
@@ -31,7 +29,6 @@ const FAMILIAS: Record<Modelo["familia"], string> = {
   volatilidade: "Volatilidade",
   protecao: "Proteção",
 };
-const FONTES = { ao_vivo: "ao vivo (Tryd)", atrasado: "atrasado", fim_de_dia: "fim de dia (B3)" };
 // Espera a digitação parar antes de pedir a análise de novo.
 const ESPERA_MS = 300;
 
@@ -51,10 +48,15 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
   const ativo = busca.get("ativo") ?? aoVivo.cotacoes[0]?.ativo ?? null;
   // O book (e a rolagem dos Alertas) abre um item aqui pelo estado da rota; o montador reprecifica
   // pela cadeia do momento.
-  const estadoDaRota = useLocation().state as { pedido?: PedidoAnalise; rolagem?: Rolagem } | null;
+  const estadoDaRota = useLocation().state as {
+    pedido?: PedidoAnalise;
+    vencimento?: string;
+    rolagem?: Rolagem;
+  } | null;
   const doBook = estadoDaRota?.pedido ?? null;
   const [rolagem, setRolagem] = useState<Rolagem | null>(estadoDaRota?.rolagem ?? null);
-  const [vencimentos, setVencimentos] = useState<string[] | null>(null);
+  // Ticker → vencimento das séries que a cadeia do ativo já trouxe.
+  const [datasDasSeries, setDatasDasSeries] = useState<Map<string, string>>(() => new Map());
   const [pedido, setPedido] = useState<PedidoAnalise>(doBook ?? vazio(ativo));
   const [analise, setAnalise] = useState<Analise | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -74,13 +76,10 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
     if (pendente.current !== null) setChegadas((n) => n + 1);
     setPedido(pendente.current ?? vazio(ativo));
     pendente.current = null;
-    setVencimentos(null);
+    setDatasDasSeries(new Map());
     setAnalise(null);
   }, [ativo]);
 
-  useEffect(() => {
-    seguirCadeia(ativo, vencimentos);
-  }, [ativo, vencimentos, seguirCadeia]);
   useEffect(() => () => seguirCadeia(null), [seguirCadeia]);
 
   function recarregarSimulacoes() {
@@ -101,7 +100,7 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
     if (chegadas > 0) rolarPara.current = pedido;
   }, [chegadas]);
 
-  // Abaixo de 1780 px o resultado fica sob a cadeia, e o clique pareceria não fazer nada.
+  // Abaixo de 1280 px o resultado fica sob a cadeia, e o clique pareceria não fazer nada.
   useEffect(() => {
     if (rolarPara.current !== pedido || resultado.current === null) return;
     rolarPara.current = null;
@@ -138,23 +137,48 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
   }, [pedido, horaDaCadeia]);
 
   const cadeiaDoAtivo = aoVivo.cadeia?.ativo === ativo ? aoVivo.cadeia : null;
-  const blocos = cadeiaDoAtivo?.vencimentos.map((v) => v.data) ?? [];
-  const [vencimentoEscolhido, setVencimentoEscolhido] = useState<string | null>(null);
-  // Sem escolha, o primeiro mensal: a semanal de poucos dias raramente é o que o modelo quer.
-  const mensal = blocos.find(
-    (data) => cadeiaDoAtivo?.disponiveis.find((d) => d.data === data)?.semanal === false,
+  const disponiveis = cadeiaDoAtivo?.disponiveis ?? [];
+  const [vencimentoEscolhido, setVencimentoEscolhido] = useState<string | null>(
+    estadoDaRota?.vencimento ?? estadoDaRota?.rolagem?.vencimento_novo ?? null,
   );
-  const vencimentoDoModelo =
-    vencimentoEscolhido !== null && blocos.includes(vencimentoEscolhido)
+  // Sem escolha, o primeiro mensal: a semanal de poucos dias raramente é o que o modelo quer.
+  const vencimento =
+    vencimentoEscolhido !== null && disponiveis.some((d) => d.data === vencimentoEscolhido)
       ? vencimentoEscolhido
-      : (mensal ?? blocos[0]);
+      : (disponiveis.find((d) => d.semanal === false) ?? disponiveis[0])?.data;
+  // O vencimento escolhido pode ainda não ter chegado na cadeia, ou ter chegado sem séries enquanto o
+  // Tryd carrega: o backend responderia "sem séries".
+  const vencimentoNaCadeia =
+    cadeiaDoAtivo?.vencimentos.some((v) => v.data === vencimento && v.series.length > 0) ?? false;
+
+  useEffect(() => {
+    if (cadeiaDoAtivo === null) return;
+    setDatasDasSeries((atual) => {
+      const novas = cadeiaDoAtivo.vencimentos.flatMap((v) =>
+        v.series.filter((s) => !atual.has(s.ticker)).map((s) => [s.ticker, v.data] as const),
+      );
+      return novas.length === 0 ? atual : new Map([...atual, ...novas]);
+    });
+  }, [cadeiaDoAtivo]);
+
+  // O Tryd só assina as séries dos vencimentos pedidos: o das pernas postas segue junto com o do seletor.
+  const acompanhados =
+    vencimento === undefined
+      ? null
+      : [
+          ...new Set([vencimento, ...pedido.pernas.flatMap((p) => datasDasSeries.get(p.ticker) ?? [])]),
+        ].sort();
+  const chaveAcompanhados = acompanhados?.join(",");
+  useEffect(() => {
+    seguirCadeia(ativo, acompanhados);
+  }, [ativo, chaveAcompanhados, seguirCadeia]);
 
   const nomeDoModeloDoEndereco = modelos.find((m) => m.chave === modeloDoEndereco)?.nome;
 
   useEffect(() => {
     if (modeloDoEndereco === null || modelos.length === 0) return;
     const conhecido = modelos.some((m) => m.chave === modeloDoEndereco);
-    if (conhecido && (ativo === null || vencimentoDoModelo === undefined)) return;
+    if (conhecido && (ativo === null || !vencimentoNaCadeia)) return;
     setModeloDoEndereco(null);
     setBusca(
       (atual) => {
@@ -165,12 +189,12 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
       { replace: true },
     );
     if (conhecido) void escolherModelo(modeloDoEndereco);
-  }, [modeloDoEndereco, modelos, ativo, vencimentoDoModelo]);
+  }, [modeloDoEndereco, modelos, ativo, vencimento, vencimentoNaCadeia]);
 
   async function escolherModelo(chave: string) {
-    if (ativo === null || vencimentoDoModelo === undefined) return;
+    if (ativo === null || vencimento === undefined || !vencimentoNaCadeia) return;
     try {
-      setPedido(await sugerir(ativo, chave, vencimentoDoModelo));
+      setPedido(await sugerir(ativo, chave, vencimento));
       setChegadas((n) => n + 1);
       setErro(null);
     } catch (e) {
@@ -245,14 +269,14 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
         <label>
           Vencimento{" "}
           <select
-            aria-label="Vencimento do modelo"
-            value={vencimentoDoModelo ?? ""}
-            disabled={blocos.length === 0}
+            aria-label="Vencimento"
+            value={vencimento ?? ""}
+            disabled={disponiveis.length === 0}
             onChange={(e) => setVencimentoEscolhido(e.target.value)}
           >
-            {blocos.map((data) => (
-              <option key={data} value={data}>
-                {formatarData(data).slice(0, 5)}
+            {disponiveis.map((d) => (
+              <option key={d.data} value={d.data}>
+                {`${formatarData(d.data).slice(0, 5)}${d.semanal ? " S" : ""}`}
               </option>
             ))}
           </select>
@@ -262,12 +286,10 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
           <select
             aria-label="Modelo pronto"
             value=""
-            disabled={vencimentoDoModelo === undefined}
+            disabled={!vencimentoNaCadeia}
             onChange={(e) => void escolherModelo(e.target.value)}
           >
-            <option value="">
-              {vencimentoDoModelo === undefined ? "aguardando a cadeia" : "escolha"}
-            </option>
+            <option value="">{vencimentoNaCadeia ? "escolha" : "aguardando a cadeia"}</option>
             {Object.entries(FAMILIAS).map(([familia, rotulo]) => (
               <optgroup key={familia} label={rotulo}>
                 {modelos
@@ -313,39 +335,44 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
         </p>
       )}
       <div className="montador-corpo">
-        <div className="montador-cadeia">
+        <div className="cartao montador-cadeia">
           <TabelaCadeia
             ativo={ativo}
             cadeia={aoVivo.cadeia}
             indisponivel={aoVivo.cadeiaIndisponivel}
-            onVencimentos={setVencimentos}
+            enxuta
+            vencimento={vencimento}
             onEscolherSerie={porSerie}
           />
         </div>
         <div className="montador-resultado" ref={resultado}>
-          <TabelaPernas pedido={pedido} analise={analise} onMudar={setPedido} />
-          <div className="acoes-montador">
-            <input
-              aria-label="Nome da simulação"
-              placeholder="nome da simulação"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-            />
-            <button type="button" disabled={vazia || nome.trim() === ""} onClick={() => void salvar()}>
-              Salvar simulação
-            </button>
-            <button
-              type="button"
-              disabled={vazia}
-              onClick={() =>
-                navegar("/carteira", {
-                  state: { registro: rascunhoDaAnalise(pedido, analise, hojeNaB3()) },
-                })
-              }
-            >
-              Registrar como executada
-            </button>
-          </div>
+          {analise !== null && <CartaoResultado analise={analise} />}
+          <section className="cartao cartao-pernas">
+            <TabelaPernas pedido={pedido} analise={analise} onMudar={setPedido} />
+            <div className="acoes-montador">
+              <button
+                type="button"
+                className="botao-principal"
+                disabled={vazia}
+                onClick={() =>
+                  navegar("/carteira", {
+                    state: { registro: rascunhoDaAnalise(pedido, analise, hojeNaB3()) },
+                  })
+                }
+              >
+                Registrar como executada
+              </button>
+              <input
+                aria-label="Nome da simulação"
+                placeholder="nome da simulação"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+              />
+              <button type="button" disabled={vazia || nome.trim() === ""} onClick={() => void salvar()}>
+                Salvar simulação
+              </button>
+            </div>
+          </section>
           {simulacoes.length > 0 && (
             <details className="simulacoes">
               <summary>{simulacoes.length} simulação(ões) salva(s)</summary>
@@ -365,19 +392,6 @@ export function Montador({ aoVivo, seguirCadeia }: Props) {
                 ))}
               </ul>
             </details>
-          )}
-          {analise !== null && (
-            <>
-              <h2>
-                {analise.nome}{" "}
-                <span className="secundario">
-                  vence {formatarData(analise.vencimento)} · preços {FONTES[analise.fonte]}
-                </span>
-              </h2>
-              <ResumoEstrutura analise={analise} />
-              <GraficoPayoff analise={analise} />
-              {analise.hoje !== null && <GradeCenarios grade={analise.hoje.grade} />}
-            </>
           )}
         </div>
       </div>

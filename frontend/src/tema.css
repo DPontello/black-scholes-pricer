@@ -5,10 +5,11 @@
   --borda: #262b36;
   --texto: #e6e8ee;
   --texto-secundario: #9aa3b2;
-  --compra: #1e88e5;
-  --venda: #e53935;
-  --alta: #26a69a;
-  --baixa: #ef5350;
+  --destaque: #1e88e5;
+  --compra: #7fb3e6;
+  --venda: #e09a98;
+  --alta: #5fbfb4;
+  --baixa: #e5807e;
   --atencao: #f9a825;
 
   color-scheme: dark;
@@ -28,7 +29,7 @@ body {
 }
 
 a {
-  color: var(--compra);
+  color: var(--destaque);
 }
 
 .shell {
@@ -87,7 +88,7 @@ a {
 
 .menu-lateral a.active {
   color: var(--texto);
-  border-left-color: var(--compra);
+  border-left-color: var(--destaque);
   background: var(--fundo);
 }
 
@@ -155,7 +156,24 @@ button {
 }
 
 button:hover {
-  border-color: var(--compra);
+  border-color: var(--destaque);
+}
+
+/* Texto --fundo: o branco sobre o --destaque dá só 3,7:1. */
+.botao-principal {
+  background: var(--destaque);
+  border-color: var(--destaque);
+  color: var(--fundo);
+  font-weight: 600;
+}
+
+.botao-principal:hover {
+  border-color: var(--texto);
+}
+
+.botao-principal:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 input {
@@ -315,7 +333,7 @@ button.link {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--compra);
+  color: var(--destaque);
   font-weight: 600;
 }
 
@@ -334,7 +352,7 @@ button.link {
 }
 
 .abas button[aria-selected="true"] {
-  border-color: var(--compra);
+  border-color: var(--destaque);
   background: var(--fundo);
 }
 
@@ -364,7 +382,7 @@ button.link {
 
 .sub-abas a.active {
   color: var(--texto);
-  border-bottom-color: var(--compra);
+  border-bottom-color: var(--destaque);
 }
 
 .operacoes {
@@ -484,12 +502,12 @@ button.link {
 /* Termo do glossário no meio do texto: sublinhado pontilhado, para não parecer um botão. */
 a.termo {
   color: inherit;
-  text-decoration: underline dotted var(--compra);
+  text-decoration: underline dotted var(--destaque);
   text-underline-offset: 0.2em;
 }
 
 a.termo:hover {
-  color: var(--compra);
+  color: var(--destaque);
 }
 
 /* O "?" ao lado de um rótulo: pequeno, para não poluir a tela. */
@@ -511,8 +529,8 @@ a.ajuda {
 
 a.ajuda:hover,
 a.ajuda:focus-visible {
-  border-color: var(--compra);
-  color: var(--compra);
+  border-color: var(--destaque);
+  color: var(--destaque);
 }
 
 .corpo-aprender {
@@ -553,8 +571,8 @@ a.ajuda:focus-visible {
 }
 
 .termo-glossario.termo-alvo {
-  border-color: var(--compra);
-  box-shadow: 0 0 0 1px var(--compra);
+  border-color: var(--destaque);
+  box-shadow: 0 0 0 1px var(--destaque);
 }
 
 .passos {
@@ -632,7 +650,7 @@ a.ajuda:focus-visible {
 
 .vencimentos button[aria-pressed="true"] {
   color: var(--texto);
-  border-color: var(--compra);
+  border-color: var(--destaque);
   background: var(--fundo);
 }
 
@@ -685,16 +703,37 @@ a.ajuda:focus-visible {
   align-items: start;
 }
 
-/* Lado a lado só com folga: cadeia (~855px, medida com a fonte do Linux; o Segoe UI do Windows pode ser mais largo)
-   + gap + 600px do resultado + menu (180px) + respiro do main. */
-@media (min-width: 1780px) {
+.montador-corpo > * {
+  min-width: 0;
+}
+
+/* Lado a lado só com folga: cadeia enxuta (~420px, medida com a fonte do Linux; o Segoe UI do Windows pode ser
+   mais largo) + gap (16) + resultado (480) + menu (180) + respiro do main (40) = 1136px, o que deixa folga a 1280px.
+   Com IV, delta e negócios abertos, a cadeia passa de 420px e rola dentro do próprio cartão. */
+@media (min-width: 1280px) {
   .montador-corpo {
-    grid-template-columns: minmax(0, 1fr) 600px;
+    grid-template-columns: minmax(0, max-content) minmax(480px, 1fr);
   }
 }
 
 .montador-cadeia {
   overflow-x: auto;
+}
+
+.montador-resultado {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* A coluna do resultado pode ficar com o mínimo de 480px (446px úteis no cartão), menos que a tabela de pernas e
+   a grade de cenários; elas rolam dentro do cartão, como a cadeia, e não alargam a página. */
+.montador-resultado .cartao {
+  overflow-x: auto;
+}
+
+.cartao-resultado h2 {
+  margin-top: 0;
 }
 
 .escolher-serie {
@@ -728,6 +767,10 @@ a.ajuda:focus-visible {
   flex-direction: column;
 }
 
+.numeros-grandes strong {
+  font-size: 1.6rem;
+}
+
 .avisos {
   margin: 0.5rem 0;
   padding-left: 1.2rem;
@@ -737,6 +780,10 @@ a.ajuda:focus-visible {
   width: 100%;
   height: 320px;
   margin: 0.75rem 0;
+}
+
+.cartao-resultado .grafico-payoff {
+  height: 260px;
 }
 
 .grade-cenarios caption {
@@ -1075,7 +1122,7 @@ a.ajuda:focus-visible {
   padding: 0.75rem 1rem;
   background: var(--painel);
   border: 1px solid var(--borda);
-  border-left: 4px solid var(--compra);
+  border-left: 4px solid var(--destaque);
   border-radius: 6px;
 }
 
