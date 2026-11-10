@@ -172,7 +172,7 @@ def _entradas(book: BookView) -> list[BookEntry]:
     return [e for f in book.families.values() for e in f.items]
 
 
-def test_item_do_book_leva_o_resultado_liquido_do_montador() -> None:
+def test_item_do_book_leva_o_resultado_bruto_do_montador() -> None:
     montador = MontadorFalso(resultado_no_vencimento(350.11, -16433.11, 0.62))
 
     book = _book(builder=montador)
@@ -280,9 +280,9 @@ def test_com_o_montador_real_o_resultado_e_o_da_analise_do_pedido() -> None:
         entrada = book.families[familia].items[0]
         esperado = montador.analyze(entrada.request).at_expiry
         assert esperado is not None and entrada.outcome is not None
-        assert entrada.outcome.max_gain == esperado.net_max_gain
+        assert entrada.outcome.max_gain == esperado.max_gain
         assert entrada.outcome.max_loss == (
-            None if esperado.net_max_loss is None else max(0.0, -esperado.net_max_loss)
+            None if esperado.max_loss is None else max(0.0, -esperado.max_loss)
         )
         assert entrada.outcome.probability_of_profit == esperado.probability_of_profit
 

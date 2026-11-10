@@ -283,8 +283,9 @@ A cadeia ao vivo precisa só do Cadastro de Instrumentos (o CSV ou o `pesquisa-p
 histórico). Os arquivos da B3 baixados para a pasta Downloads entram sozinhos
 (`--sem-downloads` desliga).
 No **Montador**, a estrutura sai de um dos 18 modelos prontos ou perna a perna, pela
-cadeia: payoff no vencimento e hoje, gregas, breakevens, máximos brutos e líquidos de custos e
-IR, a grade de cenários e a probabilidade de lucro. As simulações ficam salvas na pasta do
+cadeia: payoff no vencimento e hoje, gregas, breakevens, ganho e perda máximos brutos (sem
+custos nem IR, como a corretora mostra; os custos de montagem à parte), a grade de cenários e a
+probabilidade de lucro. No Book os números também são brutos. As simulações ficam salvas na pasta do
 perfil. Na **Carteira** ficam as operações executadas na corretora: o registro (também direto
 do montador), as ações que você já tem, o encerramento, o exercício e a atribuição pela regra
 da Receita, o pó automático depois do vencimento e o P&L pelo preço de zerar, ao vivo ou do fim

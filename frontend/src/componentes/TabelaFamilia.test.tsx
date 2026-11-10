@@ -66,7 +66,7 @@ test("uma linha por item com operação, vencimento, critério e resultado", () 
   expect(celulas(linhas[1]!)).toEqual([
     "▸ venda coberta PETR4 call 32,00",
     "19/11/2026 (18 dias úteis)",
-    "12,4% anualizado líquido",
+    "12,4% anualizado",
     "R$ 350,11",
     "R$ 16.433,11",
     "62,0%",

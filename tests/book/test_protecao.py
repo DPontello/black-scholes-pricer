@@ -7,15 +7,13 @@ import pytest
 from options_engine.domain.book.model import BookItem, BookLabel, BookStock, FamilyResult
 from options_engine.domain.book.presets import BookPreset, BookSettings
 from options_engine.domain.book.protecao import ProtectedPosition, protection_items
-from options_engine.domain.income.costs import CostSchedule
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.enums import OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError
 from options_engine.domain.model.templates import Family
 from tests._tolerances import ABS_MATH_IDENTITY_FLOOR, REL_MATH_IDENTITY, assert_close
 from tests.application._mercado_falso import NOVEMBRO, serie
-from tests.book._cadeias import DEZEMBRO, MODERADO, TABELA, cadeia_larga, du
-from tests.income._builders import zero_cost_schedule
+from tests.book._cadeias import DEZEMBRO, MODERADO, cadeia_larga, du
 
 DIAS = {NOVEMBRO: du(NOVEMBRO), DEZEMBRO: du(DEZEMBRO)}
 LARGO = replace(MODERADO, max_spread_pct=1.5)
@@ -29,10 +27,9 @@ def _perto(atual: float, esperado: float) -> None:
 def _rodar(
     posicao: ProtectedPosition = HIPOTETICA,
     settings: BookSettings = LARGO,
-    tabela: CostSchedule = TABELA,
     chain: OptionChain | None = None,
 ) -> FamilyResult:
-    return protection_items(chain or cadeia_larga(), posicao, settings, tabela, DIAS)
+    return protection_items(chain or cadeia_larga(), posicao, settings, DIAS)
 
 
 def _por_simbolos(itens: tuple[BookItem, ...]) -> dict[tuple[str, ...], BookItem]:
@@ -40,12 +37,13 @@ def _por_simbolos(itens: tuple[BookItem, ...]) -> dict[tuple[str, ...], BookItem
 
 
 def test_put_protetora_pelo_custo_mensal_contra_a_conta_a_mao() -> None:
-    """Sem custos: a put 28 custa ask x 100; mensal = custo / (30 x 100) x 21 / du."""
+    """Bruto, sem custos nem IR: a put 28 custa ask x 100; mensal = custo / (30 x 100) x 21 /
+    du."""
     chain = cadeia_larga()
     ask = next(q.ask for q in chain.quotes if q.contract.symbol == "PETRW280")
     assert ask is not None
 
-    put = _por_simbolos(_rodar(tabela=zero_cost_schedule(), chain=chain).items)[("PETRW280",)]
+    put = _por_simbolos(_rodar(chain=chain).items)[("PETRW280",)]
 
     assert (put.family, put.template_key) == (Family.PROTECAO, "put_protetora")
     assert put.stock == BookStock(Side.BUY, 100, StockOrigin.COMPRA)
@@ -61,13 +59,14 @@ def test_put_protetora_pelo_custo_mensal_contra_a_conta_a_mao() -> None:
 
 
 def test_collar_de_credito_vem_antes_e_tem_o_teto() -> None:
-    """Sem custos: collar 28/32 custa (ask put 28 - bid call 32) x 100, negativo = crédito."""
+    """Bruto, sem custos nem IR: collar 28/32 custa (ask put 28 - bid call 32) x 100, negativo =
+    crédito."""
     chain = cadeia_larga()
     q = {quote.contract.symbol: quote for quote in chain.quotes}
     custo = 100 * (q["PETRW280"].ask - q["PETRK320"].bid)  # type: ignore[operator]
     assert custo < 0
 
-    resultado = _rodar(tabela=zero_cost_schedule(), chain=chain)
+    resultado = _rodar(chain=chain)
 
     collar = _por_simbolos(resultado.items)[("PETRW280", "PETRK320")]
     assert collar.template_key == "collar"

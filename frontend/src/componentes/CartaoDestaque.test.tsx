@@ -30,8 +30,8 @@ function itemBova(extra: Partial<ItemBook> = {}): ItemBook {
       },
     ],
     criterio: {
-      chave: "anual_liquido",
-      rotulo: "anualizado líquido",
+      chave: "anual",
+      rotulo: "anualizado",
       valor: 0.412,
       unidade: "percentual",
       texto: "41,2%",
@@ -78,7 +78,7 @@ test("mostra a família, a operação, o número grande, o resultado e o porquê
   expect(screen.getByText("vender").parentElement?.textContent).toBe(
     "vender 100 BOVAK168W1 a 1,12 · comprar 100 BOVA11",
   );
-  expect(screen.getByText("41,2%").parentElement?.textContent).toBe("41,2% anualizado líquido ?");
+  expect(screen.getByText("41,2%").parentElement?.textContent).toBe("41,2% anualizado ?");
   expect(numero("ganha até")).toBe("ganha até R$ 350,11");
   expect(numero("perde até")).toBe("perde até R$ 16.433,11");
   expect(numero("chance de lucro")).toBe("chance de lucro 62,0%");

@@ -5,18 +5,22 @@ import { expect, test, vi } from "vitest";
 import { analiseCoberta } from "../testes/analise";
 import { faixaDoEixo, GraficoPayoff, seriesDoGrafico } from "./GraficoPayoff";
 
-test("séries: vencimento líquido, bruto e hoje tracejado", () => {
+test("séries: vencimento bruto (sem custos nem IR) e hoje tracejado", () => {
   const series = seriesDoGrafico(analiseCoberta());
   expect(series.map((s) => [s.nome, s.tracejada, s.pontos.length])).toEqual([
-    ["Vencimento (líquido)", false, 3],
-    ["Vencimento (bruto)", false, 3],
+    ["Vencimento", false, 3],
     ["Hoje", true, 3],
+  ]);
+  expect(series[0]!.pontos).toEqual([
+    [26.25, -2455],
+    [52.51, 171],
+    [78.76, 211],
   ]);
   const curvaSemPreco = analiseCoberta().curva.map((p) => ({ ...p, resultado: null, liquido: null }));
   const semPreco = seriesDoGrafico(
     analiseCoberta({ curva: curvaSemPreco, no_vencimento: null, hoje: null }),
   );
-  expect(semPreco.map((s) => s.nome)).toEqual(["Vencimento (bruto, sem prêmio)"]);
+  expect(semPreco.map((s) => s.nome)).toEqual(["Vencimento (sem prêmio)"]);
 });
 
 test("desenha no ECharts e se descreve para leitor de tela", () => {

@@ -43,7 +43,6 @@ from options_engine.domain.book.protecao import (
 )
 from options_engine.domain.book.renda import renda_items
 from options_engine.domain.book.volatilidade import volatility_items
-from options_engine.domain.income.costs import CostSchedule, schedule_on
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.enums import Side
 from options_engine.domain.model.errors import (
@@ -57,9 +56,7 @@ from options_engine.domain.portfolio.positions import AssetTotal
 
 __all__ = ["BookService"]
 
-_Familia = Callable[
-    [OptionChain, VolContext, BookSettings, CostSchedule, Mapping[date, int]], FamilyResult
-]
+_Familia = Callable[[OptionChain, VolContext, BookSettings, Mapping[date, int]], FamilyResult]
 
 
 class BookService:
@@ -71,7 +68,6 @@ class BookService:
         holdings: Callable[[], Sequence[AssetTotal]],
         calendar: TradingCalendar,
         valuation_timezone: tzinfo,
-        schedules: Sequence[CostSchedule],
         *,
         builder: StrategyBuilderUseCase | None = None,
     ) -> None:
@@ -81,7 +77,6 @@ class BookService:
         self._holdings = holdings
         self._calendar = calendar
         self._tz = valuation_timezone
-        self._schedules = tuple(schedules)
         self._builder = builder
 
     def book(self, settings: BookSettings, underlyings: Sequence[str]) -> BookView:
@@ -98,7 +93,7 @@ class BookService:
         if chains:
             partes[Family.RENDA].append(self._renda(settings, chains, contextos))
         for simbolo, chain in chains.items():
-            dias, tabela = self._expiries(chain), self._schedule(chain)
+            dias = self._expiries(chain)
             contexto = contextos[simbolo]
             por_contexto: tuple[tuple[Family, _Familia], ...] = (
                 (Family.VOLATILIDADE, volatility_items),
@@ -110,11 +105,11 @@ class BookService:
                         FamilyResult(exclusions=(BookExclusion(simbolo, contexto),))
                     )
                 else:
-                    partes[familia].append(varrer(chain, contexto, settings, tabela, dias))
+                    partes[familia].append(varrer(chain, contexto, settings, dias))
             posicao = posicoes.get(simbolo) or ProtectedPosition(
                 simbolo, HYPOTHETICAL_SHARES, None, hypothetical=True
             )
-            partes[Family.PROTECAO].append(protection_items(chain, posicao, settings, tabela, dias))
+            partes[Family.PROTECAO].append(protection_items(chain, posicao, settings, dias))
         sessoes = [self._session(chain) for chain in chains.values()]
         return BookView(
             session=max(sessoes) if sessoes else None,
@@ -129,9 +124,7 @@ class BookService:
 
     def directional(self, settings: BookSettings, view: DirectionalView) -> BookFamilyView:
         chain = self._eod.get_chain(view.underlying)
-        resultado = directional_items(
-            chain, view, settings, self._schedule(chain), self._expiries(chain)
-        )
+        resultado = directional_items(chain, view, settings, self._expiries(chain))
         return self._view(resultado)
 
     def _renda(
@@ -169,9 +162,6 @@ class BookService:
 
     def _session(self, chain: OptionChain) -> date:
         return chain.underlying.timestamp.astimezone(self._tz).date()
-
-    def _schedule(self, chain: OptionChain) -> CostSchedule:
-        return schedule_on(self._schedules, self._session(chain))
 
     def _expiries(self, chain: OptionChain) -> dict[date, int]:
         pregao = self._session(chain)
@@ -217,11 +207,11 @@ class BookService:
         no_vencimento = analise.at_expiry
         if no_vencimento is None:
             return None
-        perda = no_vencimento.net_max_loss
-        # ``net_max_loss`` é o pior resultado (negativo na perda); pior caso com lucro vira perda 0,
+        perda = no_vencimento.max_loss
+        # ``max_loss`` é o pior resultado (negativo na perda); pior caso com lucro vira perda 0,
         # nunca o lucro como perda.
         return BookOutcome(
-            no_vencimento.net_max_gain,
+            no_vencimento.max_gain,
             None if perda is None else max(0.0, -perda),
             no_vencimento.probability_of_profit,
         )

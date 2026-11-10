@@ -2,8 +2,9 @@
 
 As séries de cada vencimento com o delta do smile (``series_risk``, o mesmo do painel de renda) e o
 prêmio pelo lado (ADR-0004); a estrutura avaliada no vencimento pelo mesmo cálculo do montador
-(``expiry_summary``, ``net_result_breakdown`` e ``probability_of_profit``). A put americana fica
-fora, como no painel de renda (ADR-0002): o delta dela não tem a aproximação europeia.
+(``expiry_summary``, ``expiry_pnl`` e ``probability_of_profit``), em valores brutos: sem custos nem
+IR, como a corretora mostra. A put americana fica fora, como no painel de renda (ADR-0002): o
+delta dela não tem a aproximação europeia.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -18,8 +19,6 @@ from options_engine.domain.book.model import (
     passes_liquidity,
 )
 from options_engine.domain.book.presets import BookSettings
-from options_engine.domain.income.costs import CostSchedule
-from options_engine.domain.income.net_result import extreme_spots, net_result_breakdown
 from options_engine.domain.model.chain import (
     LegPremium,
     OptionChain,
@@ -40,7 +39,7 @@ from options_engine.domain.pricing.smile import (
 )
 from options_engine.domain.simulation import net_premium_cashflow
 from options_engine.domain.simulation.probability import probability_of_profit
-from options_engine.domain.simulation.valuation import expiry_summary
+from options_engine.domain.simulation.valuation import expiry_pnl, expiry_summary
 
 __all__ = [
     "Outcome",
@@ -243,17 +242,16 @@ def book_legs(legs: Iterable[PricedLeg]) -> tuple[BookLeg, ...]:
 
 @dataclass(frozen=True, slots=True)
 class Outcome:
-    """Resultado no vencimento em moeda: ``net_premium`` > 0 é crédito; extremos líquidos de
-    custos e IR (ADR-0005), ``None`` = ilimitado; perda como valor <= 0. ``setup_costs``: as
-    ordens da montagem. ``net_at_target``: o líquido com o ativo no alvo pedido."""
+    """Resultado bruto no vencimento em moeda, sem custos nem IR: ``net_premium`` > 0 é crédito;
+    extremos ``None`` = ilimitado; perda como valor <= 0. ``at_target``: o resultado com o ativo no
+    alvo pedido."""
 
     net_premium: float
     breakevens: tuple[float, ...]
-    net_max_gain: float | None
-    net_max_loss: float | None
+    max_gain: float | None
+    max_loss: float | None
     probability_of_profit: float
-    setup_costs: float
-    net_at_target: float | None = None
+    at_target: float | None = None
 
 
 def evaluate(
@@ -261,25 +259,19 @@ def evaluate(
     legs: Sequence[PricedLeg],
     chain: OptionChain,
     expiry: ScannedExpiry,
-    schedule: CostSchedule,
     *,
     stock: StockLeg | None = None,
-    stock_already_held: bool = False,
     target: float | None = None,
 ) -> Outcome:
     estrutura = _strategy(template_key, legs, stock)
     breakevens, maximo, minimo = expiry_summary(estrutura)
     spot = chain.underlying.spot
-    liquidos = [
-        net_result_breakdown(estrutura, s, schedule, stock_already_held=stock_already_held)
-        for s in extreme_spots(spot, (leg.series.strike for leg in legs), breakevens)
-    ]
     vol = expiry.smile.vol_at(spot) or chain.underlying.volatility.value
     return Outcome(
         net_premium=net_premium_cashflow(estrutura),
         breakevens=breakevens,
-        net_max_gain=None if maximo is None else max(r.net for r in liquidos),
-        net_max_loss=None if minimo is None else min(r.net for r in liquidos),
+        max_gain=maximo,
+        max_loss=minimo,
         probability_of_profit=probability_of_profit(
             estrutura,
             spot,
@@ -287,14 +279,7 @@ def evaluate(
             rate=chain.underlying.risk_free_rate,
             vol=Volatility(vol, _BASE),
         ),
-        setup_costs=liquidos[0].setup,
-        net_at_target=(
-            None
-            if target is None
-            else net_result_breakdown(
-                estrutura, target, schedule, stock_already_held=stock_already_held
-            ).net
-        ),
+        at_target=None if target is None else expiry_pnl(estrutura, target),
     )
 
 

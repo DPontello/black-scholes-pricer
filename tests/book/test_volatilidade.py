@@ -13,8 +13,7 @@ from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side
 from options_engine.domain.model.templates import Family
 from tests._tolerances import ABS_MATH_IDENTITY_FLOOR, REL_MATH_IDENTITY, assert_close
 from tests.application._mercado_falso import NOVEMBRO, cadeia, serie
-from tests.book._cadeias import DEZEMBRO, MODERADO, TABELA, cadeia_larga, du, series_do_vencimento
-from tests.income._builders import zero_cost_schedule
+from tests.book._cadeias import DEZEMBRO, MODERADO, cadeia_larga, du, series_do_vencimento
 
 DIAS = {NOVEMBRO: du(NOVEMBRO), DEZEMBRO: du(DEZEMBRO)}
 ALTA = vol_context("PETR4", 0.40, 0.25, [])
@@ -32,15 +31,8 @@ def _rodar(
     contexto: VolContext,
     settings: BookSettings = LARGO,
     chain: OptionChain | None = None,
-    **campos: object,
 ) -> FamilyResult:
-    return volatility_items(
-        chain or cadeia_larga(),
-        contexto,
-        settings,
-        campos.get("tabela", TABELA),  # type: ignore[arg-type]  # justificativa: kwargs de teste
-        DIAS,
-    )
+    return volatility_items(chain or cadeia_larga(), contexto, settings, DIAS)
 
 
 def _chaves(itens: tuple[BookItem, ...]) -> set[str]:
@@ -69,14 +61,14 @@ def test_vol_neutra_lista_as_duas_rotuladas_sem_sinal_claro() -> None:
 
 
 def test_iron_condor_contra_a_conta_a_mao() -> None:
-    """Sem custos: crédito c = bid W280 + bid K320 - ask W260 - ask K340 por ação; asas de 2,
-    risco = (2 - c) x 100; breakevens 28 - c e 32 + c, em desvios: |ln(BE/30)| / (0,40 x
-    sqrt(du / 252))."""
+    """Bruto, sem custos nem IR: crédito c = bid W280 + bid K320 - ask W260 - ask K340 por
+    ação; asas de 2, risco = (2 - c) x 100; breakevens 28 - c e 32 + c, em desvios: |ln(BE/30)| /
+    (0,40 x sqrt(du / 252))."""
     chain = cadeia_larga()
     q = {quote.contract.symbol: quote for quote in chain.quotes}
     c = q["PETRW280"].bid + q["PETRK320"].bid - q["PETRW260"].ask - q["PETRK340"].ask  # type: ignore[operator]
 
-    resultado = _rodar(ALTA, chain=chain, tabela=zero_cost_schedule())
+    resultado = _rodar(ALTA, chain=chain)
     condor = next(
         i
         for i in resultado.items
@@ -154,8 +146,9 @@ def test_perna_sem_book_vai_para_as_referencias() -> None:
 
 
 def test_risco_acima_do_maximo_e_liquidez_ficam_fora_sem_exclusao() -> None:
-    assert _rodar(ALTA, replace(LARGO, max_risk=50.0)).items == ()
-    assert _rodar(BAIXA, replace(LARGO, max_risk=50.0)).items == ()
+    # A menor perda máxima bruta da cadeia falsa: R$ 48 na borboleta 28/30/32 de dezembro.
+    assert _rodar(ALTA, replace(LARGO, max_risk=40.0)).items == ()
+    assert _rodar(BAIXA, replace(LARGO, max_risk=40.0)).items == ()
     assert _rodar(BAIXA, replace(LARGO, min_trades=13)).items == ()
     apertado = _rodar(ALTA, replace(LARGO, max_spread_pct=0.01))
     assert apertado.items == ()
@@ -187,11 +180,9 @@ def test_sem_calls_nao_ha_borboleta_nem_straddle() -> None:
 
 
 def test_vencimento_sem_dias_uteis_informados_fica_fora() -> None:
-    resultado = volatility_items(cadeia_larga(), ALTA, LARGO, TABELA, {NOVEMBRO: DIAS[NOVEMBRO]})
+    resultado = volatility_items(cadeia_larga(), ALTA, LARGO, {NOVEMBRO: DIAS[NOVEMBRO]})
     assert {i.expiry for i in resultado.items} == {NOVEMBRO}
-    hoje = volatility_items(
-        cadeia_larga(), ALTA, LARGO, TABELA, {NOVEMBRO: 0, date(2026, 12, 18): 0}
-    )
+    hoje = volatility_items(cadeia_larga(), ALTA, LARGO, {NOVEMBRO: 0, date(2026, 12, 18): 0})
     assert hoje.items == ()
 
 
@@ -199,12 +190,6 @@ def test_regime_pela_hv_e_iv_extrapolada_sao_rotulados() -> None:
     extrapolada = vol_context("PETR4", 0.40, 0.25, [], extrapolated=True)
     item = _rodar(extrapolada).items[0]
     assert {BookLabel.REGIME_PELA_HV, BookLabel.IV_EXTRAPOLADA} <= set(item.labels)
-
-
-def test_custos_maiores_que_o_ganho_tiram_as_vendas_de_vol() -> None:
-    caro = replace(zero_cost_schedule(), brokerage_per_order=500.0)
-    liberado = replace(LARGO, allow_unlimited_loss=True, max_risk=1e9)
-    assert _rodar(ALTA, liberado, tabela=caro).items == ()
 
 
 def test_vendidas_no_mesmo_strike_nao_formam_condor_nem_strangle() -> None:

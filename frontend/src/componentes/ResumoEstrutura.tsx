@@ -64,22 +64,13 @@ export function ResumoEstrutura({ analise }: { analise: Analise }) {
       <p className="frase">{frase(analise)}</p>
       {v !== null && (
         <div className="numeros">
-          <Numero
-            rotulo="Ganho máximo líquido"
-            valor={maximo(v.ganho_max_liquido)}
-            termo="ganho-perda-maximos"
-          />
-          <Numero rotulo="Perda máxima líquida" valor={maximo(v.perda_max_liquida)} />
+          <Numero rotulo="Ganho máximo" valor={maximo(v.ganho_max)} termo="ganho-perda-maximos" />
+          <Numero rotulo="Perda máxima" valor={maximo(v.perda_max)} />
           <Numero
             rotulo="Custos de montagem"
             valor={`R$ ${formatarPreco(v.custos_montagem)}`}
-            dica="Emolumentos da B3 e corretagem, pela tabela da ADR-0005"
+            dica="Emolumentos da B3 e corretagem, pela tabela da ADR-0005; não saem do ganho nem da perda"
             termo="custos-ir"
-          />
-          <Numero
-            rotulo="IR estimado no ganho máximo"
-            valor={v.ir_no_ganho_max === null ? "—" : `R$ ${formatarPreco(v.ir_no_ganho_max)}`}
-            dica="Estimativa por operação, não é cálculo fiscal"
           />
           <Numero
             rotulo="Chance de lucro"

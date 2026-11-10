@@ -34,7 +34,6 @@ from options_engine.domain.book.scan import (
     scan_chain,
     std_devs_to,
 )
-from options_engine.domain.income.costs import CostSchedule
 from options_engine.domain.model.chain import OptionChain
 from options_engine.domain.model.enums import OptionType, Side
 from options_engine.domain.model.templates import Family
@@ -50,7 +49,6 @@ def volatility_items(
     chain: OptionChain,
     context: VolContext,
     settings: BookSettings,
-    schedule: CostSchedule,
     business_days: Mapping[date, int],
 ) -> FamilyResult:
     """Vendas de vol (maior ganho/risco primeiro) e compras (menor movimento até o breakeven
@@ -60,7 +58,7 @@ def volatility_items(
     vendas: list[BookItem] = []
     compras: list[BookItem] = []
     for vencimento in vencimentos:
-        montador = _Montador(chain, context, settings, schedule, vencimento, fora)
+        montador = _Montador(chain, context, settings, vencimento, fora)
         if context.regime is not VolRegime.BAIXA:
             vendas += montador.iron_condors() + montador.borboletas()
             if settings.allow_unlimited_loss:
@@ -75,7 +73,6 @@ class _Montador:
     chain: OptionChain
     context: VolContext
     settings: BookSettings
-    schedule: CostSchedule
     expiry: ScannedExpiry
     exclusions: list[BookExclusion]
 
@@ -166,7 +163,7 @@ class _Montador:
     def _limitada(self, chave: str, pernas: list[PricedLeg], frase: str) -> BookItem | None:
         """Ganho e perda limitados: critério ganho/risco, risco até o máximo do preset."""
         resultado = self._avaliar(chave, pernas)
-        ganho, perda = resultado.net_max_gain, resultado.net_max_loss
+        ganho, perda = resultado.max_gain, resultado.max_loss
         caixa = _caixa(resultado.net_premium)
         if (
             ganho is None
@@ -177,12 +174,12 @@ class _Montador:
         ):
             return None
         criterio = Metric(
-            "ganho_risco", "ganho máximo / perda máxima, líquidos", ganho / -perda, MetricUnit.RATIO
+            "ganho_risco", "ganho máximo / perda máxima", ganho / -perda, MetricUnit.RATIO
         )
         apoio = [
             caixa,
-            Metric("ganho", "ganho máximo líquido", ganho, MetricUnit.CURRENCY),
-            Metric("risco", "perda máxima líquida", -perda, MetricUnit.CURRENCY),
+            Metric("ganho", "ganho máximo", ganho, MetricUnit.CURRENCY),
+            Metric("risco", "perda máxima", -perda, MetricUnit.CURRENCY),
             *self._breakevens(resultado),
             _prob(resultado),
         ]
@@ -196,7 +193,7 @@ class _Montador:
 
     def _strangle_vendido(self, pernas: list[PricedLeg]) -> BookItem | None:
         resultado = self._avaliar("strangle_vendido", pernas)
-        ganho = resultado.net_max_gain
+        ganho = resultado.max_gain
         distancia = self._distancia(resultado)
         if ganho is None or ganho <= 0.0 or distancia is None:
             return None
@@ -205,7 +202,7 @@ class _Montador:
         )
         apoio = [
             _caixa(resultado.net_premium),
-            Metric("ganho", "ganho máximo líquido", ganho, MetricUnit.CURRENCY),
+            Metric("ganho", "ganho máximo", ganho, MetricUnit.CURRENCY),
             _prob(resultado),
         ]
         return self._item(
@@ -221,7 +218,7 @@ class _Montador:
     def _compra(self, chave: str, pernas: list[PricedLeg], nome: str) -> BookItem | None:
         """Compra de vol: critério o movimento até o breakeven mais perto (menor é melhor)."""
         resultado = self._avaliar(chave, pernas)
-        perda, distancia = resultado.net_max_loss, self._distancia(resultado)
+        perda, distancia = resultado.max_loss, self._distancia(resultado)
         debito = -resultado.net_premium
         if perda is None or distancia is None or debito <= 0.0 or -perda > self.settings.max_risk:
             return None
@@ -232,7 +229,7 @@ class _Montador:
         apoio = [
             Metric("debito", "débito", debito, MetricUnit.CURRENCY),
             Metric("custo_pct", "custo em % do ativo", debito / (spot * _LOTE), MetricUnit.PERCENT),
-            Metric("risco", "perda máxima líquida", -perda, MetricUnit.CURRENCY),
+            Metric("risco", "perda máxima", -perda, MetricUnit.CURRENCY),
             _prob(resultado),
         ]
         return self._item(
@@ -269,7 +266,7 @@ class _Montador:
         return precificadas if keeps_liquidity(precificadas, self.settings) else None
 
     def _avaliar(self, chave: str, pernas: Sequence[PricedLeg]) -> Outcome:
-        return evaluate(chave, pernas, self.chain, self.expiry, self.schedule)
+        return evaluate(chave, pernas, self.chain, self.expiry)
 
     def _distancia(self, resultado: Outcome) -> float | None:
         distancias = [self._dp(be) for be in resultado.breakevens if be > 0.0]

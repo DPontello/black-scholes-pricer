@@ -186,7 +186,6 @@ def build_web_app(
         lambda: [vista.total for vista in portfolio.open_operations().totals],
         calendar,
         B3_UTC_OFFSET,
-        schedules,
         builder=book_builder,
     )
     simulations = SimulationService(

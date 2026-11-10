@@ -43,8 +43,8 @@ export function itemCoberta(extra: Partial<ItemBook> = {}): ItemBook {
     acao: { lado: "compra", quantidade: 100, origem: "compra" },
     qualidade: "executavel",
     criterio: {
-      chave: "anual_liquido",
-      rotulo: "anualizado líquido",
+      chave: "anual",
+      rotulo: "anualizado",
       valor: 0.124,
       unidade: "percentual",
       texto: "12,4%",
