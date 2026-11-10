@@ -204,8 +204,9 @@ test("abrir no montador leva o pedido do item pelo estado da rota", async () => 
   fireEvent.click(screen.getByRole("button", { name: "Abrir no montador" }));
   const destino = JSON.parse((await screen.findByTestId("destino")).textContent ?? "{}") as {
     busca: string;
-    estado: { pedido: unknown };
+    estado: { pedido: unknown; vencimento: string };
   };
   expect(destino.busca).toBe("?ativo=BOVA11");
   expect(destino.estado.pedido).toEqual(item.pedido);
+  expect(destino.estado.vencimento).toBe(item.vencimento);
 });

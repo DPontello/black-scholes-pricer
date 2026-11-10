@@ -60,6 +60,13 @@ test("o passo dos arquivos leva a Arquivos B3 e fala dos dois arquivos da semana
   expect(screen.getByTestId("endereco").textContent).toBe("/arquivos");
 });
 
+test("o passo do Montador diz que os custos ficam em ver detalhes", () => {
+  montar("/aprender/comece");
+  const texto = screen.getByRole("heading", { level: 3, name: "Confira e ajuste no Montador" }).closest("li")
+    ?.textContent;
+  expect(texto).toContain("os custos (em ver detalhes) e a chance de lucro");
+});
+
 test("o passo do vencimento explica pó, exercício e atribuição, com os termos", () => {
   montar("/aprender/comece");
   const vencimento = passo("No vencimento");

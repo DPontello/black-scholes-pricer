@@ -34,6 +34,39 @@ test("desenha no ECharts e se descreve para leitor de tela", () => {
   expect(instancia.setOption).toHaveBeenCalled();
 });
 
+test("o gráfico se redimensiona quando o contêiner muda sem a janela mudar, e solta o observador", () => {
+  const observe = vi.fn();
+  const disconnect = vi.fn();
+  let aoMudar: () => void = () => {};
+  class ObservadorFalso {
+    observe = observe;
+    disconnect = disconnect;
+    constructor(callback: () => void) {
+      aoMudar = callback;
+    }
+  }
+  vi.stubGlobal("ResizeObserver", ObservadorFalso);
+  const { unmount } = render(<GraficoPayoff analise={analiseCoberta()} />);
+  const instancia = vi.mocked(echarts.init).mock.results.at(-1)?.value as {
+    resize: ReturnType<typeof vi.fn>;
+  };
+  expect(observe).toHaveBeenCalledWith(screen.getByRole("img"));
+  instancia.resize.mockClear();
+  aoMudar();
+  expect(instancia.resize).toHaveBeenCalledTimes(1);
+  unmount();
+  expect(disconnect).toHaveBeenCalledTimes(1);
+});
+
+test("o tooltip fica dentro do gráfico, para não criar barra horizontal no cartão", () => {
+  render(<GraficoPayoff analise={analiseCoberta()} />);
+  const instancia = vi.mocked(echarts.init).mock.results.at(-1)?.value as {
+    setOption: ReturnType<typeof vi.fn>;
+  };
+  const opcoes = instancia.setOption.mock.calls[0]![0] as { tooltip: { confine?: boolean } };
+  expect(opcoes.tooltip.confine).toBe(true);
+});
+
 test("o eixo abre em volta do spot, dos strikes e dos breakevens", () => {
   expect(faixaDoEixo(analiseCoberta())).toEqual([45.72, 58.2]);
 });

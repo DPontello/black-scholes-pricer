@@ -125,10 +125,11 @@ test("abrir leva o pedido do item pelo estado da rota", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Abrir venda coberta PETR4 no montador" }));
   const destino = JSON.parse((await screen.findByTestId("destino")).textContent ?? "{}") as {
     busca: string;
-    estado: { pedido: unknown };
+    estado: { pedido: unknown; vencimento: string };
   };
   expect(destino.busca).toBe("?ativo=PETR4");
   expect(destino.estado.pedido).toEqual(item.pedido);
+  expect(destino.estado.vencimento).toBe(item.vencimento);
 });
 
 test("família sem item diz nada hoje, com o mesmo motivo do cartão", () => {

@@ -42,7 +42,7 @@ export function CartaoDestaque({ familia, rotulo, item, motivoVazio, onVerFamili
 
   function abrir(destaque: ItemBook) {
     navegar(`/montador?ativo=${encodeURIComponent(destaque.ativo)}`, {
-      state: { pedido: destaque.pedido },
+      state: { pedido: destaque.pedido, vencimento: destaque.vencimento },
     });
   }
 

@@ -2,12 +2,24 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
+// O Node 25+ cria um `localStorage` global próprio, `undefined` sem --localstorage-file, e o
+// Vitest 2 não troca as chaves que já existem no global: o do jsdom precisa ser posto à mão.
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: (globalThis as unknown as { jsdom: { window: Window } }).jsdom.window.localStorage,
+});
+
 afterEach(() => {
   cleanup();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+// As preferências guardadas não podem vazar de um teste para o outro.
+afterEach(() => {
+  localStorage.clear();
 });
 
 // O jsdom não tem canvas: o ECharts vira um falso que só registra as opções recebidas.

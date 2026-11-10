@@ -10,10 +10,13 @@ export function useGrafico(opcoes: echarts.EChartsCoreOption): RefObject<HTMLDiv
     if (div.current === null) return;
     const instancia = echarts.init(div.current, "dark");
     grafico.current = instancia;
-    const redimensionar = () => instancia.resize();
-    window.addEventListener("resize", redimensionar);
+    // O ECharts só mede o contêiner no init e no resize(): a largura muda sem a janela mudar
+    // (coluna da cadeia, barra de rolagem). O jsdom dos testes não tem ResizeObserver.
+    const observador =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => instancia.resize());
+    observador?.observe(div.current);
     return () => {
-      window.removeEventListener("resize", redimensionar);
+      observador?.disconnect();
       instancia.dispose();
       grafico.current = null;
     };

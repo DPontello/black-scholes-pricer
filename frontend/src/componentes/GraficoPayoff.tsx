@@ -58,6 +58,7 @@ function opcoes(analise: Analise): echarts.EChartsCoreOption {
     backgroundColor: "transparent",
     tooltip: {
       trigger: "axis",
+      confine: true,
       valueFormatter: (v: unknown) => `R$ ${formatarPreco(Number(v))}`,
     },
     legend: { top: 0, textStyle: { color: "#9aa3b2" } },

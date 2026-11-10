@@ -23,7 +23,9 @@ function Itens({ itens }: { itens: ItemBook[] }) {
   }
 
   function abrir(item: ItemBook) {
-    navegar(`/montador?ativo=${encodeURIComponent(item.ativo)}`, { state: { pedido: item.pedido } });
+    navegar(`/montador?ativo=${encodeURIComponent(item.ativo)}`, {
+      state: { pedido: item.pedido, vencimento: item.vencimento },
+    });
   }
 
   return (

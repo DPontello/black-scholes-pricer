@@ -29,6 +29,25 @@ function serie(parcial: Partial<Serie> & { ticker: string; strike: number }): Se
 
 const nada = () => {};
 
+// A cadeia do Montador: só um vencimento, que vem de fora, e as colunas essenciais.
+function enxuta(vencimento: string) {
+  return (
+    <TabelaCadeia
+      ativo="PETR4"
+      cadeia={CADEIA}
+      indisponivel={null}
+      enxuta
+      vencimento={vencimento}
+      onEscolherSerie={nada}
+    />
+  );
+}
+
+function celulasDa(strike: string): (string | null)[] {
+  const linha = screen.getByText(strike).closest("tr") as HTMLElement;
+  return within(linha).getAllByRole("cell").map((c) => c.textContent);
+}
+
 const CADEIA: Cadeia = {
   ativo: "PETR4",
   spot: 52.51,
@@ -166,4 +185,48 @@ test("IV e Delta têm um '?' cada, só no lado das calls, para não repetir", ()
   const cabecalhos = screen.getAllByRole("columnheader").map((c) => c.textContent);
   expect(cabecalhos.filter((c) => c === "IV ?")).toHaveLength(1);
   expect(cabecalhos.filter((c) => c === "IV")).toHaveLength(1);
+});
+
+test("enxuta: 7 colunas, sem a fileira de vencimentos nem as abas", () => {
+  render(enxuta("2026-11-19"));
+  expect(celulasDa("52,00")).toEqual(["+", "—", "1,25", "52,00", "1,25", "1,20", "+"]);
+  expect(screen.queryByRole("group", { name: "Vencimentos" })).toBeNull();
+  expect(screen.queryAllByRole("tab")).toHaveLength(0);
+});
+
+test("enxuta mostra o vencimento que vem de fora", () => {
+  render(enxuta("2026-12-17"));
+  expect(screen.getByText("52,00")).toBeTruthy();
+  expect(screen.queryByText("54,00")).toBeNull();
+});
+
+test("enxuta com um vencimento que ainda não chegou avisa no lugar da tabela", () => {
+  render(enxuta("2026-11-06"));
+  expect(screen.getByText("Carregando o vencimento 06/11…")).toBeTruthy();
+  expect(screen.queryByRole("table")).toBeNull();
+});
+
+test("mostrar IV, delta e negócios abre as 4 colunas de cada lado, e a escolha fica guardada", () => {
+  const { unmount } = render(enxuta("2026-11-19"));
+  expect(screen.queryAllByRole("link", { name: /^O que é/ })).toHaveLength(0);
+  const botao = screen.getByRole("button", { name: "mostrar IV, delta e negócios" });
+  expect(botao.getAttribute("aria-expanded")).toBe("false");
+
+  fireEvent.click(botao);
+  expect(celulasDa("52,00")).toHaveLength(15);
+  const aberto = screen.getByRole("button", { name: "esconder IV, delta e negócios" });
+  expect(aberto.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getAllByRole("link", { name: /^O que é/ })).toHaveLength(2);
+
+  unmount();
+  render(enxuta("2026-11-19"));
+  expect(celulasDa("52,00")).toHaveLength(15);
+});
+
+test("sem enxuta, a cadeia do Mercado continua com as 15 colunas, a fileira e as abas", () => {
+  render(<TabelaCadeia ativo="PETR4" cadeia={CADEIA} indisponivel={null} onVencimentos={nada} />);
+  expect(celulasDa("52,00")).toHaveLength(13);
+  expect(screen.getByRole("group", { name: "Vencimentos" })).toBeTruthy();
+  expect(screen.getAllByRole("tab")).toHaveLength(2);
+  expect(screen.queryByRole("button", { name: /IV, delta e negócios/ })).toBeNull();
 });

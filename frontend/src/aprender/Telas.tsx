@@ -12,7 +12,7 @@ export const TELAS: Tela[] = [
   {
     titulo: "Montador",
     texto:
-      "Onde você monta uma operação, por um modelo pronto ou série a série, pelo + da cadeia. Mostra o resultado no vencimento e hoje, o [ganho e a perda máximos](ganho-perda-maximos), os [custos](custos-ir), a [chance de lucro](chance-de-lucro), as gregas e a grade de cenários. Daí você salva a simulação ou registra a operação como executada.",
+      "Onde você monta uma operação, por um modelo pronto ou série a série, pelo + da cadeia. O vencimento do topo vale para a cadeia e para o modelo. A cadeia mostra só compra e venda; \"mostrar IV, delta e negócios\" abre o resto. Ao lado ficam a frase do resultado, o [ganho e a perda máximos](ganho-perda-maximos), a [chance de lucro](chance-de-lucro) e o gráfico; \"ver detalhes\" abre os [custos](custos-ir), os dias úteis, as gregas e a grade de cenários. Embaixo das pernas você registra a operação como executada ou salva a simulação.",
   },
   {
     titulo: "Book",

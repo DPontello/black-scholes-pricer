@@ -54,6 +54,10 @@
 >   Montador que rola até a montagem, preços com "R$" e milhar, e mensagens mais claras. Também o
 >   [roteiro do teste com a mãe](teste-usabilidade.md). Falta o autor fazer o teste com ela e
 >   conferir o instalador num PC Windows; depois, a versão 1.0.0 (HANDOFF §11).
+> - **Montador simples (2026-11-10):** [desenho](superpowers/specs/2026-11-09-montador-simples-design.md)
+>   e [plano](superpowers/plans/2026-11-10-montador-simples.md). A tela abre simples: a cadeia enxuta
+>   ao lado do resultado, e os custos, as gregas e a grade em "ver detalhes". Falta conferir no
+>   Windows a 1366 e 1920 px.
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
 >   vitrine (benchmark, ADRs de apresentação) saíram do escopo.
