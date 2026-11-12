@@ -58,6 +58,10 @@
 >   e [plano](superpowers/plans/2026-11-10-montador-simples.md). A tela abre simples: a cadeia enxuta
 >   ao lado do resultado, e os custos, as gregas e a grade em "ver detalhes". Falta conferir no
 >   Windows a 1366 e 1920 px.
+> - **Atualização pelo app (2026-11-12):** [desenho](superpowers/specs/2026-11-12-atualizacao-automatica-design.md)
+>   e [plano](superpowers/plans/2026-11-12-atualizacao-automatica.md). Cada subida na `master` com
+>   o CI verde publica um release `vX.Y.Z` com o instalador, e o app instalado no Windows avisa ao
+>   abrir e se atualiza com um clique. Falta subir pela `master` e conferir no Windows (HANDOFF §13).
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
 >   vitrine (benchmark, ADRs de apresentação) saíram do escopo.

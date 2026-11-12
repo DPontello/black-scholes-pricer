@@ -15,7 +15,7 @@ import webbrowser
 from collections.abc import Callable, Mapping, Sequence
 from logging.handlers import RotatingFileHandler
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Final, TextIO
+from typing import TYPE_CHECKING, Final, Protocol, TextIO
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -23,7 +23,9 @@ if TYPE_CHECKING:
 __all__ = [
     "APP_ID",
     "DEFAULT_PORT",
+    "ESPERA_JANELA_ANTIGA_S",
     "HOST",
+    "Encerramento",
     "already_running",
     "app_window_command",
     "console_log",
@@ -44,6 +46,9 @@ APP_ID: Final = "painel-de-opcoes"
 HOST: Final = "127.0.0.1"
 _PORT_ATTEMPTS: Final = 20
 _READY_TIMEOUT_S: Final = 30.0
+# Depois de uma atualização, quanto o app novo espera a janela antiga do navegador voltar a falar
+# com ele antes de abrir uma janela própria (o navegador refaz a conexão sozinho, em segundos).
+ESPERA_JANELA_ANTIGA_S: Final = 15.0
 _LINUX_BROWSERS: Final = ("google-chrome", "chromium", "brave-browser")
 _FLATPAK_BROWSERS: Final = ("com.google.Chrome", "com.brave.Browser")
 LOG_MAX_BYTES: Final = 5 * 1024 * 1024
@@ -223,7 +228,36 @@ def wait_until_up(url: str, timeout_s: float = _READY_TIMEOUT_S) -> bool:
     return False
 
 
-def serve(app: "FastAPI", port: int, on_ready: Callable[[], None] | None = None) -> None:
+class _ComSaida(Protocol):
+    should_exit: bool
+
+
+class Encerramento:
+    """Pedido de encerramento do servidor vindo de dentro do app (a atualização). ``pedir`` liga o
+    ``should_exit`` do uvicorn, o caminho normal, que roda o ``lifespan``: solta a trava do perfil
+    e para a ponte. Um ``pedir`` antes de ``ligar`` fica guardado e vale ao ligar."""
+
+    def __init__(self) -> None:
+        self._servidor: _ComSaida | None = None
+        self._pedido = False
+
+    def ligar(self, servidor: _ComSaida) -> None:
+        self._servidor = servidor
+        if self._pedido:
+            servidor.should_exit = True
+
+    def pedir(self) -> None:
+        self._pedido = True
+        if self._servidor is not None:
+            self._servidor.should_exit = True
+
+
+def serve(
+    app: "FastAPI",
+    port: int,
+    on_ready: Callable[[], None] | None = None,
+    encerramento: Encerramento | None = None,
+) -> None:
     import threading
 
     import uvicorn
@@ -236,4 +270,7 @@ def serve(app: "FastAPI", port: int, on_ready: Callable[[], None] | None = None)
                 on_ready()
 
         threading.Thread(target=quando_subir, name="abrir-janela", daemon=True).start()
-    uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="info")).run()
+    servidor = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="info"))
+    if encerramento is not None:
+        encerramento.ligar(servidor)
+    servidor.run()

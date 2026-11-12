@@ -3,12 +3,13 @@ seguirem sem o FastAPI (extra ``app``)."""
 
 import asyncio
 import contextlib
+import importlib.metadata
 import logging
 import platform
 import shutil
 import threading
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from datetime import date
 from pathlib import Path
 from typing import Final, Protocol
@@ -26,6 +27,8 @@ from options_engine.adapters.inbound.web.folder_picker import folder_picker
 from options_engine.adapters.inbound.web.market import router_mercado
 from options_engine.adapters.inbound.web.portfolio import router_carteira
 from options_engine.adapters.inbound.web.profiles import router_perfis
+from options_engine.adapters.inbound.web.versao import router_versao
+from options_engine.adapters.outbound.atualizacao import atualizador_do_app
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET, StaticHolidayCalendar
 from options_engine.adapters.outbound.b3files import (
     B3FileKind,
@@ -107,6 +110,8 @@ def build_web_app(
     clock: Clock | None = None,
     downloads_dir: Path | None = None,
     frozen_dir: Path | None = None,
+    encerrar: Callable[[], None] | None = None,
+    ao_ver_janela: Callable[[], None] | None = None,
 ) -> FastAPI:
     clock = SystemClock() if clock is None else clock
     calendar = StaticHolidayCalendar.from_packaged_data()
@@ -198,9 +203,17 @@ def build_web_app(
         )
         process = BridgeProcess(command, cwd, client)
     importer = None if downloads_dir is None else DownloadsImporter(library, downloads_dir, clock)
+    atualizador = atualizador_do_app(
+        importlib.metadata.version("options-engine"),
+        # A conferência de versão sai para a rede só no app instalado no Windows.
+        ativo=frozen_dir is not None and platform.system() == "Windows",
+        config_dir=config_dir,
+        encerrar=encerrar or (lambda: None),
+    )
     routers = [
         router_perfis(profiles, folder_picker(platform.system(), shutil.which, Path.home())),
         router_aprender(),
+        router_versao(atualizador),
         router_arquivos_b3(library, importer),
         router_mercado(
             market_view,
@@ -222,7 +235,7 @@ def build_web_app(
         ),
     ]
     lifespan = _lifespan(profiles, client, process, importer)
-    return create_app(routers, static_dir, lifespan=lifespan)
+    return create_app(routers, static_dir, lifespan=lifespan, ao_ver_janela=ao_ver_janela)
 
 
 def _lot(loader: LibraryLoader, symbol: str) -> int | None:

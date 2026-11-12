@@ -220,19 +220,25 @@ ordens: você executa no home broker e registra a operação no app.
 
 #### Instalar
 
-**Windows (64 bits).** O instalador `PainelOpcoes-<versão>-setup.exe` sai do job **Instalador**
-do GitHub Actions: aba Actions → Instalador → a execução → Artifacts. Baixar exige estar logado
-no GitHub, e o artefato vale por 90 dias.
+**Windows (64 bits).** O instalador `PainelOpcoes-<versão>-setup.exe` fica na página de releases
+do GitHub: <https://github.com/DPontello/black-scholes-pricer/releases/latest>. Cada push na
+`master` com o CI verde publica uma versão nova (`vX.Y.Z`), com o instalador e as notas do que
+mudou.
+
+O job **Instalador** do GitHub Actions continua gerando o instalador como artefato (aba Actions →
+Instalador → a execução → Artifacts), para testar o empacotamento. Baixar exige estar logado no
+GitHub, e o artefato vale por 90 dias.
 
 O job roda:
 - em tag `v*`;
 - em pull request que mexe em `packaging/**`, no próprio workflow ou em `src/options_ponte/**`;
-- à mão, mas o botão "Run workflow" só aparece depois que o workflow chegar à `master`.
+- à mão, mas o botão "Run workflow" só aparece depois que o workflow chegar à `master`;
+- chamado pelo workflow **Publicar**, que gera o instalador do release.
 
 Um push na `development` não dispara o job.
 
-- **Instalar:** o artefato baixa como `.zip`. Extraia e dê dois cliques no `.exe`. Não pede senha
-  de administrador. O programa vai para
+- **Instalar:** baixe o `.exe` na página de releases e dê dois cliques (o artefato de um PR baixa
+  como `.zip`: extraia antes). Não pede senha de administrador. O programa vai para
   `%LOCALAPPDATA%\Programs\PainelOpcoes` e ganha o atalho **Painel de Opções** no menu Iniciar e,
   se marcado, na área de trabalho.
 - **SmartScreen:** o instalador não é assinado, então o Windows avisa "O Windows protegeu o
@@ -240,9 +246,15 @@ Um push na `development` não dispara o job.
   pode desconfiar do executável sem assinatura.
 - **Abrir duas vezes:** o segundo clique no atalho não sobe outro programa. Ele só abre a janela
   do app que já está rodando.
-- **Atualizar:** instale a versão nova por cima. Se o app estiver aberto, o instalador o fecha
-  antes. Perfis, carteiras, simulações e arquivos da B3 ficam onde estão: em
+- **Atualizar:** o app avisa ao abrir, com uma janela "Versão nova do app" e o que mudou.
+  **Atualizar** baixa, fecha o app, instala por cima e abre de novo, em menos de um minuto;
+  **Agora não** deixa para a próxima vez que abrir. Sem internet não aparece nada, e o app abre do
+  mesmo jeito. Perfis, carteiras, simulações e arquivos da B3 ficam onde estão: em
   `%APPDATA%\PainelOpcoes` e na pasta de cada perfil, fora da pasta do programa.
+- **Primeira vez, à mão:** a versão de 05/11 não sabe se atualizar. Instale a versão mais recente
+  da página de releases por cima, como antes: se o app estiver aberto, o instalador o fecha antes.
+  Daí em diante, as atualizações vêm pela janela.
+- **Registro da atualização:** `%APPDATA%\PainelOpcoes\logs\atualizacao.log`.
 - **Desinstalar:** pelo "Adicionar ou remover programas" (Configurações → Aplicativos), em
   **Painel de Opções**. Os dados também ficam.
 - **Log:** `%APPDATA%\PainelOpcoes\logs\app.log`. Para conferir a ponte com o Tryd aberto, rode

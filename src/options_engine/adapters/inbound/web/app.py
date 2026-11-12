@@ -64,8 +64,12 @@ def create_app(
     static_dir: Path | None = None,
     *,
     lifespan: Lifespan | None = None,
+    ao_ver_janela: Callable[[], None] | None = None,
 ) -> FastAPI:
-    """Monta o app: ``GET /api/saude``, os ``routers`` e, com ``static_dir``, o frontend (SPA)."""
+    """Monta o app: ``GET /api/saude``, os ``routers`` e, com ``static_dir``, o frontend (SPA).
+
+    ``ao_ver_janela`` roda a cada ``GET /api/saude?janela=1``: é a janela do navegador avisando que
+    está de pé (e falando com este servidor)."""
     versao = importlib.metadata.version("options-engine")
     # Documentação sob /api: fora dela, /docs e afins sombreariam rotas do frontend.
     app = FastAPI(
@@ -93,7 +97,9 @@ def create_app(
         )
 
     @app.get("/api/saude")
-    def saude() -> dict[str, str]:
+    def saude(janela: bool = False) -> dict[str, str]:
+        if janela and ao_ver_janela is not None:
+            ao_ver_janela()
         return {"status": "ok", "versao": versao, "app": APP_ID}
 
     for router in routers:

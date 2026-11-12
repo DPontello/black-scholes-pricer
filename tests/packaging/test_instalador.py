@@ -84,6 +84,32 @@ def test_leva_o_app_e_a_ponte_com_os_atalhos() -> None:
     assert r'{autodesktop}\Painel de Opções"; Filename: "{app}\PainelOpcoes.exe"' in atalhos
 
 
+def test_atualizacao_silenciosa_reabre_o_app_com_o_parametro() -> None:
+    execucao = _secao("Run")
+    linhas = [linha for linha in execucao.splitlines() if linha.startswith("Filename:")]
+    silenciosa = [linha for linha in linhas if "--depois-de-atualizar" in linha]
+    assert len(silenciosa) == 1
+    assert 'Filename: "{app}\\PainelOpcoes.exe"' in silenciosa[0]
+    assert 'Parameters: "--depois-de-atualizar"' in silenciosa[0]
+    assert "Flags: nowait" in silenciosa[0]
+    assert "Check: Relancar" in silenciosa[0]
+    # A entrada de quem instala pelo assistente continua como estava.
+    assert any("postinstall skipifsilent" in linha for linha in linhas)
+
+
+def test_instalador_espera_o_app_sair_antes_de_copiar() -> None:
+    codigo = _secao("Code")
+    # As duas funções têm de existir: sem elas o Inno Setup compila, mas a espera some em silêncio.
+    assert "function InitializeSetup: Boolean;" in codigo
+    assert "function Relancar: Boolean;" in codigo
+    assert "{param:ESPERAR|0}" in codigo
+    assert "{param:RELANCAR|0}" in codigo
+    assert "WizardSilent" in codigo
+    assert "OpenProcess@kernel32.dll stdcall" in codigo
+    assert "WaitForSingleObject" in codigo
+    assert "60000" in codigo
+
+
 def _secao(nome: str) -> str:
     achado = re.search(rf"^\[{nome}\]\n(.*?)(?=^\[|\Z)", ISS, re.M | re.S)
     assert achado is not None, nome
