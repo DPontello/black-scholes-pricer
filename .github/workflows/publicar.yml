@@ -1,0 +1,74 @@
+# Publicação (desenho de 12/11): cada push na master com o CI verde vira o release vX.Y.Z, com o
+# instalador do Windows. Precisa estar na master para o workflow_run disparar.
+name: Publicar
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  versao:
+    name: Versão e notas
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      versao: ${{ steps.calculo.outputs.versao }}
+      notas: ${{ steps.calculo.outputs.notas }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: calculo
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          # Atribuição em linha própria: com o bash -e do Actions, uma falha do script (linha menor
+          # que a do último release) para o job; dentro do echo ela se perderia.
+          versao=$(python packaging/publicar.py versao --commit "$SHA")
+          echo "versao=$versao" >> "$GITHUB_OUTPUT"
+          {
+            echo "notas<<FIM_DAS_NOTAS"
+            python packaging/publicar.py notas --commit "$SHA"
+            echo "FIM_DAS_NOTAS"
+          } >> "$GITHUB_OUTPUT"
+
+  instalador:
+    needs: versao
+    if: needs.versao.outputs.versao != ''
+    uses: ./.github/workflows/instalador.yml
+    with:
+      ref: ${{ github.event.workflow_run.head_sha }}
+      versao: ${{ needs.versao.outputs.versao }}
+
+  release:
+    name: Release no GitHub
+    needs: [versao, instalador]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PainelOpcoes-${{ needs.versao.outputs.versao }}-setup
+          path: instalador
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSAO: ${{ needs.versao.outputs.versao }}
+          NOTAS: ${{ needs.versao.outputs.notas }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          printf '%s\n' "$NOTAS" > notas.md
+          gh release create "v$VERSAO" "instalador/PainelOpcoes-$VERSAO-setup.exe" \
+            --target "$SHA" --title "Painel de Opções $VERSAO" --notes-file notas.md --latest

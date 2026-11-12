@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
 import { useAoVivo } from "./api/aoVivo";
 import { type Perfil, perfilAtivo } from "./api/cliente";
+import { AvisoVersao } from "./componentes/AvisoVersao";
 import { BarraStatus } from "./componentes/BarraStatus";
 import { Shell } from "./componentes/Shell";
 import { Alertas } from "./paginas/Alertas";
@@ -14,7 +15,17 @@ import { Mercado } from "./paginas/Mercado";
 import { Montador } from "./paginas/Montador";
 import { Perfis } from "./paginas/Perfis";
 
+// O aviso de versão fica fora dos ramos de perfil: não remonta quando o perfil muda.
 export function App() {
+  return (
+    <>
+      <Conteudo />
+      <AvisoVersao />
+    </>
+  );
+}
+
+function Conteudo() {
   // undefined: ainda perguntando à API se há perfil aberto; null: nenhum.
   const [perfil, setPerfil] = useState<Perfil | null | undefined>(undefined);
   const navegar = useNavigate();

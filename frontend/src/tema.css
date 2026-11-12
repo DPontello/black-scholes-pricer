@@ -1129,3 +1129,49 @@ a.ajuda:focus-visible {
 .faixa-rolagem p {
   margin: 0.2rem 0;
 }
+
+/* Aviso de versão nova: o véu cobre a tela, a janela fica no centro. */
+.veu {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.janela-aviso {
+  width: 100%;
+  max-width: 28rem;
+  padding: 1rem 1.25rem;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+}
+
+.janela-aviso:focus {
+  outline: none;
+}
+
+.janela-aviso h2 {
+  margin-top: 0;
+}
+
+.janela-aviso ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.janela-aviso progress {
+  width: 100%;
+  accent-color: var(--destaque);
+}
+
+.janela-aviso .acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
