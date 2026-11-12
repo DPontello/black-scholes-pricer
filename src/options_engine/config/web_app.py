@@ -199,7 +199,12 @@ def build_web_app(
     process = None
     if bridge:
         command, cwd = default_bridge_command(
-            platform.system(), _ponte_src_dir(), Path.home(), PORTA_PONTE, frozen_dir=frozen_dir
+            platform.system(),
+            _ponte_src_dir(),
+            Path.home(),
+            PORTA_PONTE,
+            frozen_dir=frozen_dir,
+            log=config_dir / "logs" / "ponte.log",
         )
         process = BridgeProcess(command, cwd, client)
     importer = None if downloads_dir is None else DownloadsImporter(library, downloads_dir, clock)

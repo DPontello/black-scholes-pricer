@@ -48,28 +48,41 @@ ProcessSpawner = Callable[[Sequence[str], Path], ProcessHandle]
 
 
 def spawn_process(command: Sequence[str], cwd: Path) -> ProcessHandle:
-    """Executor real: ``Popen`` sem stdin (a ponte não lê do terminal do app). No Windows, sem
+    """Executor real: ``Popen`` sem stdin, stdout e stderr (a ponte não lê nem escreve no terminal
+    do app; o app instalado não tem console, e o que ela herdaria seria inválido). No Windows, sem
     janela de console: a ponte instalada é um programa de console, para o ``diagnostico`` e o
     ``autoteste`` mostrarem o resultado, mas o app a sobe escondida."""
     return subprocess.Popen(
         list(command),
         cwd=cwd,
         stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
 
 
 def default_bridge_command(
-    system: str, src_dir: Path, home: Path, port: int, *, frozen_dir: Path | None = None
+    system: str,
+    src_dir: Path,
+    home: Path,
+    port: int,
+    *,
+    frozen_dir: Path | None = None,
+    log: Path | None = None,
 ) -> tuple[tuple[str, ...], Path]:
     """Comando que sobe a ponte e o diretório de trabalho dele (``src_dir``, onde mora
     ``options_ponte``). ``system`` é o de ``platform.system()``; o que não é Windows usa o Wine.
     ``frozen_dir`` é a pasta do app instalado: lá a ponte é o ``PonteTryd.exe`` que vem junto, e não
-    há ``python`` no PATH.
+    há ``python`` no PATH. ``log`` (só com ``frozen_dir``) é o arquivo onde a ponte grava o próprio
+    log: o app a sobe sem console, e no Wine o caminho seria do Linux.
     """
     if frozen_dir is not None:
         ponte = frozen_dir / "ponte"
-        return (str(ponte / "PonteTryd.exe"), "servir", "--porta", str(port)), ponte
+        comando = [str(ponte / "PonteTryd.exe"), "servir", "--porta", str(port)]
+        if log is not None:
+            comando += ["--log", str(log)]
+        return tuple(comando), ponte
     if system == "Windows":  # desenvolvimento: Python do Windows no PATH
         return ("python", "-m", "options_ponte", "servir", "--porta", str(port)), src_dir
     return (

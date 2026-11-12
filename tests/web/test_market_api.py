@@ -11,6 +11,7 @@ from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.inbound.web.market import router_mercado
 from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET
 from options_engine.adapters.outbound.clock import FixedClock
+from options_engine.application.ports.alerts import AlertsView, AlertUseCase
 from options_engine.application.ports.inbound import (
     ChainView,
     ExpiryBlock,
@@ -20,11 +21,12 @@ from options_engine.application.ports.inbound import (
     WatchRow,
 )
 from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.application.ports.portfolio import ExpiryNotice, PortfolioView
 from options_engine.application.use_cases.alerts import AlertService
 from options_engine.application.use_cases.market_analysis import MarketAnalysisService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
-from options_engine.domain.alerts.model import AlertSettings
+from options_engine.domain.alerts.model import Alert, AlertKind, AlertSettings
 from options_engine.domain.model.chain import RejectedSeries
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from options_engine.domain.model.errors import (
@@ -174,7 +176,7 @@ def _cliente(
     com_perfil: bool = True,
     intervalo: float = 0.05,
     carteira: PortfolioService | None = None,
-    alertas: AlertService | None = None,
+    alertas: AlertUseCase | None = None,
 ) -> TestClient:
     perfis = ProfileService(FakeProfileRepository(), FixedClock(AGORA), "PC-TESTE")
     if com_perfil:
@@ -491,6 +493,39 @@ def test_alertas_vao_no_ao_vivo_junto_da_carteira_e_so_quando_mudam() -> None:
         mudou = ws.receive_json()
     # Os alertas não mudaram (continuam vazios): só a carteira vai de novo.
     assert mudou["tipo"] == "carteira"
+
+
+class _AlertasComVencimento:
+    """``AlertUseCase`` que devolve um alerta com a data do vencimento (um ``date``)."""
+
+    def evaluate(self, view: PortfolioView, notices: Sequence[ExpiryNotice]) -> AlertsView:
+        alerta = Alert(
+            "vencimento_proximo:op000001:0",
+            AlertKind.EXPIRY_NEAR,
+            "op000001",
+            "put coberta",
+            "PETR4",
+            leg=0,
+            symbol="PETRW280",
+            expiry=NOVEMBRO,
+            business_days=2,
+        )
+        return AlertsView((alerta,), 0, DataSource.AO_VIVO)
+
+    def dismiss(self, key: str) -> None: ...
+
+    def restore_all(self) -> None: ...
+
+
+def test_ao_vivo_manda_data_como_texto_iso() -> None:
+    carteira = _carteira()
+    carteira.add_stock("PETR4", 100, 28.0, NOVEMBRO)
+    with _cliente(
+        _MercadoFalso(), carteira=carteira, alertas=_AlertasComVencimento()
+    ).websocket_connect("/api/ao-vivo") as ws:
+        mensagens = [ws.receive_json() for _ in range(4)]
+    assert mensagens[3]["tipo"] == "alertas"
+    assert mensagens[3]["dados"]["alertas"][0]["vencimento"] == "2026-11-19"
 
 
 def test_alertas_sem_perfil_mandam_o_motivo() -> None:

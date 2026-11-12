@@ -21,6 +21,7 @@ from options_ponte.protocolo import (
     Valor,
     codificar,
     decodificar,
+    topico_rtd,
 )
 from options_ponte.servidor import (
     ESPACAMENTO_APOS_FALHA_AO_ABRIR_S,
@@ -43,8 +44,8 @@ class SessaoFalsa:
     """``SessaoRtd`` em memória: guarda as chamadas; o teste controla avisos, valores e vida."""
 
     def __init__(self) -> None:
-        self.iniciais: dict[tuple[str, str], object] = {}
-        self.conectados: list[tuple[int, tuple[str, str]]] = []
+        self.iniciais: dict[tuple[str, ...], object] = {}
+        self.conectados: list[tuple[int, tuple[str, ...]]] = []
         self.desconectados: list[int] = []
         self.pendentes: list[tuple[int, object]] = []
         self.n_avisos = 0
@@ -64,7 +65,10 @@ class SessaoFalsa:
             self.pendentes.extend(mudancas)
             self.n_avisos += 1
 
-    def conectar(self, id_: int, strings: tuple[str, str]) -> object:
+    def topico(self, ticker: str, campo: str) -> tuple[str, ...]:
+        return topico_rtd(ticker, campo)
+
+    def conectar(self, id_: int, strings: tuple[str, ...]) -> object:
         self.threads.add(threading.get_ident())
         if self.falha_na_conexao == len(self.conectados) + 1:
             raise RuntimeError("ConnectData falhou")
@@ -101,6 +105,18 @@ class SessaoFalsa:
         self.encerramentos += 1
 
 
+class SessaoDoTryd7(SessaoFalsa):
+    """Uma sessão cuja via monta o tópico de três strings: ``("COT", ativo, código)``."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pedidos_de_topico: list[tuple[str, str]] = []
+
+    def topico(self, ticker: str, campo: str) -> tuple[str, ...]:
+        self.pedidos_de_topico.append((ticker, campo))
+        return ("COT", ticker, campo)
+
+
 class RelogioFalso:
     def __init__(self) -> None:
         self.agora = 0.0
@@ -131,6 +147,27 @@ def test_assinar_conecta_com_o_topico_rtd_e_emite_o_valor_inicial_como_float() -
     mensagens = ponte.tratar(Assinar((PETR4_ULT,)))
     assert mensagens == [Valor("PETR4", "ULT", "float", 38.42, AGORA, inicial=True)]
     assert [strings for _, strings in sessao.conectados] == [("PETR4_B_0", "ULT")]
+
+
+def test_ponte_monta_o_topico_pela_sessao() -> None:
+    """O formato do tópico é da via em uso: a ``Ponte`` só pergunta à sessão e repassa."""
+    sessao = SessaoDoTryd7()
+    ponte = Ponte(lambda: sessao, RelogioFalso(), lambda: AGORA, 10)
+    ponte.tratar(Assinar((PETR4_ULT,)))
+    assert sessao.pedidos_de_topico == [PETR4_ULT]
+    assert sessao.conectados == [(1, ("COT", "PETR4", "ULT"))]
+
+
+def test_ponte_monta_o_topico_pela_sessao_tambem_ao_abrir_depois_de_assinar() -> None:
+    sessao = SessaoDoTryd7()
+    ponte = Ponte(
+        lambda: sessao, RelogioFalso(), lambda: AGORA, 10, processos_tryd=lambda: frozenset({100})
+    )
+    ponte.tratar(Assinar((PETR4_ULT,)))  # ainda sem sessão: fica registrado
+    assert sessao.pedidos_de_topico == []
+    ponte.ciclo()  # o Tryd está aberto: a sessão abre e assina o que estava registrado
+    assert sessao.pedidos_de_topico == [PETR4_ULT]
+    assert sessao.conectados == [(1, ("COT", "PETR4", "ULT"))]
 
 
 @pytest.mark.parametrize(
