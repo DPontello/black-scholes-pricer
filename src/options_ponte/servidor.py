@@ -32,7 +32,6 @@ from options_ponte.protocolo import (
     classificar_valor,
     codificar,
     decodificar,
-    topico_rtd,
 )
 
 __all__ = ["Ponte", "ServidorTcp", "SessaoRtd"]
@@ -65,7 +64,11 @@ _BYTES_POR_LEITURA = 65536
 class SessaoRtd(Protocol):
     """O que a ponte pede ao servidor RTD. Sempre chamada pela thread principal (STA)."""
 
-    def conectar(self, id_: int, strings: tuple[str, str]) -> object:
+    def topico(self, ticker: str, campo: str) -> tuple[str, ...]:
+        """As strings do ``ConnectData`` para o ativo e o campo, no formato da via em uso."""
+        ...
+
+    def conectar(self, id_: int, strings: tuple[str, ...]) -> object:
         """``ConnectData``: assina o tópico e devolve o valor inicial, como veio."""
         ...
 
@@ -227,7 +230,7 @@ class Ponte:
         valores: list[Mensagem] = []
         for id_, (ticker, campo) in self._registro.assinados():
             try:
-                bruto_inicial = sessao.conectar(id_, topico_rtd(ticker, campo))
+                bruto_inicial = sessao.conectar(id_, sessao.topico(ticker, campo))
             except Exception as erro:
                 _encerrar_sem_erro(sessao)
                 self._ultimos.clear()
@@ -276,7 +279,7 @@ class Ponte:
             return mensagens
         for posicao, (id_, (ticker, campo)) in enumerate(novos):
             try:
-                bruto_inicial = sessao.conectar(id_, topico_rtd(ticker, campo))
+                bruto_inicial = sessao.conectar(id_, sessao.topico(ticker, campo))
             except Exception as erro:
                 # o que não conectou não fica registrado: o app pode pedir de novo
                 self._registro.remover(topico for _, topico in novos[posicao:])

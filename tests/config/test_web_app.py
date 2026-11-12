@@ -255,6 +255,33 @@ def test_ciclo_de_vida_varre_a_pasta_downloads_de_tempos_em_tempos() -> None:
     assert registro.chamadas == ["perfis.close"]
 
 
+def test_a_ponte_do_app_instalado_grava_o_log_em_config_dir_logs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recebido: dict[str, object] = {}
+
+    def comando_falso(
+        system: str, src_dir: Path, home: Path, port: int, **opcoes: object
+    ) -> tuple[tuple[str, ...], Path]:
+        recebido.update(opcoes)
+        return ("PonteTryd.exe", "servir"), tmp_path
+
+    monkeypatch.setattr(modulo, "default_bridge_command", comando_falso)
+    monkeypatch.setattr(modulo, "BridgeProcess", lambda command, cwd, client: object())
+    build_web_app(
+        config_dir=tmp_path / "config",
+        static_dir=None,
+        bridge=True,
+        machine_name="PC-TESTE",
+        clock=relogio(),
+        frozen_dir=tmp_path / "app",
+    )
+    assert recebido == {
+        "frozen_dir": tmp_path / "app",
+        "log": tmp_path / "config" / "logs" / "ponte.log",
+    }
+
+
 def test_app_com_downloads_expoe_a_importacao_automatica(tmp_path: Path) -> None:
     downloads = tmp_path / "Downloads"
     downloads.mkdir()

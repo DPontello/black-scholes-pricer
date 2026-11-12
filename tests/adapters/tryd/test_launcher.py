@@ -68,6 +68,31 @@ def test_no_app_instalado_a_ponte_e_o_exe_que_vem_junto() -> None:
         assert cwd == pasta / "ponte"
 
 
+def test_ponte_do_app_instalado_grava_o_log_na_pasta_do_app() -> None:
+    pasta = Path("C:/Programas/PainelOpcoes")
+    log = Path("L/ponte.log")
+    for sistema in ("Windows", "Linux"):
+        comando, cwd = default_bridge_command(sistema, SRC, HOME, 8766, frozen_dir=pasta, log=log)
+        assert comando == (
+            str(pasta / "ponte" / "PonteTryd.exe"),
+            "servir",
+            "--porta",
+            "8766",
+            "--log",
+            str(log),
+        )
+        assert cwd == pasta / "ponte"
+
+
+def test_so_o_app_instalado_passa_o_log() -> None:
+    """Em desenvolvimento a ponte já escreve no terminal; no Wine o caminho seria do Linux."""
+    log = Path("L/ponte.log")
+    for sistema in ("Windows", "Linux"):
+        comando, _ = default_bridge_command(sistema, SRC, HOME, 8766, log=log)
+        assert "--log" not in comando
+        assert str(log) not in comando
+
+
 def test_comando_para_matar_a_ponte_que_sobrou_so_existe_no_linux() -> None:
     assert bridge_kill_command("Linux") == KILL_LINUX
     assert bridge_kill_command("Windows") is None
@@ -300,6 +325,26 @@ def test_spawn_process_no_windows_sobe_a_ponte_sem_janela(
     spawn_process(("PonteTryd.exe", "servir"), tmp_path)
     assert recebido["creationflags"] == 0x08000000
     assert recebido["cwd"] == tmp_path
+
+
+def test_spawn_process_nao_herda_a_saida_do_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sem isso a ponte escreve no stdout/stderr do app: no app instalado (sem console) eles são
+    inválidos e o ``print`` da ponte quebra com ``OSError``."""
+    recebido: dict[str, object] = {}
+
+    def popen_falso(command: list[str], **kwargs: object) -> object:
+        recebido.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(subprocess, "Popen", popen_falso)
+    spawn_process(("PonteTryd.exe", "servir"), tmp_path)
+    assert recebido["stdin"] == subprocess.DEVNULL
+    assert recebido["stdout"] == subprocess.DEVNULL
+    assert recebido["stderr"] == subprocess.DEVNULL
+    assert recebido["creationflags"] == 0x08000000
 
 
 def test_spawn_process_lanca_um_processo_de_verdade(tmp_path: Path) -> None:
