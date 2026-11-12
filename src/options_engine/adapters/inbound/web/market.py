@@ -13,6 +13,7 @@ from datetime import date, datetime
 from typing import Annotated, Final
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketState
@@ -431,7 +432,7 @@ class _SessaoAoVivo:
         for mensagem in mensagens:
             if self._ws.client_state is not WebSocketState.CONNECTED:
                 raise WebSocketDisconnect()
-            await self._ws.send_json(mensagem)
+            await self._ws.send_json(jsonable_encoder(mensagem))
 
     def _pedido(self, texto: str) -> list[dict[str, object]]:
         try:

@@ -13,9 +13,7 @@ tópicos são os da ``Ponte`` (não um contador próprio) e as interfaces ``IRtd
 import contextlib
 import importlib
 import importlib.metadata
-import ntpath
 import platform
-import re
 import struct
 import subprocess
 import sys
@@ -23,8 +21,9 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Final, TextIO
 
+from options_ponte import tryd7, vias
 from options_ponte.protocolo import (
     CLSID,
     PROGID,
@@ -35,9 +34,26 @@ from options_ponte.protocolo import (
     Valor,
 )
 from options_ponte.servidor import Ponte
+from options_ponte.tryd7 import pids_do_executavel
+from options_ponte.vias import (
+    CLSID_TRYD7,
+    VIA_TRYD7,
+    VIA_TRYD8,
+    VISAO_DO_PROCESSO,
+    Registro,
+    Via,
+    Visao,
+    arquivo_do_comando,
+    dono_do_rtdtrading,
+    valor_da_classe,
+)
 
 __all__ = [
     "DIRETORIO_SRC",
+    "IID_IRTDSERVER_EXCEL",
+    "IID_IRTDUPDATEEVENT_EXCEL",
+    "MOTIVO_STDDE_FECHADO",
+    "MOTIVO_STDDE_PORTA",
     "BibliotecaDeTipos",
     "ErroRtd",
     "SessaoRtdCom",
@@ -48,17 +64,29 @@ __all__ = [
     "carregar_tipos",
     "comando_servidor_falso",
     "criar_servidor",
+    "diagnosticar_vias",
     "diagnostico",
     "processos_tryd",
     "servir_falso",
+    "verificar_stdde",
 ]
 
-TLB_TRYD = "{EFCFBDCA-78A5-450B-8228-346C4F44D5B8}"
+TLB_RTDTRADING = "{EFCFBDCA-78A5-450B-8228-346C4F44D5B8}"  # a do RTDTrading (Tryd 8 e Profit)
 TLB_EXCEL = "{00020813-0000-0000-C000-000000000046}"
-# Na ordem de tentativa. A do Tryd só carrega em Python de 32 bits no Windows (o Tryd a registra
-# só em win32) e não carrega no Wine; a do Excel é a do Office ou, no Wine, o shim do .idl.
-_BIBLIOTECAS = (("Tryd", TLB_TRYD, 1, 0), ("Excel", TLB_EXCEL, 1, 4))
+# Na ordem de tentativa. A do RTDTrading só carrega em Python de 32 bits no Windows (o Tryd a
+# registra só em win32) e não carrega no Wine; a do Excel é a do Office ou, no Wine, o shim do .idl.
+_BIBLIOTECAS = (("RTDTrading", TLB_RTDTRADING, 1, 0), ("Excel", TLB_EXCEL, 1, 4))
 _INTERFACES = ("IRtdServer", "IRTDUpdateEvent")
+# A preferida é a biblioteca com os IIDs do Excel: são os que o StRtd do Tryd 7 e o tryd.exe
+# implementam. Uma de IIDs diferentes só serve se nenhuma outra carregar (``aviso``).
+IID_IRTDSERVER_EXCEL: Final = "{EC0E6191-DB51-11D3-8F3E-00C04F3651B8}"
+IID_IRTDUPDATEEVENT_EXCEL: Final = "{A43788C1-D91B-11D3-8F39-00C04F3651B8}"
+_MOTIVO_IIDS_DIFERENTES: Final = (
+    "IIDs diferentes dos do Excel (o StRtd do Tryd 7 e o tryd.exe usam os do Excel)"
+)
+
+MOTIVO_STDDE_FECHADO: Final = "o StDde.exe do Tryd não está rodando: ative o DDE/RTD no Tryd"
+MOTIVO_STDDE_PORTA: Final = "a porta {porta} do StDde do Tryd não responde"
 
 CO_E_CLASSSTRING = -2147221005  # 0x800401F3: o ProgID não resolve (o Wine não lê HKCU\Classes)
 
@@ -71,8 +99,12 @@ _VIDA_DO_SERVIDOR_FALSO_S = 2.0
 _LIMITE_ENTRE_PROCESSOS_S = 10.0  # cobre os 5 s de silêncio até o Heartbeat perceber a queda
 _PASSO_DO_AUTOTESTE_S = 0.05
 _TOPICO_AUTOTESTE = ("PETRK300", "ULT")
-_TH32CS_SNAPPROCESS = 0x2
 _EXECUTAVEL_TRYD = "tryd.exe"  # o LocalServer32 do servidor RTD do Tryd
+_EXECUTAVEL_STDDE = "StDde.exe"  # o Tryd 7 só serve o RTD com ele no ar
+_VISOES: Final[tuple[Visao, ...]] = (64, 32)
+_DETALHES_TRYD7 = ("Class", "Assembly", "RuntimeVersion", "CodeBase")  # o que o RegAsm grava
+_PREFIXO_CODEBASE = "file:///"
+_DOTNET35 = "SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v3.5"
 
 
 class ErroRtd(Exception):
@@ -89,7 +121,8 @@ class BibliotecaDeTipos:
     minor: int
     iid_servidor: str
     iid_aviso: str
-    descartadas: tuple[tuple[str, str], ...]  # (descrição, motivo) das tentadas antes desta
+    descartadas: tuple[tuple[str, str], ...]  # (descrição, motivo) das tentadas que não serviram
+    aviso: str | None = None  # com IIDs diferentes dos do Excel: usada por falta de outra
 
     @property
     def descricao(self) -> str:
@@ -107,14 +140,17 @@ def _importar(nome: str) -> Any:
 
 
 def carregar_tipos() -> BibliotecaDeTipos:
-    """Carrega ``IRtdServer``/``IRTDUpdateEvent``: type library do Tryd, senão a do Excel.
+    """Carrega ``IRtdServer``/``IRTDUpdateEvent``: type library do RTDTrading, senão a do Excel.
 
     O cliente RTD precisa dessas interfaces tipadas (early binding): os parâmetros ``ByRef`` do
-    ``ConnectData``/``RefreshData`` não funcionam por ``IDispatch`` puro.
+    ``ConnectData``/``RefreshData`` não funcionam por ``IDispatch`` puro. Vale a primeira, na ordem
+    de tentativa, com os IIDs do Excel; sem nenhuma, a primeira que carregou (com ``aviso``). Só a
+    escolhida é registrada.
     """
     gencache = _importar("win32com.client.gencache")
     universal = _importar("win32com.universal")
     descartadas: list[tuple[str, str]] = []
+    reserva: tuple[str, str, int, int, Any] | None = None  # a 1ª que carregou com IIDs de outro
     for nome, guid, major, minor in _BIBLIOTECAS:
         try:
             modulo = gencache.EnsureModule(guid, 0, major, minor)
@@ -122,6 +158,12 @@ def carregar_tipos() -> BibliotecaDeTipos:
             faltam = [i for i in _INTERFACES if i not in iids]
             if faltam:
                 raise ErroRtd(f"sem a(s) interface(s) {', '.join(faltam)}")
+            if (
+                str(iids["IRtdServer"]).upper() != IID_IRTDSERVER_EXCEL
+                or str(iids["IRTDUpdateEvent"]).upper() != IID_IRTDUPDATEEVENT_EXCEL
+            ):
+                reserva = reserva or (nome, guid, major, minor, iids)
+                raise ErroRtd(_MOTIVO_IIDS_DIFERENTES)
             universal.RegisterInterfaces(guid, 0, major, minor, list(_INTERFACES))
         except Exception as erro:  # com_error, AttributeError (módulo None), ErroRtd acima
             descartadas.append((f"{nome} {guid} {major}.{minor}", str(erro)))
@@ -135,6 +177,26 @@ def carregar_tipos() -> BibliotecaDeTipos:
             str(iids["IRTDUpdateEvent"]),
             tuple(descartadas),
         )
+    if reserva is not None:
+        nome, guid, major, minor, iids = reserva
+        descricao = f"{nome} {guid} {major}.{minor}"
+        # a escolhida deixa de ser descartada
+        descartadas.remove((descricao, _MOTIVO_IIDS_DIFERENTES))
+        try:
+            universal.RegisterInterfaces(guid, 0, major, minor, list(_INTERFACES))
+        except Exception as erro:
+            descartadas.append((descricao, str(erro)))
+        else:
+            return BibliotecaDeTipos(
+                nome,
+                guid,
+                major,
+                minor,
+                str(iids["IRtdServer"]),
+                str(iids["IRTDUpdateEvent"]),
+                tuple(descartadas),
+                _MOTIVO_IIDS_DIFERENTES,
+            )
     detalhe = "; ".join(f"{descricao}: {motivo}" for descricao, motivo in descartadas)
     raise ErroRtd(
         f"nenhuma type library com IRtdServer/IRTDUpdateEvent carregou ({detalhe}). "
@@ -168,20 +230,67 @@ def _resolver_classe(progid: str, clsid: str) -> _ClasseRtd:
     return _ClasseRtd(pywintypes.IID(clsid), pythoncom.CLSCTX_LOCAL_SERVER, False)
 
 
-def criar_servidor(progid: str = PROGID, clsid: str = CLSID) -> Any:
-    """O objeto COM do servidor RTD (``IDispatch``), pelo ProgID ou, se preciso, pelo CLSID."""
+def criar_servidor(via: Via = VIA_TRYD8) -> Any:
+    """O objeto COM do servidor RTD (``IDispatch``) da via.
+
+    Tryd 8 (fora do processo): pelo ProgID ou, se preciso, pelo CLSID. Tryd 7 (dentro do
+    processo): direto pelo CLSID, com ``CLSCTX_INPROC_SERVER``, sem passar pelo ProgID: o
+    ``mscoree`` carrega o CLR v2 aqui dentro. Dele se pede o ``IRtdServer`` pelo IID do Excel
+    (como o Excel faz): o ``IDispatch`` padrão de um servidor .NET pode ser o da interface de
+    classe, com DISPIDs do CLR. Se o ``QueryInterface`` falhar, vale o ``IDispatch`` cru.
+    """
     pythoncom = _importar("pythoncom")
     try:
-        classe = _resolver_classe(progid, clsid)
+        if via.dentro_do_processo:
+            pywintypes = _importar("pywintypes")
+            bruto = pythoncom.CoCreateInstance(
+                pywintypes.IID(via.clsid),
+                None,
+                pythoncom.CLSCTX_INPROC_SERVER,
+                pythoncom.IID_IDispatch,
+            )
+            try:
+                return bruto.QueryInterface(
+                    pywintypes.IID(IID_IRTDSERVER_EXCEL), pythoncom.IID_IDispatch
+                )
+            except pythoncom.com_error:
+                return bruto
+        classe = _resolver_classe(via.progid, via.clsid)
         return pythoncom.CoCreateInstance(
             classe.iid, None, classe.contexto, pythoncom.IID_IDispatch
         )
     except pythoncom.com_error as erro:
+        if via.dentro_do_processo:
+            raise ErroRtd(
+                f"não foi possível criar o servidor RTD ({via.nome}, CLSID {via.clsid}): {erro}. "
+                f"Rode 'diagnostico' (Tryd.RtdServer registrado? .NET 3.5 instalado?)"
+            ) from erro
         raise ErroRtd(
-            f"não foi possível criar o servidor RTD (ProgID {progid!r}, CLSID {clsid}): {erro}. "
-            f"Rode 'diagnostico' (Tryd aberto e logado? RTD ativado? "
+            f"não foi possível criar o servidor RTD (ProgID {via.progid!r}, CLSID {via.clsid}): "
+            f"{erro}. Rode 'diagnostico' (Tryd aberto e logado? RTD ativado? "
             f"type library do Excel registrada?)"
         ) from erro
+
+
+def verificar_stdde(
+    caminhos: Callable[[str], list[Path]] = tryd7.caminhos_em_execucao,
+    ler_ini: Callable[[Path], tuple[int, str | None]] = tryd7.ler_ini_stdde_do_arquivo,
+    aceita: Callable[[int], bool] = tryd7.porta_aceita,
+) -> None:
+    """Confere o que o servidor RTD do Tryd 7 precisa antes de ser criado: o ``StDde.exe``
+    rodando e a porta dele (a do ``StDde.ini``, ``12002`` se não achar) aceitando conexão.
+
+    Levanta ``ErroRtd`` com o motivo. A pasta do Tryd, onde está o INI, vem do ``tryd.exe`` em
+    execução; sem ela, vale a porta padrão.
+    """
+    if not caminhos(_EXECUTAVEL_STDDE):
+        raise ErroRtd(MOTIVO_STDDE_FECHADO)
+    pasta = tryd7.pasta_do_tryd(caminhos)
+    porta = (
+        ler_ini(pasta / tryd7.INI_RELATIVO)[0] if pasta is not None else tryd7.PORTA_STDDE_PADRAO
+    )
+    if not aceita(porta):
+        raise ErroRtd(MOTIVO_STDDE_PORTA.format(porta=porta))
 
 
 class _AvisoDeAtualizacao:
@@ -210,21 +319,37 @@ class _AvisoDeAtualizacao:
         self.desconectado = True
 
 
+def _escolher_via() -> Via:
+    """A via que serve nesta máquina, pelo registro, ou ``ErroRtd`` com o motivo de nenhuma."""
+    via = vias.escolher_via(tryd7.RegistroWinreg())
+    if isinstance(via, str):
+        raise ErroRtd(via)
+    return via
+
+
 class SessaoRtdCom:
     """``SessaoRtd`` sobre o servidor RTD (o do Tryd) via COM: faz o papel do Excel.
 
     Vive na thread principal (STA): os avisos ``UpdateNotify`` chegam pelo bombeamento de
-    mensagens (``bombear``) nessa mesma thread. ``servidor`` (só para o autoteste) é um objeto
-    COM já pronto, no lugar do que ``criar_servidor`` cria.
+    mensagens (``bombear``) nessa mesma thread. A ``via`` diz qual servidor criar e o formato do
+    tópico; sem ela, a sessão escolhe pelo registro a cada abertura (Tryd 8 ou Tryd 7). ``servidor``
+    (só para o autoteste) é um objeto COM já pronto, no lugar do que ``criar_servidor`` cria; com
+    ele e sem ``via``, vale a do Tryd 8.
     """
 
-    def __init__(
-        self, progid: str = PROGID, clsid: str = CLSID, *, servidor: object | None = None
-    ) -> None:
+    def __init__(self, via: Via | None = None, *, servidor: object | None = None) -> None:
+        tipos = carregar_tipos()  # primeiro: a falha da type library é o motivo que o app vê
         classes = _importar("win32com.client.CLSIDToClass")
         util = _importar("win32com.server.util")
-        tipos = carregar_tipos()
-        bruto = servidor if servidor is not None else criar_servidor(progid, clsid)
+        if via is None:
+            via = VIA_TRYD8 if servidor is not None else _escolher_via()
+        if servidor is None:
+            if via is VIA_TRYD7:
+                verificar_stdde()
+            bruto = criar_servidor(via)
+        else:
+            bruto = servidor
+        self._via = via
         classe = classes.GetClass(tipos.iid_servidor)
         self._servidor = classe(getattr(bruto, "_oleobj_", bruto))
         self._aviso = _AvisoDeAtualizacao(tipos)
@@ -233,7 +358,10 @@ class SessaoRtdCom:
         if not status or status < 0:
             raise ErroRtd(f"ServerStart devolveu {status!r}: o servidor RTD recusou o cliente")
 
-    def conectar(self, id_: int, strings: tuple[str, str]) -> object:
+    def topico(self, ticker: str, campo: str) -> tuple[str, ...]:
+        return self._via.topico(ticker, campo)
+
+    def conectar(self, id_: int, strings: tuple[str, ...]) -> object:
         resultado = self._servidor.ConnectData(id_, strings, True)
         self._ids.add(id_)
         return resultado[0] if isinstance(resultado, tuple) else resultado
@@ -305,53 +433,7 @@ def bombear(
 
 def processos_tryd() -> frozenset[int]:
     """PIDs dos ``tryd.exe`` rodando (Toolhelp32: Windows e Wine). Fora do Windows, vazio."""
-    if sys.platform != "win32":
-        return frozenset()
-    import ctypes
-    from ctypes import wintypes
-
-    class Entrada(ctypes.Structure):  # PROCESSENTRY32W
-        _fields_ = (
-            ("dwSize", wintypes.DWORD),
-            ("cntUsage", wintypes.DWORD),
-            ("th32ProcessID", wintypes.DWORD),
-            ("th32DefaultHeapID", ctypes.c_size_t),
-            ("th32ModuleID", wintypes.DWORD),
-            ("cntThreads", wintypes.DWORD),
-            ("th32ParentProcessID", wintypes.DWORD),
-            ("pcPriClassBase", wintypes.LONG),
-            ("dwFlags", wintypes.DWORD),
-            ("szExeFile", ctypes.c_wchar * 260),
-        )
-
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    criar_foto = kernel32.CreateToolhelp32Snapshot
-    criar_foto.argtypes = (wintypes.DWORD, wintypes.DWORD)
-    criar_foto.restype = wintypes.HANDLE
-    primeiro, proximo = kernel32.Process32FirstW, kernel32.Process32NextW
-    for funcao in (primeiro, proximo):
-        funcao.argtypes = (wintypes.HANDLE, ctypes.POINTER(Entrada))
-        funcao.restype = wintypes.BOOL
-    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
-
-    foto = criar_foto(_TH32CS_SNAPPROCESS, 0)
-    if foto is None or foto == ctypes.c_void_p(-1).value:
-        raise ctypes.WinError(ctypes.get_last_error())
-    try:
-        entrada = Entrada()
-        entrada.dwSize = ctypes.sizeof(Entrada)
-        # lista vazia não existe (este processo está nela): falha aqui não pode virar "Tryd fechado"
-        if not primeiro(foto, ctypes.byref(entrada)):
-            raise ctypes.WinError(ctypes.get_last_error())
-        pids: set[int] = set()
-        while True:
-            # o Wine antigo põe o caminho inteiro no szExeFile
-            if ntpath.basename(entrada.szExeFile).lower() == _EXECUTAVEL_TRYD:
-                pids.add(int(entrada.th32ProcessID))
-            if not proximo(foto, ctypes.byref(entrada)):
-                return frozenset(pids)
-    finally:
-        kernel32.CloseHandle(foto)
+    return pids_do_executavel(_EXECUTAVEL_TRYD)
 
 
 # ---------------------------------------------------------------------------
@@ -373,19 +455,6 @@ def arquitetura_pe(caminho: Path) -> str:
     return {0x14C: "32 bits (x86)", 0x8664: "64 bits (x64)", 0xAA64: "ARM64"}.get(
         maquina, hex(maquina)
     )
-
-
-def arquivo_do_comando(comando: str) -> str:
-    """O executável/DLL de um valor InprocServer32/LocalServer32.
-
-    O valor pode vir com aspas ou sem, com argumentos (``EXCEL.EXE /automation``) e com
-    variáveis de ambiente (``%SystemRoot%``).
-    """
-    texto = ntpath.expandvars(comando.strip())
-    if texto.startswith('"'):
-        return texto[1:].split('"', 1)[0]
-    achado = re.search(r"\.(exe|dll)\b", texto, re.IGNORECASE)
-    return texto[: achado.end()] if achado else texto
 
 
 def _ler_padrao(winreg: Any, raiz: Any, subchave: str, visao: int) -> str | None:
@@ -461,6 +530,8 @@ def _diagnosticar_tipos() -> int:
         return 1
     for descricao, motivo in tipos.descartadas:
         print(f"[aviso] type library {descricao} não serviu: {motivo}")
+    if tipos.aviso is not None:
+        print(f"[aviso] type library {tipos.descricao} usada por falta de outra: {tipos.aviso}")
     print(
         f"[ok] type library em uso: {tipos.descricao} "
         f"(IRtdServer {tipos.iid_servidor}, IRTDUpdateEvent {tipos.iid_aviso})"
@@ -480,14 +551,160 @@ def _diagnosticar_processo() -> None:
         print("[falta] Tryd fechado (nenhum tryd.exe): a ponte espera o usuário abri-lo")
 
 
+def _diagnosticar_dono(registro: Registro, visao: Visao, saida: TextIO) -> None:
+    """Quem atende o ``RTDTrading``: o ``tryd.exe`` (Tryd 8) ou o ``profitchart.exe`` (Profit)."""
+    dono = dono_do_rtdtrading(registro, visao)
+    if dono is None:
+        print("[info] RTDTrading.RtdServer não registrado", file=saida)
+    elif dono == _EXECUTAVEL_TRYD:
+        print("[ok] RTDTrading.RtdServer -> tryd.exe (Tryd 8)", file=saida)
+    elif dono == "profitchart.exe":
+        print(
+            "[aviso] RTDTrading.RtdServer aponta para o profitchart.exe: "
+            "isso é o RTD do Profit, não do Tryd",
+            file=saida,
+        )
+    else:
+        print(
+            f"[aviso] RTDTrading.RtdServer aponta para {dono}, que não é o tryd.exe (Tryd 8)",
+            file=saida,
+        )
+
+
+def _diagnosticar_tryd7(
+    registro: Registro, visao: Visao, arquivo_existe: Callable[[Path], bool], saida: TextIO
+) -> int:
+    """O ``Tryd.RtdServer`` numa visão do registro e o ``CodeBase`` dele. Devolve as faltas."""
+    if not vias.tryd7_registrado(registro, visao):
+        print(f"[falta] Tryd.RtdServer não registrado na visão de {visao} bits", file=saida)
+        return 1
+    inproc = f"CLSID\\{CLSID_TRYD7}\\InprocServer32"
+    valores = {nome: valor_da_classe(registro, inproc, nome, visao) for nome in _DETALHES_TRYD7}
+    detalhes = ", ".join(f"{nome} {valor or '(ausente)'}" for nome, valor in valores.items())
+    print(f"[ok] Tryd.RtdServer na visão de {visao} bits: mscoree.dll, {detalhes}", file=saida)
+    codebase = valores["CodeBase"]
+    if codebase is None:
+        print("[falta] sem CodeBase: o registro não diz onde está o StRtd.dll", file=saida)
+        return 1
+    if codebase.lower().startswith(_PREFIXO_CODEBASE):
+        codebase = codebase[len(_PREFIXO_CODEBASE) :]
+    caminho = Path(codebase)
+    if arquivo_existe(caminho):
+        print("[ok] StRtd.dll existe", file=saida)
+        return 0
+    print(f"[falta] o CodeBase aponta para um arquivo que não existe: {caminho}", file=saida)
+    return 1
+
+
+def _diagnosticar_dotnet(registro: Registro, saida: TextIO) -> int:
+    """O .NET 3.5 (CLR v2), que o ``Tryd.RtdServer`` precisa no ``mscoree``. Devolve as faltas."""
+    if registro.ler("HKLM", _DOTNET35, "Install", 64) == "1":
+        print("[ok] .NET 3.5 (CLR v2) instalado", file=saida)
+        return 0
+    print(
+        "[falta] .NET 3.5 (CLR v2) não instalado: "
+        'ative em "Ativar ou desativar recursos do Windows"',
+        file=saida,
+    )
+    return 1
+
+
+def _diagnosticar_stdde(
+    caminhos: Callable[[str], list[Path]],
+    aceita: Callable[[int], bool],
+    ler_ini: Callable[[Path], tuple[int, str | None]],
+    saida: TextIO,
+) -> int:
+    """O ``StDde.exe``, a porta dele e o ``REGISTROU`` do ``StDde.ini``. Devolve as faltas."""
+    try:
+        stdde_roda = bool(caminhos(_EXECUTAVEL_STDDE))
+        pasta = tryd7.pasta_do_tryd(caminhos)
+    except OSError as erro:
+        print(f"[aviso] não foi possível listar os processos: {erro}", file=saida)
+        return 1
+    faltas = 0
+    if stdde_roda:
+        print("[ok] StDde.exe rodando", file=saida)
+    else:
+        print("[falta] StDde.exe não está rodando (ative o DDE/RTD no Tryd)", file=saida)
+        faltas += 1
+    porta, registrou = (
+        ler_ini(pasta / tryd7.INI_RELATIVO)
+        if pasta is not None
+        else (tryd7.PORTA_STDDE_PADRAO, None)
+    )
+    if aceita(porta):
+        print(f"[ok] porta {porta} do StDde respondendo", file=saida)
+    else:
+        print(f"[falta] porta {porta} do StDde não responde", file=saida)
+        faltas += 1
+    if registrou is None:
+        sem_pasta = "" if pasta is not None else " (Tryd fechado: sem a pasta do INI)"
+        print(f"[info] StDde.ini: REGISTROU não encontrado{sem_pasta}", file=saida)
+    else:
+        dica = (
+            " (o StDde não se registra sem administrador; o 'PonteTryd.exe registrar' resolve)"
+            if registrou.lower() == "false"
+            else ""
+        )
+        print(f"[info] StDde.ini: REGISTROU={registrou}{dica}", file=saida)
+    return faltas
+
+
+def diagnosticar_vias(
+    registro: Registro,
+    visao: Visao,
+    *,
+    caminhos: Callable[[str], list[Path]],
+    aceita: Callable[[int], bool],
+    ler_ini: Callable[[Path], tuple[int, str | None]],
+    arquivo_existe: Callable[[Path], bool],
+    saida: TextIO,
+) -> int:
+    """Mostra as duas vias RTD (RTDTrading e Tryd.RtdServer) e a que a ponte vai usar.
+
+    Só lê: registro, processos, porta e arquivos entram pelos parâmetros e o COM não é chamado.
+    ``visao`` é a do processo. Devolve as faltas que impedem a via escolhida: "nenhuma via" e,
+    com a via do Tryd 7, o que falta na visão do processo, o .NET 3.5 e o StDde. As demais linhas
+    ``[falta]`` aparecem, mas não contam: um Tryd 8 que funciona não precisa do que é do Tryd 7.
+    """
+    _diagnosticar_dono(registro, visao, saida)
+    faltas_do_tryd7 = 0
+    for visao_do_tryd7 in _VISOES:
+        faltas = _diagnosticar_tryd7(registro, visao_do_tryd7, arquivo_existe, saida)
+        if visao_do_tryd7 == visao:
+            faltas_do_tryd7 += faltas
+    faltas_do_tryd7 += _diagnosticar_dotnet(registro, saida)
+    faltas_do_tryd7 += _diagnosticar_stdde(caminhos, aceita, ler_ini, saida)
+    via = vias.escolher_via(registro, visao)
+    if isinstance(via, str):
+        print(f"[falta] nenhuma via: {via}", file=saida)
+        return 1
+    print(f"[ok] a ponte vai usar: {via.nome}", file=saida)
+    return faltas_do_tryd7 if via is VIA_TRYD7 else 0
+
+
 def diagnostico() -> int:
     """Só lê o ambiente (registro, type libraries, processos); não cria o servidor RTD."""
     bits = struct.calcsize("P") * 8
     print(f"Python {platform.python_version()} {bits} bits em {platform.platform()}")
     _importar("pythoncom")
     print(f"[ok] pywin32 {_versao_pywin32()}")
-    faltas = _diagnosticar_classe() + _diagnosticar_tipos()
+    registro = tryd7.RegistroWinreg()
+    faltas_da_classe = _diagnosticar_classe()
+    faltas = _diagnosticar_tipos()
+    if vias.escolher_via(registro) is not VIA_TRYD7:  # a classe do RTDTrading só importa sem ela
+        faltas += faltas_da_classe
     _diagnosticar_processo()
+    faltas += diagnosticar_vias(
+        registro,
+        VISAO_DO_PROCESSO,
+        caminhos=tryd7.caminhos_em_execucao,
+        aceita=tryd7.porta_aceita,
+        ler_ini=tryd7.ler_ini_stdde_do_arquivo,
+        arquivo_existe=Path.exists,
+        saida=sys.stdout,
+    )
     return 1 if faltas else 0
 
 
@@ -554,7 +771,7 @@ class _ServidorFalso:
         self.callback = None
 
     def _valor(self, strings: tuple[str, ...]) -> Any:
-        ativo, campo = strings
+        ativo, campo = strings[-2:]  # ("PETR4_B_0", "ULT") no Tryd 8, ("COT", "PETR4", "ULT") no 7
         base = self._BOOK.get(campo, f"{ativo}.{campo}")
         return base + self.tique * 0.01 if isinstance(base, float) else base
 

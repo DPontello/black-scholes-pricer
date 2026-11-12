@@ -62,6 +62,13 @@
 >   e [plano](superpowers/plans/2026-11-12-atualizacao-automatica.md). Cada subida na `master` com
 >   o CI verde publica um release `vX.Y.Z` com o instalador, e o app instalado no Windows avisa ao
 >   abrir e se atualiza com um clique. Falta subir pela `master` e conferir no Windows (HANDOFF §13).
+> - **Ponte no Tryd 7 (2026-11-12):** [desenho](superpowers/specs/2026-11-12-ponte-tryd-7-design.md)
+>   e [plano](superpowers/plans/2026-11-12-ponte-tryd-7.md). No PC da mãe (Tryd 7.5.4 e o Profit
+>   instalado) o ao vivo não chegava à tela: a ponte falava com o RTD do Profit. Agora ela tem a via
+>   do `Tryd.RtdServer` e escolhe sozinha entre ela e a do Tryd 8, o `registrar` o grava em `HKCU`
+>   sem administrador, e o `diagnostico` mostra as duas vias. A ponte lançada pelo app não cai mais
+>   por falta de console (log em `logs\ponte.log`), e o `/api/ao-vivo` não quebra mais com data. Falta conferir
+>   no PC dela os códigos de campo do Tryd 7 e o "Ao vivo" (HANDOFF §14).
 > - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
 > - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
 >   vitrine (benchmark, ADRs de apresentação) saíram do escopo.

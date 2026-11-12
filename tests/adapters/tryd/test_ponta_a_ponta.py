@@ -13,6 +13,7 @@ import pytest
 from options_engine.adapters.outbound.tryd.board import LiveBoard, RawValue
 from options_engine.adapters.outbound.tryd.client import BridgeHealth, TrydBridgeClient
 from options_engine.adapters.outbound.tryd.settings import TEMPO_CARGA_S
+from options_ponte.protocolo import topico_rtd
 from options_ponte.servidor import ESPERA_TRYD_ABRIR_S, Ponte, ServidorTcp
 from tests.adapters.tryd._ponte_falsa import esperar
 
@@ -24,7 +25,7 @@ class SessaoRtdFalsa:
     """``SessaoRtd`` em memória: o ``ConnectData`` devolve o zero inicial, como o Tryd."""
 
     def __init__(self) -> None:
-        self.conectados: list[tuple[int, tuple[str, str]]] = []
+        self.conectados: list[tuple[int, tuple[str, ...]]] = []
         self._pendentes: list[tuple[int, object]] = []
         self._avisos = 0
         self._trava = threading.Lock()
@@ -34,7 +35,10 @@ class SessaoRtdFalsa:
             self._pendentes.append((id_, valor))
             self._avisos += 1
 
-    def conectar(self, id_: int, strings: tuple[str, str]) -> object:
+    def topico(self, ticker: str, campo: str) -> tuple[str, ...]:
+        return topico_rtd(ticker, campo)
+
+    def conectar(self, id_: int, strings: tuple[str, ...]) -> object:
         self.conectados.append((id_, strings))
         return 0.0
 

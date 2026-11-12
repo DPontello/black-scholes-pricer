@@ -202,3 +202,34 @@ As perguntas numeradas no roteiro do spike, com destaque para:
 - **Na ADR-0006:** ela continua aceita. Se esta ADR for aceita, o status da
   0006 ganha "decisão 3 emendada pela ADR-0008", como a 0002 fez com a
   decisão nº 2.
+
+## Adendo (2026-11-12): Tryd 7.x e o Profit
+
+O app foi para o PC da mãe (Windows 11, Tryd 7.5.4 TrydSIM, Office de 64 bits e o Profit
+também instalado) e o ao vivo não chegou à tela. O diagnóstico mostrou que as correções do spike
+valem para o **Tryd 8.5.6.12**, o do spike, e não para toda versão do Tryd:
+
+- **O `RTDTrading.RtdServer` é do Tryd 8 e do Profit, com o mesmo CLSID** (`{272D2E65…}`). No PC
+  dela o `LocalServer32` é o `profitchart.exe`, e os erros da ponte ("Access violation … in module
+  'profitchart.exe'") vinham de dentro dele.
+- **O Tryd 7.x tem outro servidor, dentro do processo.** É o `Tryd.RtdServer` (CLSID
+  `{5209F8A0-88D3-4D20-870C-E0C44DE1C48D}`), com `InprocServer32` = `mscoree.dll`, que carrega a
+  classe .NET `StRtd.Controlador.StRtdServer` (`plugins\stDde\StRtd.dll`, CLR v2). Ele conversa
+  com o `StDde.exe` do Tryd por socket em `127.0.0.1:12002` (a porta está no `StDde.ini`) e
+  recebe o tópico `("COT", ativo, código)`. O ProgID e o `COT` do "Contexto" acima são os dele.
+- **O `StDde.exe` não consegue registrar o servidor sem administrador** (`REGISTROU=False` no
+  `StDde.ini`).
+
+**Decisão:**
+
+- **A ponte escolhe a via** a cada abertura de sessão, pelo registro: o dono do `RTDTrading` é o
+  `tryd.exe` → Tryd 8; senão o `Tryd.RtdServer` na visão do processo → Tryd 7; senão a sessão não
+  abre, e o motivo diz o que fazer (cita o Profit quando é ele o dono do CLSID). O Tryd 8 e o
+  Wine seguem como estavam.
+- **`registrar` e `desregistrar`** na ponte gravam e apagam o `Tryd.RtdServer` só em
+  `HKCU\Software\Classes`, sem administrador.
+- **Os códigos de campo do Tryd 7.5.4 são palpite** (os mesmos do Tryd 8) até a conferência no PC
+  dela, e ficam isolados em `CODIGOS_TRYD7` (`options_ponte/vias.py`).
+
+Desenho: [`specs/2026-11-12-ponte-tryd-7-design.md`](../superpowers/specs/2026-11-12-ponte-tryd-7-design.md).
+Plano: [`plans/2026-11-12-ponte-tryd-7.md`](../superpowers/plans/2026-11-12-ponte-tryd-7.md).
