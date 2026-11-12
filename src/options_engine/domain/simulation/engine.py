@@ -22,6 +22,10 @@ Fronteiras deste módulo (defendidas em toda entrada pública):
   (CONVENTIONS §2) → ``MixedAnnualizationBaseError``. Os VOs carregam a
   base exatamente para esta checagem existir.
 
+Perna de ação: entra no payoff como termo linear (``ações · S``), no fluxo de
+caixa pelo preço pago ou recebido, no valor a mercado pelo spot e nas gregas
+com delta igual à quantidade assinada.
+
 Agregações SEMPRE com ``math.fsum`` sobre as legs na ordem do agregado
 (canônica, por strike nas factories) — iterar set/reordenar muda o último
 bit e quebra os testes de 1e-12 (CONVENTIONS §6).
@@ -111,13 +115,18 @@ def _payoff_legs(strategy: Strategy) -> tuple[PayoffLeg, ...]:
     )
 
 
+def _stock_weight(strategy: Strategy) -> float:
+    return fsum(float(leg.signed_quantity) for leg in strategy.stock_legs)
+
+
 def net_premium_cashflow(strategy: Strategy) -> float:
     """Fluxo de caixa líquido dos prêmios na montagem, em moeda.
 
     Convenção de sinal: POSITIVO = crédito recebido (vendas superam
     compras), NEGATIVO = débito pago. É o offset que transforma payoff
     bruto em ``pnl``: comprar paga prêmio (``-premium``), vender recebe
-    (``+premium``) — o oposto do sinal de exposição da leg.
+    (``+premium``) — o oposto do sinal de exposição da leg. A ação entra
+    pelo preço, com a mesma regra.
     """
     faltantes: list[str] = []
     fluxos: list[float] = []
@@ -126,6 +135,11 @@ def net_premium_cashflow(strategy: Strategy) -> float:
             faltantes.append(leg.symbol)
         else:
             fluxos.append(-float(leg.side.sign) * leg.premium * leg.quantity)
+    for acao in strategy.stock_legs:
+        if acao.price is None:
+            faltantes.append(acao.symbol)
+        else:
+            fluxos.append(-float(acao.side.sign) * acao.price * acao.quantity)
     if faltantes:
         raise MissingPremiumError(
             f"pnl exige prêmio em todas as legs (decisão nº 4); sem prêmio: "
@@ -142,13 +156,15 @@ def net_premium_cashflow(strategy: Strategy) -> float:
 def payoff_at_expiry(strategy: Strategy, spot: float) -> float:
     """Valor BRUTO da estrutura no vencimento com o subjacente em ``spot``."""
     _require_european(strategy)
-    return kernel_payoff(spot, _payoff_legs(strategy))
+    return kernel_payoff(spot, _payoff_legs(strategy), _stock_weight(strategy))
 
 
 def pnl(strategy: Strategy, spot: float) -> float:
     """Resultado LÍQUIDO no vencimento: payoff bruto + fluxo de prêmios."""
     _require_european(strategy)
-    return kernel_payoff(spot, _payoff_legs(strategy)) + net_premium_cashflow(strategy)
+    return kernel_payoff(
+        spot, _payoff_legs(strategy), _stock_weight(strategy)
+    ) + net_premium_cashflow(strategy)
 
 
 def payoff_profile(strategy: Strategy, spots: Sequence[float]) -> PayoffProfile:
@@ -160,20 +176,21 @@ def payoff_profile(strategy: Strategy, spots: Sequence[float]) -> PayoffProfile:
     """
     _require_european(strategy)
     legs = _payoff_legs(strategy)
+    acoes = _stock_weight(strategy)
     eixo = tuple(float(s) for s in spots)
-    bruto = tuple(kernel_payoff(s, legs) for s in eixo)
+    bruto = tuple(kernel_payoff(s, legs, acoes) for s in eixo)
     if strategy.has_premiums:
         offset = net_premium_cashflow(strategy)
-        maximo, minimo = payoff_extrema(legs, offset)
+        maximo, minimo = payoff_extrema(legs, offset, acoes)
         return PayoffProfile(
             spots=eixo,
             payoff_at_expiry=bruto,
             pnl=tuple(v + offset for v in bruto),
-            breakevens=kernel_breakevens(legs, offset),
+            breakevens=kernel_breakevens(legs, offset, acoes),
             max_gain=maximo,
             max_loss=minimo,
         )
-    maximo, minimo = payoff_extrema(legs, 0.0)
+    maximo, minimo = payoff_extrema(legs, 0.0, acoes)
     return PayoffProfile(
         spots=eixo,
         payoff_at_expiry=bruto,
@@ -190,18 +207,23 @@ def payoff_profile(strategy: Strategy, spots: Sequence[float]) -> PayoffProfile:
 
 
 def _value(strategy: Strategy, spot: float, tau: float, r: float, sigma: float) -> float:
-    """Valor da estrutura: soma ponderada dos preços BS das legs (fsum)."""
+    """Valor da estrutura: soma ponderada dos preços BS das legs e das ações a ``spot`` (fsum)."""
     return fsum(
-        leg.signed_quantity
-        * bs_outputs(
-            spot,
-            leg.terms.strike,
-            tau,
-            r,
-            sigma,
-            is_call=leg.terms.option_type.is_call,
-        ).price
-        for leg in strategy.legs
+        [
+            *(
+                leg.signed_quantity
+                * bs_outputs(
+                    spot,
+                    leg.terms.strike,
+                    tau,
+                    r,
+                    sigma,
+                    is_call=leg.terms.option_type.is_call,
+                ).price
+                for leg in strategy.legs
+            ),
+            _stock_weight(strategy) * spot,
+        ]
     )
 
 
@@ -307,7 +329,7 @@ def portfolio_greeks(
         for leg in strategy.legs
     ]
     return Greeks(
-        delta=fsum(w * o.delta for w, o in ponderadas),
+        delta=fsum([*(w * o.delta for w, o in ponderadas), _stock_weight(strategy)]),
         gamma=fsum(w * o.gamma for w, o in ponderadas),
         theta_per_year=fsum(w * o.theta_per_year for w, o in ponderadas),
         vega_per_vol_unit=fsum(w * o.vega_per_vol_unit for w, o in ponderadas),

@@ -1,6 +1,69 @@
 # Roadmap — Options Analytics Engine
 
-> **Status:** Sprint 5 (Painel de Renda) **implementada em 2026-10-27** na `development` (versão `0.4.0`; merge na `master` e tag `v0.4.0` pendentes): volatilidade implícita, `OptionChainPort` + `CotahistOptionChainAdapter` com cadastro de instrumentos e cache sqlite, métricas de renda brutas e líquidas com extremos, smile e preço TEÓRICO, tabela de custos versionada, `RankIncomeOpportunitiesService` e painel HTML via `python -m options_engine painel`. Gates locais: 3485 testes, cobertura 99%, kernel em 100%. Premissas a conferir no primeiro arquivo real da B3: layout do trailer (TOTREG), domínio do `OptnStyle`, conteúdo do ESPECI das opções e strike já ajustado no `PREEXE`. Sprint 3 concluída em 2026-10-25 (tag `v0.3.0`). Próxima: **Sprint 4 (API e Portfólio)**.
+> **Fase atual (2026-10-28): App de opções.** O projeto virou ferramenta
+> pessoal: um app local (FastAPI + React) para o autor e a mãe dele, com
+> cotações ao vivo do Tryd, montador de estruturas, book de recomendações,
+> carteira e alertas. Prazo: **2026-11-30**.
+>
+> - **Documentos:** desenho em
+>   [`superpowers/specs/2026-10-28-app-opcoes-design.md`](superpowers/specs/2026-10-28-app-opcoes-design.md),
+>   plano da semana 1 em
+>   [`superpowers/plans/2026-10-28-app-semana-1-base.md`](superpowers/plans/2026-10-28-app-semana-1-base.md)
+>   e estado para retomar em
+>   [`superpowers/HANDOFF-2026-10-28.md`](superpowers/HANDOFF-2026-10-28.md).
+> - **Semana 1 (base, mercado ao vivo e fim de dia):** concluída e mergeada na
+>   `development`, com os arquivos reais da B3 de 28/10 conferidos.
+> - **Semana 2 (montador e carteira, 2026-11-02):** as 15 tarefas do
+>   [plano](superpowers/plans/2026-10-31-app-semana-2-montador-carteira.md) feitas na branch
+>   `feat/app-semana-2`, com o ponta a ponta nos arquivos reais. Falta o teste ao vivo no
+>   pregão (o P&L da carteira pelo Tryd). Decisões no
+>   [ledger](superpowers/ledger-semana-2.md).
+> - **Semana 3 (book e análise, 2026-11-02):** as 13 tarefas do
+>   [plano](superpowers/plans/2026-11-02-app-semana-3-book-analise.md) feitas na branch
+>   `feat/app-semana-3`: histórico de IV de 30 dias úteis e HV 21 pelos COTAHIST (com cache),
+>   IV rank, percentil e regime de vol; o book das quatro famílias (Renda, Volatilidade,
+>   Direcionais com e sem visão, Proteção) com presets salvos no perfil e "abrir no montador";
+>   a aba Análise no Mercado. Falta o ponta a ponta com os arquivos reais da B3 (não estavam neste
+>   PC) e o teste ao vivo no pregão. Decisões no [ledger](superpowers/ledger-semana-3.md).
+> - **Cadastro pelo `pesquisa-pregao.zip` (2026-11-03):** o app aceita o Cadastro de
+>   Instrumentos em XML da "Pesquisa por pregão", como a B3 entrega, além do CSV (ADR-0006,
+>   "Cadastro em XML"). Conferido com o arquivo real e a cadeia ao vivo de PETR4.
+> - **Melhoria de UX (2026-11-03):** a rotina da semana em Arquivos B3, com os links exatos da
+>   B3; o layout do Montador e do Registrar operação; o Book mais simples ("Melhores operações de
+>   hoje"); e a aba Aprender (as 18 operações com exemplo, termos, comece aqui, telas do app e os
+>   "?" pelo app). [Desenho](superpowers/specs/2026-11-03-ux-book-aprender-design.md).
+> - **Semana 4 (instalador, IR mensal e alertas):** [desenho](superpowers/specs/2026-11-03-semana-4-instalador-ir-alertas-design.md)
+>   e [ledger](superpowers/ledger-semana-4.md). Parte 1, o instalador
+>   ([plano](superpowers/plans/2026-11-03-semana-4-parte-1-instalador.md)), está feita:
+>   - o `.exe` do Windows sai do job Instalador do GitHub Actions (PR #10);
+>   - `scripts/linux/instalar.sh` instala neste PC;
+>   - falta conferir num PC Windows real.
+>
+>   A parte 2, o IR mensal das opções ([plano](superpowers/plans/2026-11-04-semana-4-parte-2-ir-mensal.md)),
+>   também está feita: a aba IR mensal da Carteira, com day trade, prejuízo por categoria, DARF
+>   mínimo de R$ 10 e o prazo de pagamento.
+>
+>   A parte 3, os alertas ([plano](superpowers/plans/2026-11-04-semana-4-parte-3-alertas.md)),
+>   está feita e mergeada na `development` (PR #11): vencimento próximo, risco de exercício, stop e alvo em
+>   reais por operação, os avisos de depois do vencimento, dispensar até mudar de estado, a
+>   contagem no menu e a rolagem para o vencimento seguinte, aberta no Montador com o custo de
+>   zerar. Falta o teste no app com o autor. Proventos e ajuste de strike ficaram fora da semana 4.
+> - **Semana 5 (acabamento, 2026-11-05):** [desenho](superpowers/specs/2026-11-05-semana-5-acabamento-design.md),
+>   [plano](superpowers/plans/2026-11-05-semana-5-acabamento.md) e [ledger](superpowers/ledger-semana-5.md).
+>   Feito: o ícone do app (janela, atalho e instalador), o "Escolher pasta…" no perfil novo, o
+>   Montador que rola até a montagem, preços com "R$" e milhar, e mensagens mais claras. Também o
+>   [roteiro do teste com a mãe](teste-usabilidade.md). Falta o autor fazer o teste com ela e
+>   conferir o instalador num PC Windows; depois, a versão 1.0.0 (HANDOFF §11).
+> - **Montador simples (2026-11-10):** [desenho](superpowers/specs/2026-11-09-montador-simples-design.md)
+>   e [plano](superpowers/plans/2026-11-10-montador-simples.md). A tela abre simples: a cadeia enxuta
+>   ao lado do resultado, e os custos, as gregas e a grade em "ver detalhes". Falta conferir no
+>   Windows a 1366 e 1920 px.
+> - **Para retomar em outro PC:** [`superpowers/HANDOFF-2026-11-02.md`](superpowers/HANDOFF-2026-11-02.md).
+> - **Sprint 4:** a API REST passa a ser o backend do app. Os itens só de
+>   vitrine (benchmark, ADRs de apresentação) saíram do escopo.
+> - **ADR-0008:** aceita com as correções do spike de 2026-10-28.
+>
+> **Status anterior:** Sprint 5 (Painel de Renda) **concluída em 2026-10-27** (tag `v0.4.0`, PR #3 com CI verde em Python 3.12 e 3.13 e oráculo scipy): volatilidade implícita, `OptionChainPort` + `CotahistOptionChainAdapter` com cadastro de instrumentos e cache sqlite, métricas de renda brutas e líquidas com extremos, smile e preço TEÓRICO, tabela de custos versionada, `RankIncomeOpportunitiesService` e painel HTML via `python -m options_engine painel`. Gates locais: 3485 testes, cobertura 99%, kernel em 100%. Premissas a conferir no primeiro arquivo real da B3: layout do trailer (TOTREG), domínio do `OptnStyle`, conteúdo do ESPECI das opções e strike já ajustado no `PREEXE`. Sprint 3 concluída em 2026-10-25 (tag `v0.3.0`). Próxima: **Sprint 4 (API e Portfólio)**.
 >
 > **Premissas:** Python 3.12+, stdlib-only no core até a Sprint 4, arquitetura hexagonal desde o commit inicial (o layout `domain/ → application/ → adapters/` nasce na Sprint 1, ainda que parcialmente vazio — refatorar layout de pacote depois é custo puro). Esforço relativo: **S** (≤ 3 dias-pessoa), **M** (4–7), **L** (8–12), assumindo 1 dev sênior em dedicação parcial de portfólio.
 >

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "options-engine"
-version = "0.4.0"
+version = "0.5.0.dev0"
 description = "Options pricing, simulation and risk analytics engine — Black-Scholes core, hexagonal architecture, stdlib-only domain"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,6 +21,13 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.5",
     "import-linter>=2.0",
+    "httpx2>=2.16",
+]
+# App local (FastAPI + React): fora de `dependencies` para o núcleo seguir sem deps de runtime.
+app = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "websockets>=13",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -72,6 +79,13 @@ forbidden_modules = [
     "httpx",
     "sqlalchemy",
 ]
+
+# pywin32 é Windows-only: só a ponte do Tryd (src/options_ponte) pode usá-lo.
+[[tool.importlinter.contracts]]
+name = "pywin32 só na ponte do Tryd"
+type = "forbidden"
+source_modules = ["options_engine"]
+forbidden_modules = ["win32com", "pythoncom", "pywintypes", "win32api"]
 
 [tool.mypy]
 strict = true

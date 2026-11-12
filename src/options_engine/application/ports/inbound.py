@@ -15,27 +15,64 @@ Emenda de 2026-07-04 ao ARCH §4.2 (painel de design da Sprint 3):
   um grid completo forçaria todo chamador a inventar um eixo fantasma.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime
+from enum import Enum
 from math import isfinite
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from options_engine.application.ports.outbound import CadastroFreshness
+from options_engine.domain.alerts.model import AlertSettings
+from options_engine.domain.analytics.volatility import DailyVol, VolContext
+from options_engine.domain.book.presets import BookSettings
 from options_engine.domain.income.costs import REFERENCE_POSITION_SHARES
 from options_engine.domain.income.metrics import IncomeStructure
 from options_engine.domain.income.ranking import IncomeRanking, RankingCriterion
+from options_engine.domain.model.chain import RejectedSeries
 from options_engine.domain.model.contracts import OptionTerms
+from options_engine.domain.model.enums import ExerciseStyle, OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError
-from options_engine.domain.model.results import PayoffProfile, PricingResult
+from options_engine.domain.model.profile import Profile, ProfileEntry
+from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
+from options_engine.domain.model.results import Greeks, PayoffProfile, PricingResult
 from options_engine.domain.model.scenarios import SpotAxis, StressScenario, StressTestReport
 from options_engine.domain.model.strategy import Strategy
+from options_engine.domain.model.templates import Template
+from options_engine.domain.pricing.smile import SmilePoint
+from options_engine.domain.simulation.valuation import ScenarioMatrix
 
 __all__ = [
     "AnalyzeStrategyPayoffUseCase",
+    "BuilderAnalysis",
+    "BuilderLegInput",
+    "BuilderLegView",
+    "BuilderRequest",
+    "BuilderStockInput",
+    "BuilderStockView",
+    "ChainView",
+    "ExpiryBlock",
+    "ExpiryOption",
+    "ExpiryPoint",
+    "ExpiryResult",
+    "LegPriceOrigin",
+    "MarketAnalysis",
+    "MarketAnalysisUseCase",
+    "MarketStatus",
+    "MarketViewUseCase",
     "PriceOptionCommand",
     "PriceOptionUseCase",
+    "ProfileUseCase",
     "RankIncomeCommand",
     "RankIncomeOpportunitiesUseCase",
+    "SeriesRow",
+    "SmileView",
+    "StrategyBuilderUseCase",
     "StressTestUseCase",
+    "TermPoint",
+    "TodayResult",
+    "WatchRow",
 ]
 
 
@@ -154,3 +191,296 @@ class RankIncomeOpportunitiesUseCase(Protocol):
     """Ranking das oportunidades de renda do pregão: venda coberta, put coberta e travas."""
 
     def execute(self, command: RankIncomeCommand) -> IncomeRanking: ...
+
+
+@runtime_checkable
+class ProfileUseCase(Protocol):
+    """Perfis do app: quem está usando, a watchlist dele e a trava entre PCs.
+
+    ``open`` trava o perfil para este PC (outro PC com trava recente →
+    ``ProfileLockedError``, a menos que ``force``); ``close`` solta a trava.
+    ``active``, ``set_watchlist`` e ``set_book_settings`` exigem perfil aberto
+    (``NoActiveProfileError``).
+    """
+
+    def list(self) -> tuple[ProfileEntry, ...]: ...
+
+    def create(self, name: str, folder: str) -> Profile: ...
+
+    def open(self, name: str, force: bool = False) -> Profile: ...
+
+    def active(self) -> Profile: ...
+
+    def active_folder(self) -> Path: ...
+
+    def set_watchlist(self, tickers: Sequence[str]) -> Profile: ...
+
+    def set_book_settings(self, settings: BookSettings) -> Profile: ...
+
+    def set_alert_settings(self, settings: AlertSettings) -> Profile: ...
+
+    def close(self) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class WatchRow:
+    """Exatamente um dos dois: ``quote`` ou ``reason``."""
+
+    symbol: str
+    quote: UnderlyingQuote | None
+    reason: str | None
+
+    def __post_init__(self) -> None:
+        if (self.quote is None) == (self.reason is None):
+            raise InvalidDomainValueError(
+                f"linha de {self.symbol!r} precisa de cotação OU motivo, nunca dos dois ou nenhum"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class SeriesRow:
+    symbol: str
+    option_type: OptionType
+    strike: float
+    exercise_style: ExerciseStyle
+    bid: float | None
+    ask: float | None
+    last: float | None
+    trades: int
+    volume: float
+    implied_vol: float | None
+    delta: float | None
+    lot: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryBlock:
+    expiry: date
+    business_days: int
+    rows: tuple[SeriesRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryOption:
+    expiry: date
+    business_days: int
+    weekly: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ChainView:
+    """``timestamp``: a cotação do ativo, que é a data de valoração.
+
+    ``expiries``: os blocos dos vencimentos escolhidos; ``available``: os que há para escolher.
+    """
+
+    symbol: str
+    spot: float
+    source: DataSource
+    timestamp: datetime
+    expiries: tuple[ExpiryBlock, ...]
+    rejected: tuple[RejectedSeries, ...]
+    available: tuple[ExpiryOption, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class MarketStatus:
+    """Sem ``cadastro``, ``cadastro_reason`` diz por quê."""
+
+    source: DataSource
+    cadastro: CadastroFreshness | None
+    cadastro_reason: str | None
+    cotahist_range: tuple[date, date] | None
+    cotahist_business_days: int | None = None
+
+
+@runtime_checkable
+class MarketViewUseCase(Protocol):
+    """``chain`` levanta ``UnknownSymbolError`` ou ``UnderlyingUnavailableError``; ``quotes``
+    nunca levanta por ativo: o motivo vai na linha.
+
+    ``expiries`` ``None`` é a escolha padrão: o vencimento mais próximo e o próximo mensal."""
+
+    def follow(
+        self,
+        watchlist: Sequence[str],
+        chain_symbol: str | None,
+        expiries: Collection[date] | None = None,
+        *,
+        portfolio_underlyings: Sequence[str] = (),
+        portfolio_series: Sequence[str] = (),
+    ) -> None: ...
+
+    def quotes(self, watchlist: Sequence[str]) -> tuple[WatchRow, ...]: ...
+
+    def chain(self, symbol: str, expiries: Collection[date] | None = None) -> ChainView: ...
+
+    def status(self) -> MarketStatus: ...
+
+
+class LegPriceOrigin(Enum):
+    """De onde veio o preço da perna no montador (ADR-0004); ``DIGITADO`` é o que o usuário pôs."""
+
+    EXECUTAVEL = "executavel"
+    INDICATIVO = "indicativo"
+    TEORICO = "teorico"
+    DIGITADO = "digitado"
+    PRECO_MEDIO = "preco_medio"  # a ação "da carteira", pelo preço médio do perfil
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderLegInput:
+    symbol: str
+    side: Side
+    quantity: int
+    price: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderStockInput:
+    side: Side
+    quantity: int
+    origin: StockOrigin
+    price: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderRequest:
+    """``template``: a chave de um modelo pronto, para conferir a forma e dar o nome."""
+
+    underlying: str
+    legs: tuple[BuilderLegInput, ...]
+    stock: BuilderStockInput | None = None
+    template: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderLegView:
+    symbol: str
+    option_type: OptionType
+    strike: float
+    exercise_style: ExerciseStyle
+    side: Side
+    quantity: int
+    lot: int | None
+    price: float | None
+    origin: LegPriceOrigin | None
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderStockView:
+    symbol: str
+    side: Side
+    quantity: int
+    origin: StockOrigin
+    price: float | None
+    price_origin: LegPriceOrigin | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryPoint:
+    """``payoff`` bruto sempre; ``pnl`` e ``net`` só com todas as pernas com preço."""
+
+    spot: float
+    payoff: float
+    pnl: float | None
+    net: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpiryResult:
+    """Em moeda. ``max_gain``/``max_loss`` e os ``net_*``: ``None`` = ilimitado."""
+
+    net_premium: float
+    breakevens: tuple[float, ...]
+    max_gain: float | None
+    max_loss: float | None
+    net_max_gain: float | None
+    net_max_loss: float | None
+    setup_costs: float
+    income_tax_at_max_gain: float | None
+    probability_of_profit: float
+
+
+@dataclass(frozen=True, slots=True)
+class TodayResult:
+    curve: tuple[tuple[float, float], ...]
+    greeks: Greeks
+    grid: ScenarioMatrix
+    american_call_approximated: bool
+
+
+@dataclass(frozen=True, slots=True)
+class BuilderAnalysis:
+    """``at_expiry`` e ``today`` são ``None`` quando falta preço ou vol; o motivo vai em
+    ``warnings`` e em ``today_unavailable``."""
+
+    name: str
+    underlying: str
+    expiry: date
+    business_days: int
+    spot: float
+    source: DataSource
+    timestamp: datetime
+    legs: tuple[BuilderLegView, ...]
+    stock: BuilderStockView | None
+    curve: tuple[ExpiryPoint, ...]
+    at_expiry: ExpiryResult | None
+    today: TodayResult | None
+    today_unavailable: str | None
+    warnings: tuple[str, ...]
+
+
+@runtime_checkable
+class StrategyBuilderUseCase(Protocol):
+    """``suggest``: as pernas de um modelo pronto com as séries da cadeia (100 x proporção)."""
+
+    def templates(self) -> tuple[Template, ...]: ...
+
+    def suggest(self, underlying: str, template_key: str, expiry: date) -> BuilderRequest: ...
+
+    def analyze(self, request: BuilderRequest) -> BuilderAnalysis: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SmileView:
+    """IV de cada série contra o strike (a série fora do dinheiro em cada strike)."""
+
+    expiry: date
+    business_days: int
+    points: tuple[SmilePoint, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TermPoint:
+    """IV no dinheiro (do smile, no spot) de um vencimento."""
+
+    expiry: date
+    business_days: int
+    vol: float
+
+
+@dataclass(frozen=True, slots=True)
+class MarketAnalysis:
+    """A aba Análise de um ativo: o histórico de fim de dia e o hoje pela cadeia do momento.
+
+    ``history_reason``: por que não há histórico (sem COTAHIST, ativo desconhecido);
+    ``today_reason``: por que não há IV 30 de hoje (nenhum vencimento com smile no spot).
+    """
+
+    symbol: str
+    spot: float
+    cdi_annual: float
+    history: tuple[DailyVol, ...]
+    history_reason: str | None
+    today: VolContext | None
+    today_reason: str | None
+    smiles: tuple[SmileView, ...]
+    term_structure: tuple[TermPoint, ...]
+    source: DataSource
+    timestamp: datetime
+
+
+@runtime_checkable
+class MarketAnalysisUseCase(Protocol):
+    def analysis(self, symbol: str) -> MarketAnalysis: ...

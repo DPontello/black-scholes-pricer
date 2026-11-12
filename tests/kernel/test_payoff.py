@@ -276,3 +276,33 @@ def test_pesos_espelhados_espelham_o_payoff(legs: tuple[PayoffLeg, ...], spot: f
         abs_=ABS_SELF_FLOOR * escala,
         label="espelho",
     )
+
+
+# ---------------------------------------------------------------------------
+# Termo linear da ação (quantidade assinada de ações)
+# ---------------------------------------------------------------------------
+
+
+def test_payoff_com_acao_soma_o_valor_das_acoes() -> None:
+    assert payoff(40.0, [], stock=100.0) == 4000.0
+    assert payoff(40.0, [PayoffLeg(32.0, -100.0, True)], stock=100.0) == 3200.0
+
+
+def test_breakeven_e_extremos_de_acao_comprada() -> None:
+    assert breakevens([], -3000.0, stock=100.0) == (30.0,)
+    assert payoff_extrema([], -3000.0, stock=100.0) == (None, -3000.0)
+
+
+def test_venda_coberta_tem_ganho_maximo_finito_no_strike() -> None:
+    chamada = [PayoffLeg(32.0, -100.0, True)]
+    assert payoff_extrema(chamada, -2900.0, stock=100.0) == (300.0, -2900.0)
+    assert breakevens(chamada, -2900.0, stock=100.0) == (29.0,)
+
+
+def test_acao_vendida_tem_perda_ilimitada() -> None:
+    assert payoff_extrema([], 3000.0, stock=-100.0) == (3000.0, None)
+
+
+def test_termo_de_acao_nao_finito_e_rejeitado() -> None:
+    with pytest.raises(InvalidKernelInputError, match="ações"):
+        payoff(30.0, [], stock=float("nan"))

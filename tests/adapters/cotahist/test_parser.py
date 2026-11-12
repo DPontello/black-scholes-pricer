@@ -11,6 +11,8 @@ from options_engine.adapters.outbound.cotahist.parser import (
     MARKET_CALL,
     MARKET_SPOT,
     RECORD_LENGTH,
+    cotahist_sessions,
+    iter_cotahist,
     parse_cotahist,
 )
 from tests._tolerances import ABS_SELF_FLOOR, REL_SELF, assert_close
@@ -114,6 +116,43 @@ def test_le_zip_com_um_membro_txt(tmp_path: Path) -> None:
     assert [r.symbol for r in parse_cotahist(zip_path)] == ["PETR4"]
 
 
+def test_em_fluxo_so_o_escolhido_vira_registro_mas_o_arquivo_todo_e_validado(
+    tmp_path: Path,
+) -> None:
+    outro = date(2026, 10, 22)
+    linhas = [_spot(pregao=outro), _call(pregao=outro), _spot(), _call()]
+    caminho = _gravar(tmp_path, arquivo(linhas, geracao=PREGAO, ano=2026))
+    escolhidos = list(iter_cotahist(caminho, lambda pregao, _mercado: pregao == PREGAO))
+    assert [(r.symbol, r.session) for r in escolhidos] == [("PETR4", PREGAO), ("PETRK300", PREGAO)]
+    ruim = _call(pregao=outro)
+    ruim = ruim[:147] + "00X37" + ruim[152:]
+    caminho = _gravar(tmp_path, arquivo([ruim, _spot()], geracao=PREGAO, ano=2026))
+    with pytest.raises(CotahistFormatError, match=r"linha 2: campo TOTNEG"):
+        list(iter_cotahist(caminho, lambda pregao, _mercado: pregao == PREGAO))
+
+
+def test_pregoes_do_arquivo_saem_sem_guardar_registros(tmp_path: Path) -> None:
+    outro = date(2026, 10, 22)
+    caminho = _gravar(tmp_path, arquivo([_spot(pregao=outro), _call()], geracao=PREGAO, ano=2026))
+    assert cotahist_sessions(caminho) == frozenset({outro, PREGAO})
+    termo = registro(pregao=PREGAO, simbolo="PETR4T", mercado=30, ultimo=30.5)
+    assert cotahist_sessions(_gravar(tmp_path, arquivo([termo], geracao=PREGAO, ano=2026))) == (
+        frozenset()
+    )
+
+
+def test_zip_com_dado_corrompido_vira_erro_de_formato(tmp_path: Path) -> None:
+    zip_path = tmp_path / "COTAHIST_D23102026.ZIP"
+    conteudo = arquivo([_spot(), _call()] * 50, geracao=PREGAO, ano=2026)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("COTAHIST_D23102026.TXT", conteudo)
+    bruto = bytearray(zip_path.read_bytes())
+    bruto[len(bruto) // 2] ^= 0xFF
+    zip_path.write_bytes(bytes(bruto))
+    with pytest.raises(CotahistFormatError):
+        parse_cotahist(zip_path)
+
+
 def test_zip_com_mais_de_um_txt_e_rejeitado(tmp_path: Path) -> None:
     zip_path = tmp_path / "dois.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
@@ -130,7 +169,7 @@ def test_zip_com_mais_de_um_txt_e_rejeitado(tmp_path: Path) -> None:
 
 def test_linha_com_tamanho_errado_aponta_a_linha(tmp_path: Path) -> None:
     curta = _call()[:-1]
-    conteudo = "\r\n".join([header(PREGAO, 2026), _spot(), curta, trailer(PREGAO, 2026, 4)])
+    conteudo = "\r\n".join([header(PREGAO, 2026), _spot(), curta, trailer(PREGAO, 2026, 2)])
     caminho = _gravar(tmp_path, conteudo + "\r\n")
     with pytest.raises(CotahistFormatError, match=r"linha 3: registro com 244") as erro:
         parse_cotahist(caminho)
@@ -149,6 +188,15 @@ def test_trailer_com_total_divergente(tmp_path: Path) -> None:
     conteudo = "\r\n".join([header(PREGAO, 2026), _spot(), trailer(PREGAO, 2026, 5)]) + "\r\n"
     with pytest.raises(CotahistFormatError, match=r"linha 3: trailer declara 5 registros"):
         parse_cotahist(_gravar(tmp_path, conteudo))
+
+
+def test_totreg_conta_so_os_registros_01_como_no_arquivo_real(tmp_path: Path) -> None:
+    """O layout escrito diz que o TOTREG conta header e trailer; os arquivos reais não contam."""
+    so_os_01 = "\r\n".join([header(PREGAO, 2026), _spot(), _call(), trailer(PREGAO, 2026, 2)])
+    assert len(parse_cotahist(_gravar(tmp_path, so_os_01 + "\r\n"))) == 2
+    como_no_layout = so_os_01[:-RECORD_LENGTH] + trailer(PREGAO, 2026, 4)
+    with pytest.raises(CotahistFormatError, match=r"declara 4 registros; o arquivo tem 2"):
+        parse_cotahist(_gravar(tmp_path, como_no_layout + "\r\n"))
 
 
 def test_header_ausente(tmp_path: Path) -> None:
@@ -204,7 +252,33 @@ def test_arquivo_vazio(tmp_path: Path) -> None:
 def test_bytes_fora_do_cp1252(tmp_path: Path) -> None:
     caminho = tmp_path / "ruim.TXT"
     caminho.write_bytes(b"\x81" * RECORD_LENGTH)
-    with pytest.raises(CotahistFormatError, match="cp1252"):
+    with pytest.raises(CotahistFormatError, match=r"linha 1: bytes fora do cp1252"):
+        parse_cotahist(caminho)
+
+
+def _com_nome_em_utf8(tmp_path: Path, nome: str) -> Path:
+    """Como no anual de 2026 real: um nome gravado em UTF-8 no meio do arquivo cp1252."""
+    em_utf8 = _spot(nome=nome).encode("utf-8")
+    partes = [header(PREGAO, 2026).encode("cp1252"), _call().encode("cp1252"), em_utf8]
+    partes.append(trailer(PREGAO, 2026, 2).encode("cp1252"))
+    caminho = tmp_path / "COTAHIST_A2026.TXT"
+    caminho.write_bytes(b"\r\n".join(partes) + b"\r\n")
+    return caminho
+
+
+@pytest.mark.parametrize("nome", ["FROTA OCEÂNI", "ÁGUAS CLARAS"])
+def test_nome_em_utf8_no_arquivo_cp1252_e_lido(tmp_path: Path, nome: str) -> None:
+    # "Á" em UTF-8 tem o byte 0x81, que nem existe no cp1252.
+    _, spot = parse_cotahist(_com_nome_em_utf8(tmp_path, nome))
+    assert (spot.symbol, spot.short_name) == ("PETR4", nome)
+
+
+def test_linha_que_nem_em_utf8_fecha_o_layout_segue_recusada(tmp_path: Path) -> None:
+    caminho = tmp_path / "COTAHIST.TXT"
+    longa = _spot().encode("cp1252") + "Â".encode()
+    corpo = [header(PREGAO, 2026).encode("cp1252"), longa, trailer(PREGAO, 2026, 1).encode()]
+    caminho.write_bytes(b"\r\n".join(corpo) + b"\r\n")
+    with pytest.raises(CotahistFormatError, match=r"linha 2: registro com 247 caracteres"):
         parse_cotahist(caminho)
 
 

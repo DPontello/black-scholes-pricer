@@ -13,11 +13,12 @@ from options_engine.domain.model.enums import Side
 from options_engine.domain.model.errors import (
     EmptyStrategyError,
     InvalidDomainValueError,
+    InvalidStrategyError,
     MixedExpiryError,
     MixedUnderlyingError,
 )
-from options_engine.domain.model.strategy import Strategy
-from tests.domain._builders import make_leg, make_terms
+from options_engine.domain.model.strategy import StockLeg, Strategy
+from tests.domain._builders import make_leg, make_stock_leg, make_terms
 
 # ---------------------------------------------------------------------------
 # StrategyLeg
@@ -136,3 +137,64 @@ def test_estrutura_espelhada_inverte_todas_as_legs() -> None:
     assert [leg.side for leg in espelhada.legs] == [Side.BUY, Side.SELL]
     assert espelhada.underlying == original.underlying
     assert espelhada.expiry == original.expiry
+
+
+# ---------------------------------------------------------------------------
+# Perna de ação
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("quantity", [0, -100])
+def test_quantidade_da_acao_nao_positiva_e_irrepresentavel(quantity: int) -> None:
+    with pytest.raises(InvalidDomainValueError, match="quantity"):
+        make_stock_leg(quantity=quantity)
+
+
+@pytest.mark.parametrize("price", [0.0, -1.0, float("nan"), float("inf")])
+def test_preco_da_acao_ilegal_e_irrepresentavel(price: float) -> None:
+    with pytest.raises(InvalidDomainValueError, match="price"):
+        make_stock_leg(price=price)
+
+
+def test_acao_sem_ticker_e_irrepresentavel() -> None:
+    with pytest.raises(InvalidDomainValueError):
+        StockLeg(symbol="", side=Side.BUY, quantity=100)
+
+
+def test_acao_tem_exposicao_assinada_e_espelho() -> None:
+    vendida = make_stock_leg(side=Side.SELL, quantity=200)
+    assert vendida.signed_quantity == -200
+    assert vendida.mirrored() == make_stock_leg(side=Side.BUY, quantity=200)
+
+
+def test_acao_de_outro_ativo_e_rejeitada() -> None:
+    with pytest.raises(MixedUnderlyingError, match="VALE3"):
+        Strategy.create("coberta", [make_leg()], [make_stock_leg(symbol="VALE3")])
+
+
+def test_no_maximo_uma_perna_de_acao() -> None:
+    with pytest.raises(InvalidStrategyError, match="uma perna de ação"):
+        Strategy.create("dupla", [make_leg()], [make_stock_leg(), make_stock_leg()])
+
+
+def test_estrutura_so_com_acao_tem_ativo_mas_nao_vencimento() -> None:
+    so_acao = Strategy.create("ações", [], [make_stock_leg()])
+    assert so_acao.underlying == "PETR4"
+    with pytest.raises(InvalidStrategyError, match="vencimento"):
+        _ = so_acao.expiry
+
+
+def test_estrutura_sem_opcao_nem_acao_e_irrepresentavel() -> None:
+    with pytest.raises(EmptyStrategyError):
+        Strategy.create("vazia", [], [])
+
+
+def test_has_premiums_exige_o_preco_da_acao() -> None:
+    perna = make_leg(premium=1.0)
+    assert Strategy.create("c", [perna], [make_stock_leg(price=30.0)]).has_premiums
+    assert not Strategy.create("c", [perna], [make_stock_leg(price=None)]).has_premiums
+
+
+def test_espelhada_inverte_tambem_a_acao() -> None:
+    coberta = Strategy.create("c", [make_leg(side=Side.SELL)], [make_stock_leg()])
+    assert coberta.mirrored().stock_legs == (make_stock_leg(side=Side.SELL),)

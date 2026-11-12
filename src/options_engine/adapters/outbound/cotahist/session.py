@@ -21,7 +21,7 @@ sobrescrito — só o caminho dado é tocado, e só via sqlite.
 import hashlib
 import json
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import closing
 from dataclasses import astuple, dataclass, fields
 from datetime import date
@@ -31,7 +31,7 @@ from typing import Any, Final
 from options_engine.adapters.outbound.cotahist.parser import (
     MARKET_SPOT,
     CotahistRecord,
-    parse_cotahist,
+    iter_cotahist,
 )
 
 __all__ = ["SessionData", "build_session_data", "load_session_data"]
@@ -59,7 +59,7 @@ class SessionData:
 
 
 def build_session_data(
-    records_per_file: Sequence[Sequence[CotahistRecord]], session: date
+    records_per_file: Iterable[Iterable[CotahistRecord]], session: date
 ) -> SessionData:
     """Mescla os registros de vários arquivos para o pregão ``session``."""
     do_pregao: dict[str, CotahistRecord] = {}
@@ -195,7 +195,12 @@ def load_session_data(
         em_cache = _ler_cache(cache_path, chave)
         if em_cache is not None:
             return em_cache, True
-    dados = build_session_data([parse_cotahist(path) for path in paths], session)
+
+    # Do anual só interessam o à vista (histórico) e o pregão: o resto não vira registro.
+    def usados(pregao: date, mercado: int) -> bool:
+        return mercado == MARKET_SPOT or pregao == session
+
+    dados = build_session_data((iter_cotahist(path, usados) for path in paths), session)
     if cache_path is not None:
         _gravar_cache(cache_path, chave, dados)
     return dados, False

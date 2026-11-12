@@ -24,6 +24,13 @@ _CATALOGO: list[type[DomainError]] = [
     errors.MixedAnnualizationBaseError,
     errors.UnknownSymbolError,
     errors.UnderlyingUnavailableError,
+    errors.ProfileFolderUnavailableError,
+    errors.ProfileLockedError,
+    errors.DuplicateProfileError,
+    errors.UnknownProfileError,
+    errors.NoActiveProfileError,
+    errors.UnknownRecordError,
+    errors.UnreadableRecordError,
 ]
 
 

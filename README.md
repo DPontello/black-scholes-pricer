@@ -52,7 +52,7 @@ Alguns números verificados por máquina (Python 3.12, stdlib):
 ```bash
 git clone https://github.com/DPontello/black-scholes-pricer.git && cd black-scholes-pricer
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e ".[dev,app]"  # extra `app` (FastAPI/uvicorn) só na borda; o core segue sem dependências
 
 pytest -q                 # suíte completa (golden + propriedades + fronteiras + FD)
 mypy                      # --strict em src/ e tests/
@@ -189,8 +189,141 @@ Documentação completa em [`docs/`](docs/):
 | 1 — Fundação Matemática | Kernel BSM + gregas, V&V de 4 camadas, CI, oráculo | ✅ `v0.1.0` |
 | 2 — Domínio e Simulação | VOs/agregados, estruturas (Iron Condor, Straddle), payoff/P&L, grid de estresse | ✅ `v0.2.0` |
 | 3 — Ports & Adapters | Mock order book (GBM seedado), use cases, contract tests, smoke executável | ✅ `v0.3.0` |
-| 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` (merge na `master` e tag pendentes) |
-| 4 — API e Portfólio | FastAPI como adapter fino, benchmark, ADRs | após a Sprint 5 |
+| 5 — Painel de Renda | Volatilidade implícita, cadeia COTAHIST, venda coberta / put coberta / travas de crédito, relatório HTML | ✅ `v0.4.0` |
+| App de opções (substitui a Sprint 4) | App local FastAPI + React: cotações ao vivo do Tryd (ponte RTD, também no Linux via Wine), montador, book, carteira, alertas | 🚧 semanas 1 a 5 feitas: a melhoria de UX, a semana 4 (instalador, IR mensal das opções, alertas) e o acabamento da semana 5 (ícone, "Escolher pasta…", correções do caminho de quem começa). Faltam os testes do autor: o instalador num PC Windows real e o teste de usabilidade com a mãe (prazo 2026-11-30) |
+
+### App de opções (em construção)
+
+Ferramenta pessoal para dois usuários com carteiras separadas. O app não envia
+ordens: você executa no home broker e registra a operação no app.
+
+- **Desenho:** [`docs/superpowers/specs/2026-10-28-app-opcoes-design.md`](docs/superpowers/specs/2026-10-28-app-opcoes-design.md).
+- **Plano da semana 1:** [`docs/superpowers/plans/2026-10-28-app-semana-1-base.md`](docs/superpowers/plans/2026-10-28-app-semana-1-base.md).
+- **Semana 2 (montador e carteira):** [desenho](docs/superpowers/specs/2026-10-31-semana-2-montador-carteira-design.md),
+  [plano](docs/superpowers/plans/2026-10-31-app-semana-2-montador-carteira.md) e
+  [ledger](docs/superpowers/ledger-semana-2.md).
+- **Semana 3 (book e análise):** [desenho](docs/superpowers/specs/2026-11-02-semana-3-book-analise-design.md),
+  [plano](docs/superpowers/plans/2026-11-02-app-semana-3-book-analise.md) e
+  [ledger](docs/superpowers/ledger-semana-3.md).
+- **Semana 4 (instalador, IR mensal e alertas):** [desenho](docs/superpowers/specs/2026-11-03-semana-4-instalador-ir-alertas-design.md),
+  planos do [instalador](docs/superpowers/plans/2026-11-03-semana-4-parte-1-instalador.md), do
+  [IR mensal](docs/superpowers/plans/2026-11-04-semana-4-parte-2-ir-mensal.md) e dos
+  [alertas](docs/superpowers/plans/2026-11-04-semana-4-parte-3-alertas.md), e o
+  [ledger](docs/superpowers/ledger-semana-4.md).
+- **Semana 5 (acabamento para o teste com a mãe):** [desenho](docs/superpowers/specs/2026-11-05-semana-5-acabamento-design.md),
+  [plano](docs/superpowers/plans/2026-11-05-semana-5-acabamento.md),
+  [ledger](docs/superpowers/ledger-semana-5.md) e o
+  [roteiro do teste de usabilidade](docs/teste-usabilidade.md).
+- **Estado e como retomar:** [`docs/superpowers/HANDOFF-2026-11-02.md`](docs/superpowers/HANDOFF-2026-11-02.md).
+- **Ponte do Tryd (RTD → TCP local):** [`src/options_ponte/README.md`](src/options_ponte/README.md).
+  No Linux, o ambiente Wine é montado por [`scripts/linux/preparar_ponte_wine.sh`](scripts/linux/preparar_ponte_wine.sh).
+
+#### Instalar
+
+**Windows (64 bits).** O instalador `PainelOpcoes-<versão>-setup.exe` sai do job **Instalador**
+do GitHub Actions: aba Actions → Instalador → a execução → Artifacts. Baixar exige estar logado
+no GitHub, e o artefato vale por 90 dias.
+
+O job roda:
+- em tag `v*`;
+- em pull request que mexe em `packaging/**`, no próprio workflow ou em `src/options_ponte/**`;
+- à mão, mas o botão "Run workflow" só aparece depois que o workflow chegar à `master`.
+
+Um push na `development` não dispara o job.
+
+- **Instalar:** o artefato baixa como `.zip`. Extraia e dê dois cliques no `.exe`. Não pede senha
+  de administrador. O programa vai para
+  `%LOCALAPPDATA%\Programs\PainelOpcoes` e ganha o atalho **Painel de Opções** no menu Iniciar e,
+  se marcado, na área de trabalho.
+- **SmartScreen:** o instalador não é assinado, então o Windows avisa "O Windows protegeu o
+  computador". Clique em **Mais informações** → **Executar assim mesmo**. Um antivírus também
+  pode desconfiar do executável sem assinatura.
+- **Abrir duas vezes:** o segundo clique no atalho não sobe outro programa. Ele só abre a janela
+  do app que já está rodando.
+- **Atualizar:** instale a versão nova por cima. Se o app estiver aberto, o instalador o fecha
+  antes. Perfis, carteiras, simulações e arquivos da B3 ficam onde estão: em
+  `%APPDATA%\PainelOpcoes` e na pasta de cada perfil, fora da pasta do programa.
+- **Desinstalar:** pelo "Adicionar ou remover programas" (Configurações → Aplicativos), em
+  **Painel de Opções**. Os dados também ficam.
+- **Log:** `%APPDATA%\PainelOpcoes\logs\app.log`. Para conferir a ponte com o Tryd aberto, rode
+  `ponte\PonteTryd.exe diagnostico` na pasta do programa.
+
+**Linux.** Precisa do Python 3.12+ e do Node.js com npm. Na pasta do repositório, já na
+`development`:
+
+```bash
+scripts/linux/instalar.sh             # venv em ~/.local/share/painel-opcoes, tela e atalho no menu
+scripts/linux/instalar.sh --simular   # só mostra o que faria
+```
+
+A instalação aponta para a pasta do repositório (`pip install -e`).
+
+- **Atualizar:** rode `git pull` e o script de novo.
+- **Mudar a pasta de lugar ou apagá-la:** o atalho para de abrir. Rode o script de novo a partir
+  da pasta nova.
+- **Log:** o app aberto pelo menu não grava log em arquivo. Para ver um erro, rode
+  `~/.local/share/painel-opcoes/venv/bin/python -m options_engine app` num terminal.
+
+A ponte do Tryd continua no distrobox, montado por `preparar_ponte_wine.sh`.
+
+#### Rodar do código
+
+Para rodar o app (precisa do extra `app` e do Node 22+ para compilar a tela):
+
+```bash
+npm --prefix frontend ci && npm --prefix frontend run build   # gera a SPA servida pelo FastAPI
+python -m options_engine app                                  # abre a janela; --sem-ponte, --sem-janela, --porta N
+```
+
+Sem o Tryd (ou sem a ponte), o app abre do mesmo jeito e mostra o fim de dia dos
+arquivos da B3 importados em **Arquivos B3**, com o rótulo "Fim de dia (B3)". A
+configuração fica em `%APPDATA%\PainelOpcoes` (Windows) ou `~/.config/painel-opcoes`.
+A cadeia ao vivo precisa só do Cadastro de Instrumentos (o CSV ou o `pesquisa-pregao.zip` da
+"Pesquisa por pregão" do Boletim Diário, como veio); o COTAHIST é opcional (fim de dia e
+histórico). Os arquivos da B3 baixados para a pasta Downloads entram sozinhos
+(`--sem-downloads` desliga).
+No **Montador**, a estrutura sai de um dos 18 modelos prontos ou perna a perna, pela
+cadeia: payoff no vencimento e hoje, gregas, breakevens, ganho e perda máximos brutos (sem
+custos nem IR, como a corretora mostra; os custos de montagem à parte), a grade de cenários e a
+probabilidade de lucro. A tela abre simples: a cadeia enxuta ao lado do resultado, e os custos, as
+gregas e a grade em "ver detalhes". No Book os números também são brutos. As simulações ficam salvas na pasta do
+perfil. Na **Carteira** ficam as operações executadas na corretora: o registro (também direto
+do montador), as ações que você já tem, o encerramento, o exercício e a atribuição pela regra
+da Receita, o pó automático depois do vencimento e o P&L pelo preço de zerar, ao vivo ou do fim
+de dia. A aba **IR mensal** estima o imposto das opções mês a mês: day trade a 20% e comum a
+15%, prejuízo compensado em cada tipo, IR abaixo de R$ 10 somado com o dos meses seguintes até
+chegar a R$ 10 e o prazo do DARF (estimativa: sem ações, sem IR retido na fonte e sem prejuízo
+de antes do app). Cada perfil grava a carteira na própria pasta, um arquivo JSON por operação.
+Cada operação pode ter um **stop** e um **alvo** em reais, comparados com o resultado total
+(realizado com custos + não realizado pelo preço de zerar).
+Os **Alertas** avisam, do mais grave para o mais leve, a opção vencida que espera o registro do
+exercício, o stop, o risco de exercício (opção vendida dentro do dinheiro ou a menos de 2% do
+strike, a 5 dias úteis ou menos do vencimento), o vencimento próximo e o alvo; os dois limites
+ficam editáveis no perfil, e o menu mostra quantos alertas há. Um alerta dispensado volta quando
+deixa de valer e vale de novo. **Rolar** abre no Montador a mesma estrutura no vencimento
+seguinte, com uma faixa que mostra o custo de zerar as pernas atuais e o caixa líquido; nada é
+enviado.
+O **Book** varre a lista do perfil no fim de dia (o último COTAHIST importado) e mostra os
+5 melhores de cada estrutura nas quatro famílias: Renda (o ranking do painel de renda),
+Volatilidade (iron condor, borboleta e strangle vendido com vol alta; straddle e strangle
+comprados com vol baixa), Direcionais (opções baratas pela vol e, com a sua visão de alta ou
+baixa, compra a seco e travas de débito para o alvo) e Proteção (put protetora e collar). Cada
+item traz o critério, os números e o porquê, e abre no montador, que refaz os preços pela
+cadeia do momento. Os presets (Conservador, Moderado, Arrojado) ficam salvos no perfil, com os
+valores editados. No **Mercado**, a aba **Análise** mostra o fechamento e a IV de 30 dias úteis
+contra a HV de 21 no último ano, o IV rank e o percentil, o smile de cada vencimento e a
+estrutura a termo. O histórico de IV sai dos COTAHIST da biblioteca e fica em cache.
+
+Para desenvolver a tela, `npm --prefix frontend run dev` (proxy para o app na 8765) e
+`npm --prefix frontend run verificar` (TypeScript + Vitest).
+
+Ao baixar os arquivos reais da B3, confira as premissas de leitura do app antes de
+usá-los. O comando só lê e aponta o que não bate (TOTREG, `OptnStyle`, `ExrcPric`,
+ESPECI, strike do COTAHIST × cadastro × `PEX` do Tryd):
+
+```bash
+python -m options_engine conferir-b3 --cotahist COTAHIST_A2026.ZIP --cadastro InstrumentsConsolidatedFile_AAAAMMDD.csv --pex PETRK500=48,91
+```
 
 Fora do MVP (mapeado no roadmap): dividendos discretos, exercício americano exato
 (B3: opções de ações; calls já aceitas como aproximação europeia na Sprint 5), Monte Carlo,

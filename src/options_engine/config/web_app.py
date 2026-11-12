@@ -1,0 +1,378 @@
+"""Composition root do app web. Fora do ``composition`` para o núcleo e o CLI
+seguirem sem o FastAPI (extra ``app``)."""
+
+import asyncio
+import contextlib
+import logging
+import platform
+import shutil
+import threading
+import uuid
+from collections.abc import AsyncIterator, Sequence
+from datetime import date
+from pathlib import Path
+from typing import Final, Protocol
+
+from fastapi import FastAPI
+
+import options_ponte
+from options_engine.adapters.inbound.web.alerts import router_alertas
+from options_engine.adapters.inbound.web.app import Lifespan, create_app
+from options_engine.adapters.inbound.web.aprender import router_aprender
+from options_engine.adapters.inbound.web.b3files import router_arquivos_b3
+from options_engine.adapters.inbound.web.book import router_book
+from options_engine.adapters.inbound.web.builder import router_montador
+from options_engine.adapters.inbound.web.folder_picker import folder_picker
+from options_engine.adapters.inbound.web.market import router_mercado
+from options_engine.adapters.inbound.web.portfolio import router_carteira
+from options_engine.adapters.inbound.web.profiles import router_perfis
+from options_engine.adapters.outbound.b3_calendar import B3_UTC_OFFSET, StaticHolidayCalendar
+from options_engine.adapters.outbound.b3files import (
+    B3FileKind,
+    B3FileLibrary,
+    cadastro_freshness,
+)
+from options_engine.adapters.outbound.b3files.downloads import (
+    DownloadsImporter,
+    ImportacaoAutomatica,
+)
+from options_engine.adapters.outbound.b3files.end_of_day import EndOfDayMarket
+from options_engine.adapters.outbound.b3files.loaded import LibraryLoader
+from options_engine.adapters.outbound.clock import SystemClock
+from options_engine.adapters.outbound.cost_schedules import StaticCostScheduleTable
+from options_engine.adapters.outbound.cotahist.vol_history import CotahistVolHistory
+from options_engine.adapters.outbound.fallback_market import FallbackMarket
+from options_engine.adapters.outbound.storage import JsonProfileRepository
+from options_engine.adapters.outbound.storage.dismissed_alerts import JsonDismissedAlerts
+from options_engine.adapters.outbound.storage.operations import JsonOperationRepository
+from options_engine.adapters.outbound.storage.simulations import JsonSimulationRepository
+from options_engine.adapters.outbound.tryd import (
+    BridgeProcess,
+    LiveBoard,
+    TrydBridgeClient,
+    default_bridge_command,
+)
+from options_engine.adapters.outbound.tryd.feed import TrydMarketFeed
+from options_engine.adapters.outbound.tryd.settings import PORTA_PONTE
+from options_engine.application.ports.inbound import ProfileUseCase
+from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
+from options_engine.application.use_cases.alerts import AlertService
+from options_engine.application.use_cases.book import BookService
+from options_engine.application.use_cases.market_analysis import MarketAnalysisService
+from options_engine.application.use_cases.market_view import MarketViewService
+from options_engine.application.use_cases.portfolio import PortfolioService
+from options_engine.application.use_cases.profiles import ProfileService
+from options_engine.application.use_cases.rank_income import RankIncomeOpportunitiesService
+from options_engine.application.use_cases.roll import RollService
+from options_engine.application.use_cases.simulations import SimulationService
+from options_engine.application.use_cases.strategy_builder import StrategyBuilderService
+from options_engine.domain.model.contracts import OptionTerms
+from options_engine.domain.model.errors import DomainError
+from options_engine.domain.pricing.black_scholes import BlackScholesPricingModel
+
+__all__ = ["MACHINE_CONFIG_NAME", "MARKET_DIR_NAME", "build_web_app"]
+
+_log = logging.getLogger(__name__)
+
+MACHINE_CONFIG_NAME: Final = "config.json"
+MARKET_DIR_NAME: Final = "mercado"
+_ENSURE_INTERVAL_S: Final = 2.0
+_SCAN_INTERVAL_S: Final = 5.0
+
+
+class _Bridge(Protocol):
+    def start(self) -> None: ...
+
+    def ensure_running(self) -> None: ...
+
+    def stop(self) -> None: ...
+
+
+class _Scanner(Protocol):
+    def scan(self) -> Sequence[ImportacaoAutomatica]: ...
+
+
+class _Client(Protocol):
+    def start(self) -> None: ...
+
+    def stop(self) -> None: ...
+
+
+def build_web_app(
+    *,
+    config_dir: Path,
+    static_dir: Path | None,
+    bridge: bool,
+    machine_name: str,
+    clock: Clock | None = None,
+    downloads_dir: Path | None = None,
+    frozen_dir: Path | None = None,
+) -> FastAPI:
+    clock = SystemClock() if clock is None else clock
+    calendar = StaticHolidayCalendar.from_packaged_data()
+    profiles = ProfileService(
+        JsonProfileRepository(config_dir / MACHINE_CONFIG_NAME), clock, machine_name
+    )
+    library = B3FileLibrary(config_dir / MARKET_DIR_NAME, clock)
+
+    def cdi_annual() -> float:
+        return profiles.active().cdi_annual
+
+    board = LiveBoard()
+    client = TrydBridgeClient(board)
+    loader = LibraryLoader(library)
+    end_of_day = EndOfDayMarket(library, cdi_annual, loader=loader)
+    market = FallbackMarket(
+        TrydMarketFeed(client, board, library, calendar, clock, cdi_annual, loader=loader),
+        end_of_day,
+    )
+    market_view = MarketViewService(
+        market,
+        calendar,
+        B3_UTC_OFFSET,
+        freshness=lambda: _freshness(library, calendar, clock),
+        cotahist_range=lambda: _cotahist_range(library),
+        cotahist_age=lambda: _cotahist_age(library, calendar, clock),
+        lots=lambda symbol: _lot(loader, symbol),
+    )
+    schedules = StaticCostScheduleTable.from_packaged_data().schedules
+    portfolio = PortfolioService(
+        lambda: JsonOperationRepository(profiles.active_folder()),
+        clock,
+        schedules,
+        lambda: uuid.uuid4().hex,
+        B3_UTC_OFFSET,
+        market=market,
+        calendar=calendar,
+    )
+    builder = StrategyBuilderService(
+        market,
+        calendar,
+        B3_UTC_OFFSET,
+        schedules=schedules,
+        lots=lambda symbol: _lot(loader, symbol),
+        portfolio_average=portfolio.average_price,
+    )
+    alerts = AlertService(
+        lambda: JsonDismissedAlerts(profiles.active_folder()),
+        lambda: profiles.active().alert_settings,
+        clock,
+        B3_UTC_OFFSET,
+        market=market,
+        calendar=calendar,
+    )
+    roll = RollService(
+        portfolio.open_operations, builder.suggest, clock, B3_UTC_OFFSET, market=market
+    )
+    vol_history = CotahistVolHistory(loader, calendar, cdi_annual)
+    book_builder = StrategyBuilderService(
+        end_of_day,
+        calendar,
+        B3_UTC_OFFSET,
+        schedules=schedules,
+        lots=lambda symbol: _lot(loader, symbol),
+        portfolio_average=portfolio.average_price,
+    )
+    book = BookService(
+        end_of_day,
+        vol_history,
+        RankIncomeOpportunitiesService(
+            chains=end_of_day,
+            calendar=calendar,
+            model=BlackScholesPricingModel(),
+            cost_schedules=schedules,
+            valuation_timezone=B3_UTC_OFFSET,
+        ),
+        lambda: [vista.total for vista in portfolio.open_operations().totals],
+        calendar,
+        B3_UTC_OFFSET,
+        builder=book_builder,
+    )
+    simulations = SimulationService(
+        lambda: JsonSimulationRepository(profiles.active_folder()), clock, lambda: uuid.uuid4().hex
+    )
+    process = None
+    if bridge:
+        command, cwd = default_bridge_command(
+            platform.system(), _ponte_src_dir(), Path.home(), PORTA_PONTE, frozen_dir=frozen_dir
+        )
+        process = BridgeProcess(command, cwd, client)
+    importer = None if downloads_dir is None else DownloadsImporter(library, downloads_dir, clock)
+    routers = [
+        router_perfis(profiles, folder_picker(platform.system(), shutil.which, Path.home())),
+        router_aprender(),
+        router_arquivos_b3(library, importer),
+        router_mercado(
+            market_view,
+            profiles,
+            portfolio=portfolio,
+            closes=lambda symbol, day: _close(loader, symbol, day),
+            analysis=MarketAnalysisService(market, vol_history, calendar, B3_UTC_OFFSET),
+            alerts=alerts,
+        ),
+        router_montador(builder, simulations),
+        router_book(book, profiles),
+        router_carteira(
+            portfolio,
+            closes=lambda symbol, day: _close(loader, symbol, day),
+            terms=lambda symbol, underlying: _terms(loader, symbol, underlying),
+        ),
+        router_alertas(
+            alerts, roll, portfolio, closes=lambda symbol, day: _close(loader, symbol, day)
+        ),
+    ]
+    lifespan = _lifespan(profiles, client, process, importer)
+    return create_app(routers, static_dir, lifespan=lifespan)
+
+
+def _lot(loader: LibraryLoader, symbol: str) -> int | None:
+    loaded = loader.load()
+    return None if isinstance(loaded, str) else loaded.lot(symbol)
+
+
+def _close(loader: LibraryLoader, symbol: str, day: date) -> float | None:
+    """Fechamento do ativo no pregão, pelos COTAHIST importados; sem o arquivo do dia, None."""
+    loaded = loader.load()
+    return None if isinstance(loaded, str) else dict(loaded.closes(symbol)).get(day)
+
+
+def _terms(loader: LibraryLoader, symbol: str, underlying: str) -> OptionTerms | str:
+    loaded = loader.load()
+    return loaded if isinstance(loaded, str) else loaded.option_terms(symbol, underlying)
+
+
+def _ponte_src_dir() -> Path:
+    return Path(options_ponte.__file__).resolve().parent.parent
+
+
+def _lifespan(
+    profiles: ProfileUseCase,
+    client: _Client,
+    process: _Bridge | None,
+    importer: _Scanner | None = None,
+    *,
+    ensure_interval_s: float = _ENSURE_INTERVAL_S,
+    scan_interval_s: float = _SCAN_INTERVAL_S,
+) -> Lifespan:
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        stop = threading.Event()
+        supervisor = None
+        if process is not None:
+            client.start()
+            supervisor = threading.Thread(
+                target=_supervise,
+                args=(process, stop, ensure_interval_s),
+                name="tryd-bridge-supervisor",
+                daemon=True,
+            )
+            supervisor.start()
+        varredor = None
+        if importer is not None:
+            varredor = threading.Thread(
+                target=_varrer,
+                args=(importer, stop, scan_interval_s),
+                name="b3-downloads",
+                daemon=True,
+            )
+            varredor.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            await asyncio.to_thread(_shutdown, profiles, client, process, supervisor, varredor)
+
+    return lifespan
+
+
+def _supervise(process: _Bridge, stop: threading.Event, interval_s: float) -> None:
+    try:
+        process.start()
+    except Exception:  # sem ponte o app segue no fim de dia
+        _log.exception("não foi possível subir a ponte do Tryd")
+    while not stop.wait(interval_s):
+        try:
+            process.ensure_running()
+        except Exception:
+            _log.exception("falha ao conferir a ponte do Tryd")
+
+
+def _varrer(importer: _Scanner, stop: threading.Event, interval_s: float) -> None:
+    while True:
+        try:
+            for evento in importer.scan():
+                _log.info("Downloads: %s %s", evento.nome, evento.detalhe)
+        except Exception:
+            _log.exception("falha ao ler a pasta Downloads")
+        if stop.wait(interval_s):
+            return
+
+
+def _shutdown(
+    profiles: ProfileUseCase,
+    client: _Client,
+    process: _Bridge | None,
+    supervisor: threading.Thread | None,
+    varredor: threading.Thread | None = None,
+) -> None:
+    # Cada passo isolado: a trava do perfil tem de sair mesmo se o resto falhar.
+    for thread in (supervisor, varredor):
+        if thread is not None:
+            thread.join(timeout=5.0)
+    if process is not None:
+        for passo in (process.stop, client.stop):
+            try:
+                passo()
+            except Exception:
+                _log.exception("falha ao encerrar a ponte do Tryd")
+    try:
+        profiles.close()
+    except Exception:
+        _log.exception("falha ao soltar a trava do perfil")
+
+
+def _freshness(
+    library: B3FileLibrary, calendar: TradingCalendar, clock: Clock
+) -> CadastroFreshness | str:
+    try:
+        latest = library.latest_cadastro()
+    except (DomainError, OSError) as erro:
+        return f"biblioteca de arquivos da B3 ilegível: {erro}"
+    if latest is None:
+        return "nenhum Cadastro de Instrumentos importado"
+    if latest.reference_date is None:
+        return f"o nome do cadastro '{latest.name}' não traz a data (_AAAAMMDD)"
+    today = clock.now().astimezone(B3_UTC_OFFSET).date()
+    try:
+        freshness = cadastro_freshness(library, calendar, today)
+    except DomainError as erro:  # data fora do calendário de feriados
+        return f"não deu para contar a idade do cadastro: {erro}"
+    except OSError as erro:
+        return f"biblioteca de arquivos da B3 ilegível: {erro}"
+    return "nenhum Cadastro de Instrumentos importado" if freshness is None else freshness
+
+
+def _cotahist_range(library: B3FileLibrary) -> tuple[date, date] | None:
+    try:
+        files = library.files()
+    except (DomainError, OSError):
+        return None
+    starts = [f.first_date for f in files if f.kind is B3FileKind.COTAHIST and f.first_date]
+    ends = [f.reference_date for f in files if f.kind is B3FileKind.COTAHIST and f.reference_date]
+    if not starts or not ends:
+        return None
+    return min(starts), max(ends)
+
+
+def _cotahist_age(library: B3FileLibrary, calendar: TradingCalendar, clock: Clock) -> int | None:
+    """Idade do último pregão do COTAHIST em dias úteis; ``None`` sem COTAHIST ou sem conta."""
+    faixa = _cotahist_range(library)
+    if faixa is None:
+        return None
+    last = faixa[1]
+    today = clock.now().astimezone(B3_UTC_OFFSET).date()
+    try:
+        return calendar.business_days_between(last, today) if last < today else 0
+    except DomainError:  # data fora do calendário de feriados
+        return None

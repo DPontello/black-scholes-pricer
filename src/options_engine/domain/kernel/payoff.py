@@ -14,6 +14,9 @@ Convenções deste módulo:
             no domínio): positivo = comprado, negativo = vendido.
     offset  constante somada à curva (ex.: fluxo líquido de prêmios, para
             P&L). O kernel não conhece "prêmio" — só a geometria.
+    stock   quantidade ASSINADA de ações (termo linear ``stock · s_t``): a
+            perna de ação da venda coberta, da put protetora e do collar. O
+            preço pago pelas ações vai no ``offset``, como o prêmio.
 
 Sem desconto aqui: payoff no vencimento é valor NO vencimento. Posição
 vencida dentro de um grid (decisão nº 5) usa o ramo tau=0 de
@@ -63,15 +66,23 @@ def _check_legs(legs: Sequence[PayoffLeg]) -> None:
             raise InvalidKernelInputError(f"peso deve ser finito; recebido {leg.w!r}")
 
 
-def payoff(s_t: float, legs: Sequence[PayoffLeg]) -> float:
-    """Payoff bruto da estrutura no vencimento: ``Σ w_i · intrínseco_i``.
+def _check_stock(stock: float) -> None:
+    if not isfinite(stock):
+        raise InvalidKernelInputError(f"quantidade de ações deve ser finita; recebido {stock!r}")
+
+
+def payoff(s_t: float, legs: Sequence[PayoffLeg], stock: float = 0.0) -> float:
+    """Payoff bruto da estrutura no vencimento: ``Σ w_i · intrínseco_i + stock · s_t``.
 
     ``fsum`` em ordem de entrada (determinística por contrato do chamador:
     legs canonicamente ordenadas por strike) — soma naive reordenada muda o
     último bit e quebra os testes de 1e-12 (CONVENTIONS §6).
     """
     _check_legs(legs)
-    return fsum(leg.w * intrinsic(s_t, leg.k, is_call=leg.is_call) for leg in legs)
+    _check_stock(stock)
+    return fsum(
+        [*(leg.w * intrinsic(s_t, leg.k, is_call=leg.is_call) for leg in legs), stock * s_t]
+    )
 
 
 def linspace(lo: float, hi: float, n: int) -> tuple[float, ...]:
@@ -107,16 +118,19 @@ def _kinks(legs: Sequence[PayoffLeg]) -> list[float]:
     return sorted({leg.k for leg in legs})
 
 
-def _right_tail_slope(legs: Sequence[PayoffLeg]) -> float:
+def _right_tail_slope(legs: Sequence[PayoffLeg], stock: float) -> float:
     """Inclinação da curva à direita do último strike.
 
     Além de todos os strikes, cada call contribui ``w`` (intrínseco cresce
-    1:1) e cada put contribui 0 (virou pó). ``fsum`` em ordem de entrada.
+    1:1), cada put contribui 0 (virou pó) e as ações contribuem ``stock``.
+    ``fsum`` em ordem de entrada.
     """
-    return fsum(leg.w for leg in legs if leg.is_call)
+    return fsum([*(leg.w for leg in legs if leg.is_call), stock])
 
 
-def breakevens(legs: Sequence[PayoffLeg], offset: float = 0.0) -> tuple[float, ...]:
+def breakevens(
+    legs: Sequence[PayoffLeg], offset: float = 0.0, stock: float = 0.0
+) -> tuple[float, ...]:
     """Zeros EXATOS de ``payoff(s) + offset`` em [0, ∞), em ordem crescente.
 
     Forma fechada por segmento: a curva é linear entre nós consecutivos
@@ -128,10 +142,11 @@ def breakevens(legs: Sequence[PayoffLeg], offset: float = 0.0) -> tuple[float, .
     sinais opostos.
     """
     _check_legs(legs)
+    _check_stock(stock)
     if not isfinite(offset):
         raise InvalidKernelInputError(f"offset deve ser finito; recebido {offset!r}")
     nos = [0.0, *_kinks(legs)]
-    valores = [payoff(s, legs) + offset for s in nos]
+    valores = [payoff(s, legs, stock) + offset for s in nos]
 
     zeros: list[float] = [no for no, f in zip(nos, valores, strict=True) if f == 0.0]
     for (x0, f0), (x1, f1) in zip(
@@ -142,7 +157,7 @@ def breakevens(legs: Sequence[PayoffLeg], offset: float = 0.0) -> tuple[float, .
         if (f0 < 0.0 < f1) or (f1 < 0.0 < f0):
             zeros.append(x0 + (-f0) * (x1 - x0) / (f1 - f0))
 
-    inclinacao = _right_tail_slope(legs)
+    inclinacao = _right_tail_slope(legs, stock)
     f_max = valores[-1]
     if (f_max < 0.0 < inclinacao) or (inclinacao < 0.0 < f_max):
         zeros.append(nos[-1] + (-f_max) / inclinacao)
@@ -151,7 +166,7 @@ def breakevens(legs: Sequence[PayoffLeg], offset: float = 0.0) -> tuple[float, .
 
 
 def payoff_extrema(
-    legs: Sequence[PayoffLeg], offset: float = 0.0
+    legs: Sequence[PayoffLeg], offset: float = 0.0, stock: float = 0.0
 ) -> tuple[float | None, float | None]:
     """(máximo, mínimo) de ``payoff(s) + offset`` em [0, ∞); None = ilimitado.
 
@@ -162,11 +177,12 @@ def payoff_extrema(
     comprada é finito e vive exatamente aí.
     """
     _check_legs(legs)
+    _check_stock(stock)
     if not isfinite(offset):
         raise InvalidKernelInputError(f"offset deve ser finito; recebido {offset!r}")
     nos = [0.0, *_kinks(legs)]
-    valores = [payoff(s, legs) + offset for s in nos]
-    inclinacao = _right_tail_slope(legs)
+    valores = [payoff(s, legs, stock) + offset for s in nos]
+    inclinacao = _right_tail_slope(legs, stock)
     maximo: float | None = max(valores)
     minimo: float | None = min(valores)
     if inclinacao > 0.0:

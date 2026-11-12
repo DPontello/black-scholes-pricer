@@ -24,6 +24,7 @@ from math import isfinite
 from options_engine.domain.model.contracts import OptionContract
 from options_engine.domain.model.enums import Side
 from options_engine.domain.model.errors import InvalidDomainValueError
+from options_engine.domain.model.expiries import ListedExpiry
 from options_engine.domain.model.market import MarketSnapshot
 
 __all__ = [
@@ -182,12 +183,16 @@ class OptionChain:
     com ``False``, bid, ask e mid do snapshot NÃO foram observados — são a
     referência do fechamento, e nenhuma métrica de renda pode usá-los. O
     painel exibe a marca "sem ofertas".
+
+    ``listed_expiries``: todos os vencimentos do ativo, inclusive os que a
+    fonte ao vivo não assinou; vazio quando a fonte só conhece os cotados.
     """
 
     underlying: MarketSnapshot
     quotes: tuple[OptionQuote, ...]
     rejected_series: tuple[RejectedSeries, ...] = ()
     underlying_book_available: bool = True
+    listed_expiries: tuple[ListedExpiry, ...] = ()
 
     def __post_init__(self) -> None:
         simbolo = self.underlying.underlying_symbol

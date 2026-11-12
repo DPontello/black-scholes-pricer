@@ -1,0 +1,53 @@
+/*
+ * Shim local do ambiente Wine (NÃO faz parte do projeto): substitui a type
+ * library do Excel, que não existe neste prefixo, com SÓ as duas interfaces
+ * que o cliente RTD da prova de conceito usa. Mesmo LIBID, versão, IIDs e
+ * DISPIDs do Excel, para que o pywin32 gere os wrappers e o servidor RTD real
+ * chame o callback com os DISPIDs que espera.
+ */
+import "oaidl.idl";
+
+[
+    uuid(00020813-0000-0000-C000-000000000046),
+    version(1.4),
+    helpstring("Shim local IRtdServer/IRTDUpdateEvent (prefixo Wine do spike Tryd)")
+]
+library Excel
+{
+    importlib("stdole2.tlb");
+
+    interface IRTDUpdateEvent;
+
+    [
+        uuid(A43788C1-D91B-11D3-8F39-00C04F3651B8),
+        dual,
+        oleautomation
+    ]
+    interface IRTDUpdateEvent : IDispatch
+    {
+        [id(0x0000000a)] HRESULT UpdateNotify();
+        [id(0x0000000b), propget] HRESULT HeartbeatInterval([out, retval] long *value);
+        [id(0x0000000b), propput] HRESULT HeartbeatInterval([in] long value);
+        [id(0x0000000c)] HRESULT Disconnect();
+    };
+
+    [
+        uuid(EC0E6191-DB51-11D3-8F3E-00C04F3651B8),
+        dual,
+        oleautomation
+    ]
+    interface IRtdServer : IDispatch
+    {
+        [id(0x0000000a)] HRESULT ServerStart([in] IRTDUpdateEvent *CallbackObject,
+                                             [out, retval] long *pfRes);
+        [id(0x0000000b)] HRESULT ConnectData([in] long TopicID,
+                                             [in] SAFEARRAY(VARIANT) *Strings,
+                                             [in, out] VARIANT_BOOL *GetNewValues,
+                                             [out, retval] VARIANT *pvarOut);
+        [id(0x0000000c)] HRESULT RefreshData([in, out] long *TopicCount,
+                                             [out, retval] SAFEARRAY(VARIANT) *parrayOut);
+        [id(0x0000000d)] HRESULT DisconnectData([in] long TopicID);
+        [id(0x0000000e)] HRESULT Heartbeat([out, retval] long *pfRes);
+        [id(0x0000000f)] HRESULT ServerTerminate();
+    };
+};
