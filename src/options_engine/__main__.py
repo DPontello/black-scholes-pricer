@@ -27,6 +27,7 @@ import os
 import platform
 import shutil
 import sys
+import threading
 from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
@@ -299,6 +300,12 @@ def app(args: Sequence[str]) -> int:
         action="store_true",
         help="não importa sozinho os arquivos da B3 baixados para a pasta Downloads",
     )
+    parser.add_argument(
+        "--depois-de-atualizar",
+        action="store_true",
+        help="aberto pelo instalador depois de uma atualização: "
+        "só abre a janela se a antiga não voltar",
+    )
     opcoes = parser.parse_args(args)
 
     sistema = platform.system()
@@ -330,6 +337,8 @@ def app(args: Sequence[str]) -> int:
         return 0
     porta = launch.find_free_port(opcoes.porta)
     url = f"http://{launch.HOST}:{porta}/"
+    encerramento = launch.Encerramento()
+    janela_voltou = threading.Event()
     web = build_web_app(
         config_dir=config_dir,
         static_dir=static_dir,
@@ -339,11 +348,25 @@ def app(args: Sequence[str]) -> int:
         if opcoes.sem_downloads
         else launch.downloads_dir(sistema, os.environ, Path.home()),
         frozen_dir=frozen_dir,
+        encerrar=encerramento.pedir,
+        ao_ver_janela=janela_voltou.set,
     )
     janela = _janela(sistema, url)
     print(f"Painel de Opções em {url} (configuração em {config_dir})")
-    on_ready = None if opcoes.sem_janela else (lambda: launch.open_window(janela, url))
-    launch.serve(web, porta, on_ready)
+
+    def abrir_se_a_antiga_nao_voltar() -> None:
+        # A janela antiga, se ainda aberta, volta a falar com o servidor novo sozinha: só se ela
+        # não voltar se abre outra. A constante é lida aqui, na hora, para o teste poder trocá-la.
+        if not janela_voltou.wait(launch.ESPERA_JANELA_ANTIGA_S):
+            launch.open_window(janela, url)
+
+    abrir = (
+        abrir_se_a_antiga_nao_voltar
+        if opcoes.depois_de_atualizar
+        else (lambda: launch.open_window(janela, url))
+    )
+    on_ready = None if opcoes.sem_janela else abrir
+    launch.serve(web, porta, on_ready, encerramento=encerramento)
     return 0
 
 

@@ -22,6 +22,18 @@ def test_saude_responde_ok_com_a_versao_do_pacote() -> None:
     }
 
 
+def test_saude_com_janela_avisa_que_a_janela_voltou() -> None:
+    avisos: list[str] = []
+    cliente = TestClient(create_app([], ao_ver_janela=lambda: avisos.append("voltou")))
+
+    sem = cliente.get("/api/saude")
+    assert avisos == []
+
+    com = cliente.get("/api/saude", params={"janela": 1})
+    assert avisos == ["voltou"]
+    assert com.json() == sem.json()
+
+
 def test_erro_de_dominio_vira_422_e_simbolo_desconhecido_404() -> None:
     router = APIRouter()
 

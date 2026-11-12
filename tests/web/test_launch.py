@@ -299,3 +299,97 @@ def test_comando_app_ja_aberto_so_abre_a_janela_na_porta_dele(
     assert janelas == ["http://127.0.0.1:8770/"]
     assert main(["app", "--porta", "8770", "--sem-janela"]) == 0
     assert janelas == ["http://127.0.0.1:8770/"]
+
+
+# --------------------------------------------------------------------------- atualização
+
+
+class _ServidorFalso:
+    should_exit = False
+
+
+def test_encerramento_pedido_liga_o_should_exit() -> None:
+    encerramento = launch.Encerramento()
+    servidor = _ServidorFalso()
+    encerramento.ligar(servidor)
+    assert not servidor.should_exit
+    encerramento.pedir()
+    assert servidor.should_exit
+
+
+def test_encerramento_pedido_antes_de_ligar_vale_ao_ligar() -> None:
+    encerramento = launch.Encerramento()
+    encerramento.pedir()
+    servidor = _ServidorFalso()
+    encerramento.ligar(servidor)
+    assert servidor.should_exit
+
+
+def _comando_app_com_servidor_falso(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *argumentos: str
+) -> tuple[dict[str, object], dict[str, object], list[str]]:
+    """Roda ``app`` com o build, o servidor e a janela falsos. Devolve o que o ``build_web_app``
+    e o ``serve`` receberam e as URLs que a janela abriu."""
+    from options_engine.config import web_app
+
+    estatico = tmp_path / "static"
+    estatico.mkdir()
+    (estatico / "index.html").write_text("<html></html>", encoding="utf-8")
+    construido: dict[str, object] = {}
+    servido: dict[str, object] = {}
+    janelas: list[str] = []
+
+    def build_falso(**kwargs: object) -> object:
+        construido.update(kwargs)
+        return object()
+
+    def serve_falso(app: object, porta: int, on_ready: object = None, **kwargs: object) -> None:
+        servido.update(on_ready=on_ready, **kwargs)
+
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    _config_isolada(monkeypatch, tmp_path)
+    monkeypatch.setattr(launch, "default_static_dir", lambda meipass=None: estatico)
+    monkeypatch.setattr(web_app, "build_web_app", build_falso)
+    monkeypatch.setattr(launch, "find_free_port", lambda porta: 8765)
+    monkeypatch.setattr(launch, "already_running", lambda porta: False)
+    monkeypatch.setattr(launch, "open_window", lambda comando, url: janelas.append(url))
+    monkeypatch.setattr(launch, "serve", serve_falso)
+    assert main(["app", "--sem-ponte", *argumentos]) == 0
+    return construido, servido, janelas
+
+
+def test_comando_app_passa_encerrar_e_ao_ver_janela_para_o_web_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    construido, servido, _ = _comando_app_com_servidor_falso(tmp_path, monkeypatch, "--sem-janela")
+    assert callable(construido["encerrar"])
+    assert callable(construido["ao_ver_janela"])
+    assert isinstance(servido["encerramento"], launch.Encerramento)
+
+
+def test_depois_de_atualizar_nao_abre_janela_se_a_antiga_voltar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(launch, "ESPERA_JANELA_ANTIGA_S", 0.05)
+    construido, servido, janelas = _comando_app_com_servidor_falso(
+        tmp_path, monkeypatch, "--depois-de-atualizar"
+    )
+    ao_ver_janela = construido["ao_ver_janela"]
+    on_ready = servido["on_ready"]
+    assert callable(ao_ver_janela) and callable(on_ready)
+    ao_ver_janela()
+    on_ready()
+    assert janelas == []
+
+
+def test_depois_de_atualizar_abre_janela_se_ninguem_voltar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(launch, "ESPERA_JANELA_ANTIGA_S", 0.05)
+    _, servido, janelas = _comando_app_com_servidor_falso(
+        tmp_path, monkeypatch, "--depois-de-atualizar"
+    )
+    on_ready = servido["on_ready"]
+    assert callable(on_ready)
+    on_ready()
+    assert janelas == ["http://127.0.0.1:8765/"]
