@@ -295,7 +295,7 @@ export const TERMOS: TermoGlossario[] = [
     id: "risco-de-exercicio",
     titulo: "Risco de exercício",
     texto:
-      "A chance de uma opção que você vendeu ser exercida contra você, perto do [vencimento](vencimento). O app avisa quando a opção vendida está dentro do dinheiro (a ação passou do [strike](strike)) ou a menos de 2% dele, a 5 [dias úteis](dias-uteis) ou menos do vencimento. Os dois números mudam nos limites da aba Alertas. Se for exercida, vem a [atribuição](atribuicao): você vende a ação (na call) ou compra (na put) pelo strike.",
+      "A chance de uma opção que você vendeu ser exercida contra você, que cresce perto do [vencimento](vencimento). O app avisa quando a opção vendida está dentro do dinheiro (a ação passou do [strike](strike)), em qualquer prazo, e quando está a menos de 2% dele, a 5 [dias úteis](dias-uteis) ou menos do vencimento. Os dois números mudam nos limites da aba Alertas. Se for exercida, vem a [atribuição](atribuicao): você vende a ação (na call) ou compra (na put) pelo strike.",
     exemplo:
       "Uma put de PETR4 vendida com strike R$ 28,00, com a ação a R$ 28,30 e 2 dias úteis até o vencimento, está a menos de 2% do strike: o alerta aparece.",
     onde: "Na aba Alertas, com os botões Abrir na Carteira e Rolar.",

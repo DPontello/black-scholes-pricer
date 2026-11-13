@@ -1,11 +1,11 @@
 """As regras: recebem a carteira marcada, o spot e os dias úteis, devolvem os alertas, sem I/O.
 
 Vencimento próximo: perna de opção aberta a ``expiry_days`` dias úteis ou menos. Risco de
-exercício: perna de opção vendida, na mesma janela, dentro do dinheiro ou a menos de
-``strike_distance`` do strike. Stop e alvo: o resultado total da operação contra os limites em R$.
-Sem o lado de zerar numa perna cotada, o stop (não o alvo) usa o total estimado pelo teórico; sem
-teórico, avisa que está sem preço para avaliar. Depois do pregão do vencimento, a perna com aviso
-só tem o aviso.
+exercício: perna de opção vendida dentro do dinheiro, em qualquer prazo, ou, na mesma janela, a
+menos de ``strike_distance`` do strike. Stop e alvo: o resultado total da operação contra os
+limites em R$. Sem o lado de zerar numa perna cotada, o stop (não o alvo) usa o total estimado
+pelo teórico; sem teórico, avisa que está sem preço para avaliar. Depois do pregão do vencimento,
+a perna com aviso só tem o aviso.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -122,12 +122,12 @@ def _perna(
     if du is None:
         coleta.indeterminadas.update([vencimento.key, risco.key] if vendida else [vencimento.key])
         return
-    if du > settings.expiry_days:
-        return
+    na_janela = du <= settings.expiry_days
     vencimento = replace(
         vencimento, symbol=ref.symbol, expiry=ref.terms.expiry, business_days=du, can_roll=rolar
     )
-    coleta.alertas.append((posicao, vencimento))
+    if na_janela:
+        coleta.alertas.append((posicao, vencimento))
     if not vendida:
         return
     spot = spots.get(op.underlying)
@@ -135,7 +135,7 @@ def _perna(
         coleta.indeterminadas.add(risco.key)
         return
     dentro = _no_dinheiro(ref, spot, settings.strike_distance)
-    if dentro is not None:
+    if dentro is not None and (dentro or na_janela):
         risco = replace(
             vencimento, key=risco.key, kind=AlertKind.EXERCISE_RISK, in_the_money=dentro
         )

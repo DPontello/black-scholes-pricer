@@ -307,10 +307,12 @@ de dia. A aba **IR mensal** estima o imposto das opções mês a mês: day trade
 chegar a R$ 10 e o prazo do DARF (estimativa: sem ações, sem IR retido na fonte e sem prejuízo
 de antes do app). Cada perfil grava a carteira na própria pasta, um arquivo JSON por operação.
 Cada operação pode ter um **stop** e um **alvo** em reais, comparados com o resultado total
-(realizado com custos + não realizado pelo preço de zerar).
+(realizado com custos + não realizado pelo preço de zerar). Se uma perna está sem oferta para
+zerar, o stop usa o teórico dela e aparece como "estimado"; sem teórico, o alerta diz que o stop
+está sem preço para avaliar. O alvo só vale pelo preço de zerar.
 Os **Alertas** avisam, do mais grave para o mais leve, a opção vencida que espera o registro do
-exercício, o stop, o risco de exercício (opção vendida dentro do dinheiro ou a menos de 2% do
-strike, a 5 dias úteis ou menos do vencimento), o vencimento próximo e o alvo; os dois limites
+exercício, o stop, o risco de exercício (opção vendida dentro do dinheiro, em qualquer prazo, ou a
+menos de 2% do strike, a 5 dias úteis ou menos do vencimento), o vencimento próximo e o alvo; os dois limites
 ficam editáveis no perfil, e o menu mostra quantos alertas há. Um alerta dispensado volta quando
 deixa de valer e vale de novo. **Rolar** abre no Montador a mesma estrutura no vencimento
 seguinte, com uma faixa que mostra o custo de zerar as pernas atuais e o caixa líquido; nada é
