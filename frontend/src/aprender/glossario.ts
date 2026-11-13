@@ -286,7 +286,7 @@ export const TERMOS: TermoGlossario[] = [
     id: "stop-e-alvo",
     titulo: "Stop e alvo",
     texto:
-      "Dois limites em reais que você põe numa operação para o app avisar. O stop é a perda que você aceita; o alvo, o ganho em que pensa sair. O app compara com o resultado total da operação: o que já foi realizado, com os custos, mais o que daria zerar o resto agora, pelo [preço de zerar](preco-de-zerar). O app só avisa: quem encerra é você, na corretora.",
+      "Dois limites em reais que você põe numa operação para o app avisar. O stop é a perda que você aceita; o alvo, o ganho em que pensa sair. O app compara com o resultado total da operação: o que já foi realizado, com os custos, mais o que daria zerar o resto agora, pelo [preço de zerar](preco-de-zerar). Se uma perna está sem oferta para zerar, o stop usa o [teórico](preco-executavel) dela e aparece como \"estimado\"; sem teórico, o alerta diz que o stop está sem preço para avaliar. O alvo só vale pelo preço de zerar. O app só avisa: quem encerra é você, na corretora.",
     exemplo:
       "Uma trava com stop de R$ 200,00: se o realizado é R$ -150,00 e zerar o resto agora daria R$ -60,00, o total é R$ -210,00, e o alerta de stop aparece.",
     onde: "No registro da operação e no botão Stop e alvo da Carteira; os alertas aparecem na aba Alertas.",

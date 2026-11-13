@@ -435,6 +435,53 @@ def test_sem_bid_a_comprada_fica_sem_preco_de_zerar_e_com_o_teorico_ao_lado() ->
     assert trava.unrealized is None
 
 
+def test_sem_o_lado_de_zerar_estima_pelo_teorico() -> None:
+    mercado = MercadoFalso(
+        option_quotes={
+            "PETRK300": _cotacao(call(30.0), None, 1.60),
+            "PETRK320": _cotacao(call(32.0), 0.40, None),
+        }
+    )
+    servico = _servico(FakeOperationRepository(), mercado=mercado)
+    _trava(servico)
+    (trava,) = servico.open_operations().operations
+    comprada, vendida = trava.marks
+    assert comprada is not None and comprada.theoretical is not None and comprada.quoted
+    assert vendida is not None and vendida.theoretical is not None and vendida.quoted
+    # Comprada a 1,20 e vendida a 0,60, 100 de cada: zerar pelo teórico.
+    assert comprada.estimated_unrealized == pytest.approx(
+        (comprada.theoretical - 1.20) * 100, abs=1e-9
+    )
+    assert vendida.estimated_unrealized == pytest.approx(
+        (0.60 - vendida.theoretical) * 100, abs=1e-9
+    )
+    assert trava.unrealized is None
+
+
+def test_com_o_preco_de_zerar_nao_ha_estimado() -> None:
+    mercado = MercadoFalso(
+        option_quotes={
+            "PETRK300": _cotacao(call(30.0), 1.50, 1.60),
+            "PETRK320": _cotacao(call(32.0), 0.40, 0.45),
+        }
+    )
+    servico = _servico(FakeOperationRepository(), mercado=mercado)
+    _trava(servico)
+    (trava,) = servico.open_operations().operations
+    assert [m.estimated_unrealized for m in trava.marks if m is not None] == [None, None]
+
+
+def test_sem_cotacao_nao_estima_mesmo_com_teorico() -> None:
+    mercado = MercadoFalso(option_quotes={"PETRK320": _cotacao(call(32.0), 0.40, 0.45)})
+    servico = _servico(FakeOperationRepository(), mercado=mercado)
+    _trava(servico)
+    (trava,) = servico.open_operations().operations
+    comprada = trava.marks[0]
+    assert comprada is not None and comprada.reason == "aguardando dados"
+    assert comprada.theoretical is not None
+    assert (comprada.quoted, comprada.estimated_unrealized) == (False, None)
+
+
 def test_sem_cotacao_sai_o_motivo_e_sem_cadeia_nao_ha_teorico() -> None:
     mercado = MercadoFalso(chains={}, option_quotes={"PETRK320": "sem cotação ao vivo"})
     servico = _servico(FakeOperationRepository(), mercado=mercado)

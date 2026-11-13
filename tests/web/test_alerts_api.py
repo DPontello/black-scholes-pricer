@@ -7,17 +7,19 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from pytest import approx
 
-from options_engine.adapters.inbound.web.alerts import router_alertas
+from options_engine.adapters.inbound.web.alerts import alertas_out, router_alertas
 from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.inbound.web.portfolio import router_carteira
 from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.adapters.outbound.storage.dismissed_alerts import JsonDismissedAlerts
 from options_engine.adapters.outbound.storage.operations import JsonOperationRepository
+from options_engine.application.ports.alerts import AlertsView
 from options_engine.application.ports.inbound import BuilderLegInput, BuilderRequest
 from options_engine.application.use_cases.alerts import AlertService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.application.use_cases.roll import RollService
+from options_engine.domain.alerts.model import Alert, AlertKind
 from options_engine.domain.model.chain import OptionQuote
 from options_engine.domain.model.contracts import OptionContract, OptionTerms
 from options_engine.domain.model.enums import OptionType, Side
@@ -136,8 +138,33 @@ def test_lista_com_risco_de_exercicio_e_vencimento(tmp_path: Path) -> None:
         "total": None,
         "limite": None,
         "pode_rolar": True,
+        "estimado": False,
     }
     assert (vencimento["tipo"], vencimento["dentro_do_dinheiro"]) == ("vencimento_proximo", None)
+
+
+def test_stop_estimado_e_stop_sem_preco_saem_rotulados() -> None:
+    estimado = Alert(
+        "stop:op1:-",
+        AlertKind.STOP,
+        "op1",
+        "trava",
+        "PETR4",
+        total=-60.0,
+        limit=50.0,
+        estimated=True,
+    )
+    sem_preco = Alert(
+        "stop_sem_preco:op2:-", AlertKind.STOP_UNPRICED, "op2", "put", "PETR4", limit=50.0
+    )
+    corpo = alertas_out(AlertsView((estimado, sem_preco), 0, DataSource.AO_VIVO)).model_dump()
+    primeiro, segundo = corpo["alertas"]
+    assert (primeiro["tipo"], primeiro["total"], primeiro["estimado"]) == ("stop", -60.0, True)
+    assert (segundo["tipo"], segundo["limite"], segundo["estimado"]) == (
+        "stop_sem_preco",
+        50.0,
+        False,
+    )
 
 
 def test_dispensar_e_restaurar(tmp_path: Path) -> None:

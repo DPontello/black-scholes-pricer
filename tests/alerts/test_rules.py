@@ -33,8 +33,12 @@ def foto(
     total: float | None = 0.0,
     stop: float | None = None,
     alvo: float | None = None,
+    estimado: float | None = None,
+    sem_preco: bool = False,
 ) -> OperationSnapshot:
-    return OperationSnapshot(id_, f"operação {id_}", "PETR4", legs, total, stop, alvo)
+    return OperationSnapshot(
+        id_, f"operação {id_}", "PETR4", legs, total, stop, alvo, estimado, sem_preco
+    )
 
 
 def avaliar(
@@ -135,6 +139,49 @@ def test_sem_preco_de_zerar_stop_indeterminado() -> None:
     r = avaliar([foto(perna(0, acao(), Side.BUY), total=None, stop=300.0, alvo=100.0)])
     assert r.alerts == ()
     assert r.undetermined == {"stop:op1:-", "alvo:op1:-"}
+
+
+def test_stop_pelo_total_estimado() -> None:
+    op = foto(perna(0, call(30.0), Side.BUY), total=None, estimado=-60.0, stop=50.0)
+    r = avaliar([op], du=30)
+    assert [(a.kind, a.total, a.limit, a.estimated) for a in r.alerts] == [
+        (AlertKind.STOP, -60.0, 50.0, True)
+    ]
+    assert (r.estimated, r.undetermined) == (frozenset({"stop:op1:-"}), frozenset())
+
+
+def test_estimado_aquem_do_stop_nao_dispara_e_conta_como_estimado() -> None:
+    op = foto(perna(0, call(30.0), Side.BUY), total=None, estimado=-40.0, stop=50.0)
+    r = avaliar([op], du=30)
+    assert r.alerts == ()
+    assert r.estimated == {"stop:op1:-"}
+
+
+def test_alvo_fica_indeterminado_com_o_total_estimado() -> None:
+    op = foto(perna(0, call(30.0), Side.BUY), total=None, estimado=40.0, stop=50.0, alvo=30.0)
+    r = avaliar([op], du=30)
+    assert r.alerts == ()
+    assert (r.estimated, r.undetermined) == (frozenset({"stop:op1:-"}), frozenset({"alvo:op1:-"}))
+
+
+def test_sem_preco_para_avaliar_avisa_e_o_stop_fica_indeterminado() -> None:
+    op = foto(perna(0, put(28.0), Side.BUY), total=None, sem_preco=True, stop=50.0, alvo=30.0)
+    r = avaliar([op], du=30)
+    assert [(a.kind, a.key, a.limit, a.total) for a in r.alerts] == [
+        (AlertKind.STOP_UNPRICED, "stop_sem_preco:op1:-", 50.0, None)
+    ]
+    assert r.undetermined == {"stop:op1:-", "alvo:op1:-"}
+
+
+def test_sem_preco_sem_stop_nao_avisa() -> None:
+    op = foto(perna(0, put(28.0), Side.BUY), total=None, sem_preco=True, alvo=30.0)
+    assert avaliar([op], du=30).alerts == ()
+
+
+def test_total_executavel_prevalece_sobre_o_estimado() -> None:
+    op = foto(perna(0, call(30.0), Side.BUY), total=-10.0, estimado=-60.0, stop=50.0)
+    r = avaliar([op], du=30)
+    assert (r.alerts, r.estimated) == ((), frozenset())
 
 
 def test_sem_stop_nada_indeterminado() -> None:

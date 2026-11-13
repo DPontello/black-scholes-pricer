@@ -49,6 +49,7 @@ class Marker:
         cotacao = (self._series if isinstance(ref, OptionLegRef) else self._acoes).get(
             ref.symbol, "sem cotação"
         )
+        cotada = not isinstance(cotacao, str)
         if isinstance(cotacao, str):
             preco, motivo = None, cotacao
         else:
@@ -62,7 +63,12 @@ class Marker:
         if preco is not None:
             return LegMark(preco, side.sign * (preco - average_price) * quantity)
         teorico = self._teorico(ref) if isinstance(ref, OptionLegRef) else None
-        return LegMark(None, None, teorico, motivo)
+        estimado = (
+            side.sign * (teorico - average_price) * quantity
+            if cotada and teorico is not None
+            else None
+        )
+        return LegMark(None, None, teorico, motivo, estimado, cotada)
 
     def _teorico(self, ref: OptionLegRef) -> float | None:
         if ref.symbol not in self._teoricos:
