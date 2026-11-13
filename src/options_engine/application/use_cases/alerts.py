@@ -1,8 +1,8 @@
 """``AlertService``: os alertas da carteira já marcada e os dispensados do perfil aberto.
 
 Um dispensado some até o alerta deixar de valer numa avaliação determinada; então a chave sai do
-arquivo, e o alerta reaparece se voltar a valer. Sem spot ou sem preço de zerar a chave fica: o
-Tryd piscando não faz um alerta dispensado voltar.
+arquivo, e o alerta reaparece se voltar a valer. Sem spot, sem preço de zerar ou com o stop só
+estimado pelo teórico a chave fica: o Tryd piscando não faz um alerta dispensado voltar.
 """
 
 import threading
@@ -67,7 +67,7 @@ class AlertService:
         with self._lock:
             repositorio = self._dismissed_for()
             dispensados = repositorio.load()
-            mantidos = dispensados & (ativas | avaliacao.undetermined)
+            mantidos = dispensados & (ativas | avaliacao.undetermined | avaliacao.estimated)
             if mantidos != dispensados:
                 repositorio.save(mantidos)
         visiveis = tuple(a for a in avaliacao.alerts if a.key not in mantidos)
@@ -111,6 +111,7 @@ class AlertService:
 def _retrato(view: OperationView) -> OperationSnapshot:
     operacao = view.operation
     total = None if view.unrealized is None else fsum((view.realized, view.unrealized))
+    estimado, sem_preco = _estimado(view) if total is None else (None, False)
     return OperationSnapshot(
         operacao.id,
         operacao.name,
@@ -119,4 +120,18 @@ def _retrato(view: OperationView) -> OperationSnapshot:
         total,
         operacao.stop_loss,
         operacao.target,
+        estimado,
+        sem_preco,
     )
+
+
+def _estimado(view: OperationView) -> tuple[float | None, bool]:
+    """O total com o teórico nas pernas cotadas sem o lado de zerar, e se falta preço numa perna
+    cotada. Uma perna sem cotação nenhuma deixa os dois de fora: o stop fica indeterminado."""
+    marcas = [m for m in view.marks if m is not None]
+    if not all(m.quoted for m in marcas):
+        return None, False
+    partes = [m.unrealized if m.unrealized is not None else m.estimated_unrealized for m in marcas]
+    if None in partes:
+        return None, True
+    return fsum((view.realized, *(p for p in partes if p is not None))), False

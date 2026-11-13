@@ -21,7 +21,8 @@ __all__ = ["AlertasOut", "alertas_out", "router_alertas"]
 
 
 class AlertaOut(BaseModel):
-    """``perna`` é ``None`` no stop e no alvo (alertas da operação inteira)."""
+    """``perna`` é ``None`` no stop e no alvo (alertas da operação inteira). ``estimado``: o
+    ``total`` do stop saiu do teórico de uma perna sem oferta para zerar."""
 
     chave: str
     tipo: str
@@ -36,6 +37,7 @@ class AlertaOut(BaseModel):
     total: float | None
     limite: float | None
     pode_rolar: bool
+    estimado: bool
 
 
 class AlertasOut(BaseModel):
@@ -75,6 +77,7 @@ def _alerta_out(alerta: Alert) -> AlertaOut:
         total=alerta.total,
         limite=alerta.limit,
         pode_rolar=alerta.can_roll,
+        estimado=alerta.estimated,
     )
 
 

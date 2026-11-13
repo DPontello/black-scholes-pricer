@@ -1089,6 +1089,7 @@ a.ajuda:focus-visible {
 }
 
 .alerta.stop,
+.alerta.stop_sem_preco,
 .alerta.exercicio_a_registrar,
 .alerta.risco_de_exercicio {
   color: var(--baixa);

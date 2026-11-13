@@ -87,6 +87,15 @@ test("frases dos outros tipos", () => {
   );
 });
 
+test("o stop estimado e o stop sem preço dizem de onde vem o número", () => {
+  expect(frase(alerta({ tipo: "stop", total: -60, limite: 50, estimado: true }))).toBe(
+    "Stop: resultado estimado R$ -60,00, pelo teórico da perna sem oferta para zerar (limite R$ -50,00)",
+  );
+  expect(frase(alerta({ tipo: "stop_sem_preco", limite: 50 }))).toBe(
+    "Stop sem preço para avaliar: uma perna está sem oferta para zerar e sem teórico (limite R$ -50,00)",
+  );
+});
+
 test("dispensar chama a rota e lê de novo", async () => {
   const fetch = api();
   montar();

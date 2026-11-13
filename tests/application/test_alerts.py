@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
-from options_engine.application.ports.alerts import AlertUseCase
+from options_engine.application.ports.alerts import AlertsView, AlertUseCase
 from options_engine.application.ports.portfolio import (
     ExpiryNotice,
     LegMark,
@@ -79,9 +79,46 @@ def _visao(
     realizado: float = 0.0,
     aberto: float | None = 0.0,
 ) -> OperationView:
+    """``aberto=None``: as pernas abertas sem cotação (o Tryd piscando)."""
     estados = leg_states(operacao_)
-    marcas = tuple(None if e.side is None else LegMark(1.0, aberto) for e in estados)
+    marca = (
+        LegMark(1.0, aberto)
+        if aberto is not None
+        else LegMark(None, None, reason="aguardando dados", quoted=False)
+    )
+    marcas = tuple(None if e.side is None else marca for e in estados)
     return OperationView(operacao_, estados, realizado, marcas, aberto)
+
+
+def _sem_oferta(
+    operacao_: Operation,
+    *,
+    estimado: float | None,
+    teorico: float | None = 0.40,
+    realizado: float = 0.0,
+) -> OperationView:
+    """As pernas abertas cotadas, mas sem o lado de zerar; ``estimado``: o não realizado pelo
+    teórico, como a marcação da Carteira o calcula."""
+    estados = leg_states(operacao_)
+    marca = LegMark(
+        None, None, teorico, "sem oferta de compra para zerar", estimated_unrealized=estimado
+    )
+    marcas = tuple(None if e.side is None else marca for e in estados)
+    return OperationView(operacao_, estados, realizado, marcas, None)
+
+
+def _da_operacao(avaliacao: AlertsView) -> list[tuple[AlertKind, float | None, float | None, bool]]:
+    """Os alertas da operação inteira (stop, alvo, stop sem preço), sem os das pernas."""
+    return [(a.kind, a.total, a.limit, a.estimated) for a in avaliacao.alerts if a.leg is None]
+
+
+def _comprada_com_stop(stop: float = 50.0, alvo: float | None = None) -> Operation:
+    """Call comprada a 1,00, 100 opções."""
+    return replace(
+        operacao([call(30.0)], [Open(0, D1, Side.BUY, 100, 1.0)], id_="comprada1"),
+        stop_loss=stop,
+        target=alvo,
+    )
 
 
 def _carteira(*visoes: OperationView, fonte: DataSource = DataSource.AO_VIVO) -> PortfolioView:
@@ -131,6 +168,60 @@ def test_sem_preco_de_zerar_nao_limpa_o_dispensado() -> None:
     piscou = servico.evaluate(_carteira(_visao(op, aberto=None)), ())
     assert (piscou.alerts, caixa.chaves) == ((), frozenset({"stop:acoes0001:-"}))
     assert servico.evaluate(_carteira(_visao(op, aberto=-300.0)), ()).dismissed == 1
+
+
+def test_stop_estimado_dispara_com_comprada_sem_bid() -> None:
+    op = _comprada_com_stop(stop=50.0)
+    servico = _servico()
+    # Realizado de -20 e -40 pelo teórico na comprada sem bid: -60, além do stop de 50.
+    avaliacao = servico.evaluate(_carteira(_sem_oferta(op, estimado=-40.0, realizado=-20.0)), ())
+    assert _da_operacao(avaliacao) == [(AlertKind.STOP, -60.0, 50.0, True)]
+    assert [a.key for a in avaliacao.alerts if a.kind is AlertKind.STOP] == ["stop:comprada1:-"]
+    longe = servico.evaluate(_carteira(_sem_oferta(op, estimado=-40.0)), ())
+    assert _da_operacao(longe) == []
+
+
+def test_sem_cotacao_stop_segue_indeterminado() -> None:
+    op = _comprada_com_stop(stop=50.0)
+    avaliacao = _servico().evaluate(_carteira(_visao(op, realizado=-500.0, aberto=None)), ())
+    assert _da_operacao(avaliacao) == []
+
+
+def test_sem_teorico_vira_aviso() -> None:
+    op = _comprada_com_stop(stop=50.0)
+    avaliacao = _servico().evaluate(_carteira(_sem_oferta(op, estimado=None, teorico=None)), ())
+    assert _da_operacao(avaliacao) == [(AlertKind.STOP_UNPRICED, None, 50.0, False)]
+    (aviso,) = [a for a in avaliacao.alerts if a.leg is None]
+    assert aviso.key == "stop_sem_preco:comprada1:-"
+
+
+def test_alvo_nao_usa_total_estimado() -> None:
+    op = _comprada_com_stop(stop=50.0, alvo=30.0)
+    # +40 pelo teórico passaria do alvo de 30, mas o alvo só vale pelo preço de zerar.
+    avaliacao = _servico().evaluate(_carteira(_sem_oferta(op, estimado=40.0)), ())
+    assert _da_operacao(avaliacao) == []
+
+
+def test_dispensado_nao_volta_quando_o_bid_some() -> None:
+    op = _comprada_com_stop(stop=50.0)
+    caixa = _Dispensados()
+    servico = _servico(caixa)
+    (stop,) = [
+        a for a in servico.evaluate(_carteira(_visao(op, aberto=-60.0)), ()).alerts if a.leg is None
+    ]
+    servico.dismiss(stop.key)
+
+    # O bid some e o teórico ainda passa do stop: a mesma chave, segue escondido.
+    sumiu = servico.evaluate(_carteira(_sem_oferta(op, estimado=-55.0)), ())
+    assert (_da_operacao(sumiu), sumiu.dismissed) == ([], 1)
+
+    # O teórico melhora: a estimativa não limpa o dispensado, como o Tryd piscando.
+    servico.evaluate(_carteira(_sem_oferta(op, estimado=-30.0)), ())
+    assert caixa.chaves == frozenset({"stop:comprada1:-"})
+
+    # O bid volta, ainda além do stop: continua dispensado.
+    voltou = servico.evaluate(_carteira(_visao(op, aberto=-60.0)), ())
+    assert (_da_operacao(voltou), voltou.dismissed) == ([], 1)
 
 
 def test_grava_so_quando_muda() -> None:

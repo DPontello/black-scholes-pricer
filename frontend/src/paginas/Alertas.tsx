@@ -20,6 +20,7 @@ const FONTES = { ao_vivo: null, atrasado: "com preços atrasados", fim_de_dia: "
 const TERMO: Record<Alerta["tipo"], string> = {
   exercicio_a_registrar: "exercicio",
   stop: "stop-e-alvo",
+  stop_sem_preco: "stop-e-alvo",
   risco_de_exercicio: "risco-de-exercicio",
   vencimento_proximo: "vencimento",
   aguardando_fechamento: "vencimento",
@@ -50,8 +51,14 @@ export function frase(alerta: Alerta): string {
       const onde = alerta.dentro_do_dinheiro ? "dentro do dinheiro" : "perto do strike";
       return `${serie} vendida ${onde}: risco de exercício, ${prazo(alerta.dias_uteis)}`;
     }
-    case "stop":
-      return `Stop: resultado ${formatarReais(alerta.total ?? 0)} (limite ${formatarReais(-(alerta.limite ?? 0))})`;
+    case "stop": {
+      const limite = formatarReais(-(alerta.limite ?? 0));
+      return alerta.estimado
+        ? `Stop: resultado estimado ${formatarReais(alerta.total ?? 0)}, pelo teórico da perna sem oferta para zerar (limite ${limite})`
+        : `Stop: resultado ${formatarReais(alerta.total ?? 0)} (limite ${limite})`;
+    }
+    case "stop_sem_preco":
+      return `Stop sem preço para avaliar: uma perna está sem oferta para zerar e sem teórico (limite ${formatarReais(-(alerta.limite ?? 0))})`;
     case "alvo":
       return `Alvo: resultado ${formatarReais(alerta.total ?? 0)} (alvo ${formatarReais(alerta.limite ?? 0)})`;
   }

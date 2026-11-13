@@ -6,12 +6,14 @@ import type { PedidoAnalise } from "./montador";
 export type TipoAlerta =
   | "exercicio_a_registrar"
   | "stop"
+  | "stop_sem_preco"
   | "risco_de_exercicio"
   | "vencimento_proximo"
   | "aguardando_fechamento"
   | "alvo";
 
-/** `perna` é null no stop e no alvo (alertas da operação inteira). */
+/** `perna` é null no stop e no alvo (alertas da operação inteira). `estimado`: o total do stop
+ * saiu do teórico de uma perna sem oferta para zerar. */
 export type Alerta = {
   chave: string;
   tipo: TipoAlerta;
@@ -26,6 +28,7 @@ export type Alerta = {
   total: number | null;
   limite: number | null;
   pode_rolar: boolean;
+  estimado: boolean;
 };
 
 /** Já na ordem de gravidade; `dispensados`: quantos estão escondidos agora. */

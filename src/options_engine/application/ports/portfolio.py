@@ -74,12 +74,18 @@ class RegisterOperation:
 class LegMark:
     """Posição aberta a mercado pelo preço de zerar: bid para a comprada, ask para a vendida
     (ADR-0004). Sem esse lado, ``price`` e ``unrealized`` são ``None`` e ``reason`` diz por quê;
-    ``theoretical`` é o prêmio teórico, só nesse caso, e fica fora do total executável."""
+    ``theoretical`` é o prêmio teórico, só nesse caso, e fica fora do total executável.
+
+    ``quoted``: ``False`` quando a série (ou a ação) está sem cotação nenhuma.
+    ``estimated_unrealized``: o não realizado pelo teórico, só na perna cotada sem o lado de zerar;
+    serve ao stop estimado dos alertas, nunca ao total da Carteira."""
 
     price: float | None
     unrealized: float | None
     theoretical: float | None = None
     reason: str | None = None
+    estimated_unrealized: float | None = None
+    quoted: bool = True
 
 
 @dataclass(frozen=True, slots=True)

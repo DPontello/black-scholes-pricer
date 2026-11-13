@@ -3,7 +3,9 @@
 Vencimento próximo: perna de opção aberta a ``expiry_days`` dias úteis ou menos. Risco de
 exercício: perna de opção vendida, na mesma janela, dentro do dinheiro ou a menos de
 ``strike_distance`` do strike. Stop e alvo: o resultado total da operação contra os limites em R$.
-Depois do pregão do vencimento, a perna com aviso só tem o aviso.
+Sem o lado de zerar numa perna cotada, o stop (não o alvo) usa o total estimado pelo teórico; sem
+teórico, avisa que está sem preço para avaliar. Depois do pregão do vencimento, a perna com aviso
+só tem o aviso.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -33,15 +35,21 @@ _DO_AVISO = {
 
 
 class _Coleta:
-    """Os alertas com a posição da operação na entrada (desempate da ordem) e as indeterminadas."""
+    """Os alertas com a posição da operação na entrada (desempate da ordem), as indeterminadas e
+    as estimadas."""
 
     def __init__(self) -> None:
         self.alertas: list[tuple[int, Alert]] = []
         self.indeterminadas: set[str] = set()
+        self.estimadas: set[str] = set()
 
     def avaliacao(self) -> Evaluation:
         self.alertas.sort(key=lambda item: (_GRAVIDADE[item[1].kind], item[0], item[1].leg or 0))
-        return Evaluation(tuple(a for _, a in self.alertas), frozenset(self.indeterminadas))
+        return Evaluation(
+            tuple(a for _, a in self.alertas),
+            frozenset(self.indeterminadas),
+            frozenset(self.estimadas),
+        )
 
 
 def _chave(kind: AlertKind, operation_id: str, leg: int | None) -> str:
@@ -149,9 +157,18 @@ def _stop_e_alvo(coleta: _Coleta, posicao: int, op: OperationSnapshot) -> None:
         if limite is None:
             continue
         alerta = _alerta(kind, op)
-        if op.total is None:
+        total, estimado = op.total, False
+        if total is None and kind is AlertKind.STOP and op.estimated_total is not None:
+            total, estimado = op.estimated_total, True
+            coleta.estimadas.add(alerta.key)
+        if total is None:
             coleta.indeterminadas.add(alerta.key)
+            if kind is AlertKind.STOP and op.unpriced:
+                aviso = replace(_alerta(AlertKind.STOP_UNPRICED, op), limit=limite)
+                coleta.alertas.append((posicao, aviso))
             continue
-        disparou = op.total <= -limite if kind is AlertKind.STOP else op.total >= limite
+        disparou = total <= -limite if kind is AlertKind.STOP else total >= limite
         if disparou:
-            coleta.alertas.append((posicao, replace(alerta, total=op.total, limit=limite)))
+            coleta.alertas.append(
+                (posicao, replace(alerta, total=total, limit=limite, estimated=estimado))
+            )

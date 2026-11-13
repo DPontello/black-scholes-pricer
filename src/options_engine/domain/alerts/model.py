@@ -52,6 +52,7 @@ class AlertKind(StrEnum):
 
     EXERCISE_TO_REGISTER = "exercicio_a_registrar"
     STOP = "stop"
+    STOP_UNPRICED = "stop_sem_preco"
     EXERCISE_RISK = "risco_de_exercicio"
     EXPIRY_NEAR = "vencimento_proximo"
     AWAITING_CLOSE = "aguardando_fechamento"
@@ -69,7 +70,11 @@ def _exige_limite(nome: str, valor: float | None) -> None:
 class OperationSnapshot:
     """Uma operação aberta já marcada pela Carteira. ``total``: realizado com custos + não
     realizado pelo preço de zerar; ``None`` quando alguma perna aberta está sem preço de zerar.
-    ``stop_loss`` e ``target`` em R$, positivos."""
+    ``stop_loss`` e ``target`` em R$, positivos.
+
+    Sem ``total``: ``estimated_total`` é o mesmo total com o teórico nas pernas cotadas sem o lado
+    de zerar (``None`` se falta cotação ou teórico); ``unpriced``, que alguma perna cotada não tem
+    nem o lado nem o teórico, e nenhuma está sem cotação."""
 
     operation_id: str
     name: str
@@ -78,6 +83,8 @@ class OperationSnapshot:
     total: float | None
     stop_loss: float | None = None
     target: float | None = None
+    estimated_total: float | None = None
+    unpriced: bool = False
 
     def __post_init__(self) -> None:
         _exige_limite("stop", self.stop_loss)
@@ -98,7 +105,7 @@ class AfterExpiry:
 @dataclass(frozen=True, slots=True)
 class Alert:
     """``key`` identifica o alerta entre avaliações (para dispensar): tipo, operação e perna
-    (``-`` quando o alerta é da operação inteira)."""
+    (``-`` quando o alerta é da operação inteira). ``estimated``: stop pelo total estimado."""
 
     key: str
     kind: AlertKind
@@ -113,12 +120,15 @@ class Alert:
     total: float | None = None
     limit: float | None = None
     can_roll: bool = False
+    estimated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class Evaluation:
     """``undetermined``: as chaves que não deu para avaliar (sem spot, sem preço de zerar, fora do
-    calendário); nem disparam nem contam como "deixou de valer"."""
+    calendário); nem disparam nem contam como "deixou de valer". ``estimated``: as do stop avaliado
+    pelo total estimado; disparam, mas também não contam como "deixou de valer"."""
 
     alerts: tuple[Alert, ...]
     undetermined: frozenset[str]
+    estimated: frozenset[str] = frozenset()
