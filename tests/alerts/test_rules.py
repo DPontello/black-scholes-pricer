@@ -107,9 +107,33 @@ def test_call_comprada_nao_tem_risco_de_exercicio() -> None:
     assert r.alerts[0].can_roll is False
 
 
-def test_risco_fora_da_janela_de_dias_nao_dispara() -> None:
+def test_vendida_dentro_do_dinheiro_avisa_fora_da_janela() -> None:
+    # Put vendida strike 30 com o ativo a 26, a 10 dias úteis: avisa, sem o vencimento próximo.
+    r = avaliar([foto(perna(0, put(30.0), Side.SELL))], spot=26.0, du=10)
+    assert tipos(r) == [(AlertKind.EXERCISE_RISK, 0)]
+    (risco,) = r.alerts
+    assert (risco.in_the_money, risco.business_days, risco.expiry, risco.can_roll) == (
+        True,
+        10,
+        NOVEMBRO,
+        True,
+    )
+    assert risco.key == "risco_de_exercicio:op1:0"
+
+
+def test_perto_do_strike_fora_da_janela_nao_dispara() -> None:
     op = foto(perna(0, call(30.0), Side.SELL))
-    assert avaliar([op], spot=35.0, du=6).alerts == ()
+    assert avaliar([op], spot=29.5, du=6).alerts == ()
+
+
+def test_fora_da_janela_sem_spot_risco_indeterminado() -> None:
+    r = avaliar([foto(perna(0, call(30.0), Side.SELL))], spot=None, du=10)
+    assert (r.alerts, r.undetermined) == ((), frozenset({"risco_de_exercicio:op1:0"}))
+
+
+def test_comprada_dentro_do_dinheiro_fora_da_janela_nao_avisa() -> None:
+    r = avaliar([foto(perna(0, call(30.0), Side.BUY))], spot=35.0, du=10)
+    assert (r.alerts, r.undetermined) == ((), frozenset())
 
 
 def test_limites_do_perfil_valem() -> None:

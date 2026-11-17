@@ -165,3 +165,26 @@ Branch `fix/alerta-stop-sem-oferta`, a partir da `development` (`c5ca7ff`).
 - Ruling (autor, 13/11): N1 vira a tarefa 1.5 da Sprint 1, com a própria enquete de como achar o
   strike ajustado; N2 e N3 entram na Sprint 3. Custo se errado: a Sprint 1 cresce cerca de meio
   dia, e até a Sprint 3 uma série com "-" no Tryd some da cadeia.
+
+### Tarefa 1.2 — risco de exercício fora da janela
+
+Branch `fix/risco-exercicio-fora-da-janela`, a partir da `development` (`3664f5d`). Decisão do
+autor acima ("Decisões de 13/11").
+
+- `rules.py`: a perna vendida dentro do dinheiro dá o risco de exercício em qualquer prazo, com os
+  dias úteis, o vencimento e o "Rolar" de sempre; o "perto do strike" e o vencimento próximo
+  continuam só na janela de `expiry_days`.
+- Ruling: fora da janela, a perna vendida sem spot do ativo deixa a chave do risco indeterminada,
+  como dentro dela. Assim o Tryd piscando não limpa um risco dispensado a 40 dias. Custo se
+  errado: mais chaves indeterminadas na tarefa 1.3 (uma por vendida sem spot).
+- O teste antigo `test_risco_fora_da_janela_de_dias_nao_dispara` exigia silêncio para uma call
+  vendida dentro do dinheiro (spot 35, strike 30) a 6 du, o que a decisão muda. Virou
+  `test_perto_do_strike_fora_da_janela_nao_dispara` (spot 29,50). Novos:
+  `test_vendida_dentro_do_dinheiro_avisa_fora_da_janela` (o caso provado do plano: put strike 30,
+  ativo a 26, 10 du), `test_fora_da_janela_sem_spot_risco_indeterminado` e
+  `test_comprada_dentro_do_dinheiro_fora_da_janela_nao_avisa`.
+- Textos: o termo "Risco de exercício" do glossário e o parágrafo dos Alertas no README. O README
+  ganhou também a frase do stop estimado, que faltou na tarefa 1.1.
+- Checagens: ruff, ruff format, mypy, import-linter; pytest em `tests/alerts`,
+  `tests/application`, `tests/web` e `tests/portfolio` (606 passando); `tsc --noEmit` e os testes
+  de Termos e Alertas (20 passando).
