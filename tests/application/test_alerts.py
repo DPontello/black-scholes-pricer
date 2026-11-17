@@ -15,7 +15,7 @@ from options_engine.application.ports.portfolio import (
     StrikeNotice,
 )
 from options_engine.application.use_cases.alerts import AlertService
-from options_engine.domain.alerts.model import AlertKind, AlertSettings
+from options_engine.domain.alerts.model import AlertKind, AlertSettings, UndeterminedReason
 from options_engine.domain.model.enums import Side
 from options_engine.domain.model.errors import NoActiveProfileError
 from options_engine.domain.model.quotes import DataSource, UnderlyingQuote
@@ -292,6 +292,17 @@ def test_strike_que_mudou_no_cadastro_vira_alerta_e_pode_ser_dispensado() -> Non
     # Sem a mudança (o Cadastro voltou a bater), o dispensado sai e o alerta pode voltar.
     servico.evaluate(_carteira(_visao(comprada)), [])
     assert caixa.chaves == frozenset()
+
+
+def test_nao_avaliados_chegam_com_o_motivo_mesmo_os_dispensados() -> None:
+    """Sem cotação nenhuma (o Tryd piscando), o stop não é avaliado e a tela diz por quê; o aviso
+    não se dispensa, porque some sozinho quando a avaliação volta."""
+    caixa = _Dispensados(frozenset({"stop:comprada1:-"}))
+    visao = _servico(caixa).evaluate(_carteira(_visao(_comprada_com_stop(), aberto=None)), [])
+    assert [(n.alert.key, n.reason) for n in visao.not_evaluated] == [
+        ("stop:comprada1:-", UndeterminedReason.NO_PRICE)
+    ]
+    assert caixa.chaves == {"stop:comprada1:-"}  # o dispensado segue guardado
 
 
 def test_dispensar_e_restaurar_todos() -> None:

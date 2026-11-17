@@ -20,6 +20,8 @@ __all__ = [
     "Evaluation",
     "ListedStrikeChange",
     "OperationSnapshot",
+    "Undetermined",
+    "UndeterminedReason",
 ]
 
 MAX_EXPIRY_DAYS: Final = 60
@@ -141,12 +143,31 @@ class Alert:
     listed_strike: float | None = None
 
 
+class UndeterminedReason(StrEnum):
+    """Por que um alerta não pôde ser avaliado."""
+
+    NO_SPOT = "sem_spot"
+    NO_PRICE = "sem_preco"
+    OUT_OF_CALENDAR = "fora_do_calendario"
+
+
+@dataclass(frozen=True, slots=True)
+class Undetermined:
+    """Um alerta que não pôde ser avaliado (o tipo, a operação, a perna e a série) e o motivo."""
+
+    alert: Alert
+    reason: UndeterminedReason
+
+
 @dataclass(frozen=True, slots=True)
 class Evaluation:
     """``undetermined``: as chaves que não deu para avaliar (sem spot, sem preço de zerar, fora do
     calendário); nem disparam nem contam como "deixou de valer". ``estimated``: as do stop avaliado
-    pelo total estimado; disparam, mas também não contam como "deixou de valer"."""
+    pelo total estimado; disparam, mas também não contam como "deixou de valer".
+    ``not_evaluated``: os não avaliados para mostrar, com o motivo, na ordem de gravidade; sem o
+    stop que já saiu como "stop sem preço para avaliar"."""
 
     alerts: tuple[Alert, ...]
     undetermined: frozenset[str]
     estimated: frozenset[str] = frozenset()
+    not_evaluated: tuple[Undetermined, ...] = ()

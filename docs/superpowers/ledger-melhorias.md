@@ -330,3 +330,51 @@ autor acima ("Decisões de 13/11").
 - Checagens: ruff, ruff format, mypy, import-linter; pytest em `tests/alerts`,
   `tests/application`, `tests/web` e `tests/portfolio` (606 passando); `tsc --noEmit` e os testes
   de Termos e Alertas (20 passando).
+
+### Tarefa 1.3 — alertas que não puderam ser avaliados, visíveis
+
+Branch `fix/alertas-nao-avaliados`, a partir da `development` (`3795cc2`, já com a 1.2, a 1.4 e a
+1.5).
+
+- Domínio (`domain/alerts/`): `UndeterminedReason` (`sem_spot`, `sem_preco`,
+  `fora_do_calendario`) e `Undetermined` (o alerta e o motivo). A `Evaluation` ganhou
+  `not_evaluated`, na ordem de gravidade; o `undetermined` (as chaves) segue igual e continua
+  guardando os dispensados.
+- Onde nasce cada motivo: vencimento fora do calendário → o vencimento próximo e, na vendida, o
+  risco de exercício; vendida sem spot (dentro ou fora da janela) → o risco; stop ou alvo sem total
+  pelo preço de zerar → `sem_preco`. Nos não avaliados das pernas vai o ticker.
+- Ruling: o stop que já saiu como "stop sem preço para avaliar" fica fora dos não avaliados (a
+  chave segue indeterminada, para o dispensado ficar). Custo se errado: o mesmo problema contado
+  duas vezes na tela.
+- Ruling: os não avaliados aparecem mesmo quando o alerta está dispensado, e o aviso não se
+  dispensa: ele diz que a avaliação parou, não que o alerta disparou, e some sozinho quando ela
+  volta. Custo se errado: com o Tryd piscando, a lista aparece e some.
+- Ruling: o "Alertas (N)" do menu continua contando só os alertas visíveis; os não avaliados não
+  entram. Custo se errado: o menu não chama a atenção para uma avaliação parada.
+- Ruling: o motivo `sem_preco` cobre também a perna sem cotação nenhuma ("sem preço para zerar
+  alguma perna"); o plano pedia três motivos, e separar o "sem cotação" mudaria pouco para quem lê.
+- Serviço e API: `AlertsView.not_evaluated`; `AlertasOut.nao_avaliados` com `chave`, `tipo`,
+  `operacao`, `nome`, `ativo`, `perna`, `ticker` e `motivo`, também no WebSocket.
+- Tela: a caixa "N alertas não puderam ser avaliados" (no singular, "1 alerta não pôde ser
+  avaliado") depois dos alertas, uma linha por item, por exemplo "put coberta · risco de exercício
+  de PETRW280: sem a cotação do ativo". Borda tracejada e sem a cor de perda: é informação, não
+  alerta. O "Nenhum alerta agora." só aparece quando também não há não avaliados. O README ganhou a
+  frase.
+- Testes novos: quatro nas regras, um no serviço, um na API e dois na tela. O
+  `test_alertas_vao_no_ao_vivo_junto_da_carteira_e_so_quando_mudam` esperava os dados dos alertas
+  sem nada, que era justamente o silêncio que esta tarefa tira: agora confere o stop entre os não
+  avaliados. A fixture do `aoVivo.test` ganhou o campo novo.
+- Checagens (gate completo, fim da Sprint 1, no Windows): pytest inteiro com cobertura (5785
+  passando, 23 pulados, cobertura de 98,51%), mypy, ruff, ruff format, import-linter;
+  `npm --prefix frontend run verificar` (319 testes) e `run build` (verde; o aviso de tamanho do
+  pacote é o de antes).
+
+## 2026-11-17: fechamento da Sprint 1
+
+- Feitas: 1.1 (PR #20), 1.2 (PR #21), 1.4 (PR #22), 1.5 (PR #23) e 1.3 (esta branch). Aceite do
+  plano: os itens com teste; pytest sem falha no Windows (gate acima) e no Linux (CI dos PRs).
+- Fica para o autor conferir no app: o stop estimado e o "stop sem preço" (1.1), o risco fora da
+  janela (1.2), o ajuste de strike com um Cadastro de depois de uma data-com (1.5) e a lista de não
+  avaliados com o Tryd fechado (1.3).
+- Próximo: a Sprint 2. Antes da 2.1, a decisão do conflito bruto × líquido (ADR-0005, item 8, e o
+  `dfd6d4f`), registrada na segunda auditoria.

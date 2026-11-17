@@ -35,8 +35,21 @@ export type Alerta = {
   strike_cadastro: number | null;
 };
 
-/** Já na ordem de gravidade; `dispensados`: quantos estão escondidos agora. */
-export type Alertas = { fonte: Fonte; alertas: Alerta[]; dispensados: number };
+/** Um alerta que não pôde ser avaliado agora; `perna` e `ticker` são null no stop e no alvo. */
+export type NaoAvaliado = {
+  chave: string;
+  tipo: TipoAlerta;
+  operacao: string;
+  nome: string;
+  ativo: string;
+  perna: number | null;
+  ticker: string | null;
+  motivo: "sem_spot" | "sem_preco" | "fora_do_calendario";
+};
+
+/** Já na ordem de gravidade; `dispensados`: quantos estão escondidos agora; `nao_avaliados`: os
+ * que não deu para avaliar, dispensados inclusive. */
+export type Alertas = { fonte: Fonte; alertas: Alerta[]; dispensados: number; nao_avaliados: NaoAvaliado[] };
 
 /** `pedido` null: operação sem modelo ou sem vencimento seguinte. Caixa: + recebe, − paga. */
 export type Rolagem = {

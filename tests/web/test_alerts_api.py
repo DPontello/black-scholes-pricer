@@ -20,7 +20,12 @@ from options_engine.application.use_cases.alerts import AlertService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.application.use_cases.roll import RollService
-from options_engine.domain.alerts.model import Alert, AlertKind
+from options_engine.domain.alerts.model import (
+    Alert,
+    AlertKind,
+    Undetermined,
+    UndeterminedReason,
+)
 from options_engine.domain.model.chain import OptionQuote
 from options_engine.domain.model.contracts import OptionContract, OptionTerms
 from options_engine.domain.model.enums import OptionType, Side
@@ -162,6 +167,33 @@ def test_strike_que_mudou_no_cadastro_vira_alerta_confira(tmp_path: Path) -> Non
     )
     # Não aplicado: a Carteira segue com o strike gravado.
     assert cliente.get("/api/carteira").json()["operacoes"][0]["pernas"][0]["strike"] == 28.0
+
+
+def test_nao_avaliados_saem_na_api_com_o_motivo() -> None:
+    alerta = Alert(
+        "risco_de_exercicio:op1:0",
+        AlertKind.EXERCISE_RISK,
+        "op1",
+        "put coberta",
+        "PETR4",
+        leg=0,
+        symbol="PETRW280",
+    )
+    view = AlertsView(
+        (), 0, DataSource.AO_VIVO, (Undetermined(alerta, UndeterminedReason.NO_SPOT),)
+    )
+    assert alertas_out(view).model_dump()["nao_avaliados"] == [
+        {
+            "chave": "risco_de_exercicio:op1:0",
+            "tipo": "risco_de_exercicio",
+            "operacao": "op1",
+            "nome": "put coberta",
+            "ativo": "PETR4",
+            "perna": 0,
+            "ticker": "PETRW280",
+            "motivo": "sem_spot",
+        }
+    ]
 
 
 def test_stop_estimado_e_stop_sem_preco_saem_rotulados() -> None:

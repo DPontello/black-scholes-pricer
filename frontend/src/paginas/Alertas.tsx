@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import {
   type Alerta,
   type Alertas as AlertasDados,
+  type NaoAvaliado,
+  type TipoAlerta,
   dispensarAlerta,
   lerAlertas,
   lerRolagem,
@@ -65,6 +67,41 @@ export function frase(alerta: Alerta): string {
     case "alvo":
       return `Alvo: resultado ${formatarReais(alerta.total ?? 0)} (alvo ${formatarReais(alerta.limite ?? 0)})`;
   }
+}
+
+const NOME_DO_TIPO: Record<TipoAlerta, string> = {
+  exercicio_a_registrar: "exercício a registrar",
+  stop: "stop",
+  stop_sem_preco: "stop",
+  strike_mudou: "strike",
+  risco_de_exercicio: "risco de exercício",
+  vencimento_proximo: "vencimento próximo",
+  aguardando_fechamento: "vencimento",
+  alvo: "alvo",
+};
+
+const MOTIVO: Record<NaoAvaliado["motivo"], string> = {
+  sem_spot: "sem a cotação do ativo",
+  sem_preco: "sem preço para zerar alguma perna",
+  fora_do_calendario: "vencimento além do calendário de feriados do app",
+};
+
+function NaoAvaliados({ itens }: { itens: NaoAvaliado[] }) {
+  const titulo =
+    itens.length === 1 ? "1 alerta não pôde ser avaliado" : `${itens.length} alertas não puderam ser avaliados`;
+  return (
+    <section className="nao-avaliados" aria-label={titulo}>
+      <h2>{titulo}</h2>
+      <ul>
+        {itens.map((item) => (
+          <li key={item.chave}>
+            {item.nome} · {NOME_DO_TIPO[item.tipo]}
+            {item.ticker !== null && ` de ${item.ticker}`}: {MOTIVO[item.motivo]}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 // Agrupa por operação, na ordem do primeiro alerta de cada uma (a lista já vem por gravidade).
@@ -129,7 +166,7 @@ export function Alertas({ aoVivo, perfil, onPerfil }: Props) {
           {indisponivel}
         </p>
       )}
-      {dados !== null && dados.alertas.length === 0 && (
+      {dados !== null && dados.alertas.length === 0 && dados.nao_avaliados.length === 0 && (
         <p className="secundario">Nenhum alerta agora.</p>
       )}
       {dados !== null &&
@@ -168,6 +205,7 @@ export function Alertas({ aoVivo, perfil, onPerfil }: Props) {
             </article>
           );
         })}
+      {dados !== null && dados.nao_avaliados.length > 0 && <NaoAvaliados itens={dados.nao_avaliados} />}
       {dados !== null && dados.dispensados > 0 && (
         <button type="button" className="link" onClick={restaurar}>
           Mostrar dispensados ({dados.dispensados})

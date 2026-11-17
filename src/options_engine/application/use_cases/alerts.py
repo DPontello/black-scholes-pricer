@@ -86,7 +86,9 @@ class AlertService:
             if mantidos != dispensados:
                 repositorio.save(mantidos)
         visiveis = tuple(a for a in avaliacao.alerts if a.key not in mantidos)
-        return AlertsView(visiveis, len(avaliacao.alerts) - len(visiveis), view.source)
+        return AlertsView(
+            visiveis, len(avaliacao.alerts) - len(visiveis), view.source, avaliacao.not_evaluated
+        )
 
     def dismiss(self, key: str) -> None:
         with self._lock:

@@ -1,4 +1,4 @@
-import type { Alerta, Alertas, Rolagem } from "../api/alertas";
+import type { Alerta, Alertas, NaoAvaliado, Rolagem } from "../api/alertas";
 
 // Put vendida de PETR4 perto do strike a 2 du do vencimento, e uma operação de ações no stop.
 export function alerta(parcial: Partial<Alerta> = {}): Alerta {
@@ -48,6 +48,22 @@ export function alertas(parcial: Partial<Alertas> = {}): Alertas {
       alerta(),
     ],
     dispensados: 0,
+    nao_avaliados: [],
+    ...parcial,
+  };
+}
+
+// O risco de exercício da put vendida sem o spot do ativo (o Tryd piscando).
+export function naoAvaliado(parcial: Partial<NaoAvaliado> = {}): NaoAvaliado {
+  return {
+    chave: "risco_de_exercicio:op1:0",
+    tipo: "risco_de_exercicio",
+    operacao: "op1",
+    nome: "put coberta",
+    ativo: "PETR4",
+    perna: 0,
+    ticker: "PETRW280",
+    motivo: "sem_spot",
     ...parcial,
   };
 }

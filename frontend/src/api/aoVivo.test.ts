@@ -76,7 +76,7 @@ test("a carteira do ao vivo entra no estado, e o motivo dela a substitui", () =>
 });
 
 test("alertas que não saem trocam a lista pelo motivo, e os que saem limpam o motivo", () => {
-  const lista = { fonte: "ao_vivo" as const, alertas: [], dispensados: 1 };
+  const lista = { fonte: "ao_vivo" as const, alertas: [], dispensados: 1, nao_avaliados: [] };
   const comAlertas = aplicar(VAZIO, { tipo: "alertas", dados: lista });
   expect(comAlertas.alertas).toEqual(lista);
   const semAlertas = aplicar(comAlertas, {

@@ -20,7 +20,7 @@ from options_engine.application.ports.alerts import (
     RollUseCase,
 )
 from options_engine.application.ports.portfolio import PortfolioUseCase
-from options_engine.domain.alerts.model import Alert
+from options_engine.domain.alerts.model import Alert, Undetermined
 
 __all__ = ["AlertasOut", "alertas_out", "router_alertas"]
 
@@ -48,12 +48,28 @@ class AlertaOut(BaseModel):
     strike_cadastro: float | None
 
 
+class NaoAvaliadoOut(BaseModel):
+    """Um alerta que não pôde ser avaliado agora; ``motivo``: ``sem_spot``, ``sem_preco`` ou
+    ``fora_do_calendario``. ``perna`` e ``ticker`` são ``None`` no stop e no alvo."""
+
+    chave: str
+    tipo: str
+    operacao: str
+    nome: str
+    ativo: str
+    perna: int | None
+    ticker: str | None
+    motivo: str
+
+
 class AlertasOut(BaseModel):
-    """``dispensados``: quantos estão escondidos agora."""
+    """``dispensados``: quantos estão escondidos agora. ``nao_avaliados``: os que não deu para
+    avaliar, na ordem de gravidade (dispensados inclusive)."""
 
     fonte: str
     alertas: list[AlertaOut]
     dispensados: int
+    nao_avaliados: list[NaoAvaliadoOut]
 
 
 class RolagemOut(BaseModel):
@@ -96,6 +112,21 @@ def alertas_out(view: AlertsView) -> AlertasOut:
         fonte=view.source.value,
         alertas=[_alerta_out(a) for a in view.alerts],
         dispensados=view.dismissed,
+        nao_avaliados=[_nao_avaliado_out(n) for n in view.not_evaluated],
+    )
+
+
+def _nao_avaliado_out(nao_avaliado: Undetermined) -> NaoAvaliadoOut:
+    alerta = nao_avaliado.alert
+    return NaoAvaliadoOut(
+        chave=alerta.key,
+        tipo=alerta.kind.value,
+        operacao=alerta.operation_id,
+        nome=alerta.operation_name,
+        ativo=alerta.underlying,
+        perna=alerta.leg,
+        ticker=alerta.symbol,
+        motivo=nao_avaliado.reason.value,
     )
 
 

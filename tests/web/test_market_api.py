@@ -487,11 +487,16 @@ def test_alertas_vao_no_ao_vivo_junto_da_carteira_e_so_quando_mudam() -> None:
     ).websocket_connect("/api/ao-vivo") as ws:
         tipos = [ws.receive_json() for _ in range(4)]
         assert [m["tipo"] for m in tipos] == ["status", "cotacoes", "carteira", "alertas"]
-        # Sem cotação da ação, o stop fica indeterminado: nada a mostrar ainda.
-        assert tipos[3]["dados"] == {"fonte": "ao_vivo", "alertas": [], "dispensados": 0}
+        # Sem cotação da ação, o stop fica indeterminado: nenhum alerta, mas o stop aparece entre
+        # os não avaliados, com o motivo (tarefa 1.3).
+        dados = tipos[3]["dados"]
+        assert (dados["fonte"], dados["alertas"], dados["dispensados"]) == ("ao_vivo", [], 0)
+        assert [(n["chave"], n["motivo"]) for n in dados["nao_avaliados"]] == [
+            (f"stop:{acoes.id}:-", "sem_preco")
+        ]
         carteira.add_stock("VALE3", 100, 60.0, NOVEMBRO)
         mudou = ws.receive_json()
-    # Os alertas não mudaram (continuam vazios): só a carteira vai de novo.
+    # Os alertas não mudaram (o mesmo não avaliado): só a carteira vai de novo.
     assert mudou["tipo"] == "carteira"
 
 
