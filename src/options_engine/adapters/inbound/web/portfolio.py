@@ -19,12 +19,14 @@ from options_engine.application.ports.portfolio import (
     ExpiryNotice,
     Fill,
     LegMark,
+    ListedStrike,
     OperationView,
     PortfolioUseCase,
     PortfolioView,
     RegisterOperation,
     RegisterOptionLeg,
     RegisterStock,
+    StrikeNotice,
     TaxMonthView,
 )
 from options_engine.domain.model.contracts import OptionTerms
@@ -41,6 +43,7 @@ from options_engine.domain.portfolio.model import (
     LegState,
     Open,
     OptionLegRef,
+    StrikeAdjusted,
     TransferOut,
 )
 
@@ -48,15 +51,25 @@ __all__ = [
     "MAX_EXECUCOES",
     "CarteiraLida",
     "Closes",
+    "Listed",
     "Terms",
     "carteira_out",
     "ler_carteira",
     "router_carteira",
+    "sem_cadastro",
 ]
 
 MAX_EXECUCOES: Final = 20
 Closes = Callable[[str, date], float | None]
 Terms = Callable[[str, str], OptionTerms | str]
+Listed = Callable[[str], ListedStrike | None]
+
+
+def sem_cadastro(_ticker: str) -> ListedStrike | None:
+    """Sem Cadastro para conferir (testes e rotas que não precisam): nenhum ajuste."""
+    return None
+
+
 _LADO: Final[dict[Lado, Side]] = {"compra": Side.BUY, "venda": Side.SELL}
 _TEXTO_DO_LADO: Final[dict[Side, Lado]] = {Side.BUY: "compra", Side.SELL: "venda"}
 
@@ -146,6 +159,8 @@ class PernaCarteiraOut(BaseModel):
 
 
 class EventoOut(BaseModel):
+    """``strike_anterior``, ``strike`` e ``fonte``: só no ajuste de strike pela B3."""
+
     tipo: str
     perna: int
     data: str
@@ -155,6 +170,9 @@ class EventoOut(BaseModel):
     custos: float | None = None
     custo_medio: float | None = None
     para: str | None = None
+    strike_anterior: float | None = None
+    strike: float | None = None
+    fonte: str | None = None
 
 
 class OperacaoOut(BaseModel):
@@ -296,6 +314,15 @@ def _evento_out(evento: Event) -> EventoOut:
                 quantidade=evento.quantity,
                 para=evento.to_operation,
             )
+        case StrikeAdjusted():
+            return EventoOut(
+                tipo="ajuste_strike",
+                perna=perna,
+                data=data,
+                strike_anterior=evento.previous,
+                strike=evento.strike,
+                fonte=evento.source,
+            )
 
 
 def _operacao_out(view: OperationView) -> OperacaoOut:
@@ -381,16 +408,22 @@ def _mes_ir_out(view: TaxMonthView) -> MesIrOut:
 
 @dataclass(frozen=True, slots=True)
 class CarteiraLida:
-    """Uma leitura da carteira (uma consulta de mercado), para a Carteira e os alertas."""
+    """Uma leitura da carteira (uma consulta de mercado), para a Carteira e os alertas.
+    ``strike_notices``: strikes do Cadastro que não parecem provento e não foram aplicados."""
 
     view: PortfolioView
     notices: tuple[ExpiryNotice, ...]
+    strike_notices: tuple[StrikeNotice, ...] = ()
 
 
-def ler_carteira(portfolio: PortfolioUseCase, closes: Closes) -> CarteiraLida:
-    """O vencimento roda antes: a perna que virou pó já sai fora das abertas."""
+def ler_carteira(
+    portfolio: PortfolioUseCase, closes: Closes, listed: Listed = sem_cadastro
+) -> CarteiraLida:
+    """O ajuste de strike roda primeiro, para o vencimento decidir pó ou exercício pelo strike
+    ajustado; o vencimento antes da visão, para a perna que virou pó já sair das abertas."""
+    strikes = portfolio.process_strike_adjustments(listed)
     avisos = portfolio.process_expiries(closes)
-    return CarteiraLida(portfolio.open_operations(), avisos)
+    return CarteiraLida(portfolio.open_operations(), avisos, strikes)
 
 
 def _fills(execucoes: Sequence[ExecucaoIn]) -> tuple[Fill, ...]:
@@ -421,12 +454,18 @@ def _registro(corpo: RegistroIn, terms: Terms) -> RegisterOperation:
     )
 
 
-def router_carteira(portfolio: PortfolioUseCase, *, closes: Closes, terms: Terms) -> APIRouter:
+def router_carteira(
+    portfolio: PortfolioUseCase,
+    *,
+    closes: Closes,
+    terms: Terms,
+    listed: Listed = sem_cadastro,
+) -> APIRouter:
     router = APIRouter(prefix="/api/carteira", tags=["carteira"])
 
     @router.get("")
     def carteira() -> CarteiraOut:
-        lida = ler_carteira(portfolio, closes)
+        lida = ler_carteira(portfolio, closes, listed)
         return carteira_out(lida.view, lida.notices)
 
     @router.get("/historico")

@@ -18,6 +18,7 @@ from options_engine.domain.alerts.model import (
     AlertKind,
     AlertSettings,
     Evaluation,
+    ListedStrikeChange,
     OperationSnapshot,
 )
 from options_engine.domain.model.enums import Side
@@ -68,12 +69,16 @@ def evaluate(
     spots: Mapping[str, float],
     business_days: Callable[[date], int | None],
     settings: AlertSettings,
+    *,
+    strike_changes: Sequence[ListedStrikeChange] = (),
 ) -> Evaluation:
     """``business_days(vencimento)``: dias úteis de hoje até o vencimento, ``None`` fora do
-    calendário. ``spots``: por ativo; ausente, o risco de exercício fica indeterminado."""
+    calendário. ``spots``: por ativo; ausente, o risco de exercício fica indeterminado.
+    ``strike_changes``: strikes do Cadastro que a Carteira não aplicou (alerta "confira")."""
     coleta = _Coleta()
     posicoes = {op.operation_id: i for i, op in enumerate(operations)}
     avisadas = _avisos(coleta, operations, posicoes, after_expiry)
+    _strikes(coleta, operations, posicoes, strike_changes)
     for posicao, op in enumerate(operations):
         rolar = any(isinstance(e.ref, OptionLegRef) and e.side is Side.SELL for e in op.legs)
         for estado in op.legs:
@@ -100,6 +105,29 @@ def _avisos(
         alerta = _alerta(_DO_AVISO[aviso.outcome], operations[posicao], aviso.leg)
         coleta.alertas.append((posicao, replace(alerta, symbol=aviso.symbol, expiry=aviso.expiry)))
     return avisadas
+
+
+def _strikes(
+    coleta: _Coleta,
+    operations: Sequence[OperationSnapshot],
+    posicoes: Mapping[str, int],
+    strike_changes: Sequence[ListedStrikeChange],
+) -> None:
+    for mudou in strike_changes:
+        posicao = posicoes.get(mudou.operation_id)
+        if posicao is None:
+            raise InvalidDomainValueError(
+                f"strike mudou em operação que não está aberta: {mudou.operation_id!r}"
+            )
+        alerta = _alerta(AlertKind.STRIKE_CHANGED, operations[posicao], mudou.leg)
+        coleta.alertas.append(
+            (
+                posicao,
+                replace(
+                    alerta, symbol=mudou.symbol, strike=mudou.strike, listed_strike=mudou.listed
+                ),
+            )
+        )
 
 
 def _perna(

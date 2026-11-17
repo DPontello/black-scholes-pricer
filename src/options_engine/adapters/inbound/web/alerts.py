@@ -7,7 +7,12 @@ from fastapi import APIRouter, Response
 from pydantic import BaseModel
 
 from options_engine.adapters.inbound.web.builder import AnaliseIn, pedido_out
-from options_engine.adapters.inbound.web.portfolio import Closes, ler_carteira
+from options_engine.adapters.inbound.web.portfolio import (
+    Closes,
+    Listed,
+    ler_carteira,
+    sem_cadastro,
+)
 from options_engine.application.ports.alerts import (
     AlertsView,
     AlertUseCase,
@@ -22,7 +27,8 @@ __all__ = ["AlertasOut", "alertas_out", "router_alertas"]
 
 class AlertaOut(BaseModel):
     """``perna`` é ``None`` no stop e no alvo (alertas da operação inteira). ``estimado``: o
-    ``total`` do stop saiu do teórico de uma perna sem oferta para zerar."""
+    ``total`` do stop saiu do teórico de uma perna sem oferta para zerar. ``strike`` e
+    ``strike_cadastro``: só no strike que mudou no Cadastro (o em vigor e o do Cadastro)."""
 
     chave: str
     tipo: str
@@ -38,6 +44,8 @@ class AlertaOut(BaseModel):
     limite: float | None
     pode_rolar: bool
     estimado: bool
+    strike: float | None
+    strike_cadastro: float | None
 
 
 class AlertasOut(BaseModel):
@@ -78,6 +86,8 @@ def _alerta_out(alerta: Alert) -> AlertaOut:
         limite=alerta.limit,
         pode_rolar=alerta.can_roll,
         estimado=alerta.estimated,
+        strike=alerta.strike,
+        strike_cadastro=alerta.listed_strike,
     )
 
 
@@ -103,14 +113,19 @@ def _rolagem_out(sugestao: RollSuggestion) -> RolagemOut:
 
 
 def router_alertas(
-    alerts: AlertUseCase, roll: RollUseCase, portfolio: PortfolioUseCase, *, closes: Closes
+    alerts: AlertUseCase,
+    roll: RollUseCase,
+    portfolio: PortfolioUseCase,
+    *,
+    closes: Closes,
+    listed: Listed = sem_cadastro,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/alertas", tags=["alertas"])
 
     @router.get("")
     def listar() -> AlertasOut:
-        lida = ler_carteira(portfolio, closes)
-        return alertas_out(alerts.evaluate(lida.view, lida.notices))
+        lida = ler_carteira(portfolio, closes, listed)
+        return alertas_out(alerts.evaluate(lida.view, lida.notices, lida.strike_notices))
 
     @router.post("/restaurar", status_code=204)
     def restaurar() -> Response:

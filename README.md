@@ -317,6 +317,10 @@ ficam editáveis no perfil, e o menu mostra quantos alertas há. Um alerta dispe
 deixa de valer e vale de novo. **Rolar** abre no Montador a mesma estrutura no vencimento
 seguinte, com uma faixa que mostra o custo de zerar as pernas atuais e o caixa líquido; nada é
 enviado.
+O strike de cada perna aberta é conferido com o Cadastro da B3 mais recente: uma queda de até
+15% (provento em dinheiro) é aplicada e aparece nos eventos da operação, e o vencimento e o
+exercício passam a usar o strike novo; uma alta ou uma queda maior não é aplicada e vira um
+alerta para conferir na corretora (desdobramento, grupamento e bonificação mudam a quantidade).
 O **Book** varre a lista do perfil no fim de dia (o último COTAHIST importado) e mostra os
 5 melhores de cada estrutura nas quatro famílias: Renda (o ranking do painel de renda),
 Volatilidade (iron condor, borboleta e strangle vendido com vol alta; straddle e strangle

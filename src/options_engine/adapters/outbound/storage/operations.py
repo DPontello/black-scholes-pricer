@@ -33,6 +33,7 @@ from options_engine.domain.portfolio.model import (
     Operation,
     OptionLegRef,
     StockLegRef,
+    StrikeAdjusted,
     TransferOut,
 )
 
@@ -151,6 +152,14 @@ def _evento_json(evento: Event) -> dict[str, object]:
                 "quantidade": evento.quantity,
                 "para": evento.to_operation,
             }
+        case StrikeAdjusted():
+            return {
+                "tipo": "ajuste_strike",
+                **base,
+                "strike_anterior": evento.previous,
+                "strike": evento.strike,
+                "fonte": evento.source,
+            }
 
 
 def _para_json(operation: Operation) -> dict[str, object]:
@@ -225,6 +234,14 @@ def _evento(dados: Any) -> Event:
             return Expired(perna, dia)
         case "transferencia":
             return TransferOut(perna, dia, int(dados["quantidade"]), str(dados["para"]))
+        case "ajuste_strike":
+            return StrikeAdjusted(
+                perna,
+                dia,
+                float(dados["strike_anterior"]),
+                float(dados["strike"]),
+                str(dados["fonte"]),
+            )
     raise ValueError(f"tipo de evento desconhecido: {dados['tipo']!r}")
 
 

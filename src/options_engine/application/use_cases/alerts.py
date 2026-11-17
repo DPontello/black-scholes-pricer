@@ -21,8 +21,14 @@ from options_engine.application.ports.portfolio import (
     ExpiryNotice,
     OperationView,
     PortfolioView,
+    StrikeNotice,
 )
-from options_engine.domain.alerts.model import AfterExpiry, AlertSettings, OperationSnapshot
+from options_engine.domain.alerts.model import (
+    AfterExpiry,
+    AlertSettings,
+    ListedStrikeChange,
+    OperationSnapshot,
+)
 from options_engine.domain.alerts.rules import evaluate
 from options_engine.domain.model.enums import Side
 from options_engine.domain.model.errors import InvalidDomainValueError
@@ -53,7 +59,12 @@ class AlertService:
         self._calendar = calendar
         self._lock = threading.Lock()
 
-    def evaluate(self, view: PortfolioView, notices: Sequence[ExpiryNotice]) -> AlertsView:
+    def evaluate(
+        self,
+        view: PortfolioView,
+        notices: Sequence[ExpiryNotice],
+        strike_notices: Sequence[StrikeNotice] = (),
+    ) -> AlertsView:
         settings = self._settings_for()
         hoje = self._clock.now().astimezone(self._tz).date()
         avaliacao = evaluate(
@@ -62,6 +73,10 @@ class AlertService:
             self._spots(view),
             lambda vencimento: self._dias_uteis(hoje, vencimento),
             settings,
+            strike_changes=[
+                ListedStrikeChange(n.operation_id, n.leg, n.symbol, n.strike, n.listed)
+                for n in strike_notices
+            ],
         )
         ativas = {a.key for a in avaliacao.alerts}
         with self._lock:

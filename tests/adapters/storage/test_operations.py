@@ -15,7 +15,14 @@ from options_engine.domain.model.errors import (
     UnreadableRecordError,
 )
 from options_engine.domain.portfolio.exercise import apply_exercise
-from options_engine.domain.portfolio.model import Close, Expired, Open, Operation, TransferOut
+from options_engine.domain.portfolio.model import (
+    Close,
+    Expired,
+    Open,
+    Operation,
+    StrikeAdjusted,
+    TransferOut,
+)
 from tests.portfolio._builders import D1, D2, D3, acao, call, operacao, put
 
 ID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
@@ -204,6 +211,32 @@ def test_ida_e_volta_da_transferencia(tmp_path: Path) -> None:
     )
     repositorio.save(a_mao)
     assert repositorio.load(a_mao.id) == a_mao
+
+
+def test_ida_e_volta_do_ajuste_de_strike_com_o_json_legivel(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    ajustada = operacao(
+        [put(30.0)],
+        [
+            Open(0, D1, Side.SELL, 100, 0.9),
+            StrikeAdjusted(0, D2, 30.0, 29.47, "Cadastro da B3 de 05/11/2026"),
+        ],
+        id_="e" * 32,
+    )
+    repositorio.save(ajustada)
+    assert repositorio.load(ajustada.id) == ajustada
+    (arquivo,) = (tmp_path / "perfil" / "operacoes").iterdir()
+    gravado = json.loads(arquivo.read_text(encoding="utf-8"))
+    assert gravado["versao"] == 1
+    assert gravado["pernas"][0]["opcao"]["strike"] == 30.0  # a perna gravada não muda
+    assert gravado["eventos"][1] == {
+        "tipo": "ajuste_strike",
+        "perna": 0,
+        "data": "2026-11-05",
+        "strike_anterior": 30.0,
+        "strike": 29.47,
+        "fonte": "Cadastro da B3 de 05/11/2026",
+    }
 
 
 def test_ida_e_volta_com_modelo_stop_e_alvo(tmp_path: Path) -> None:

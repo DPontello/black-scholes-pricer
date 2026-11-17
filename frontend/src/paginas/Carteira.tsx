@@ -32,6 +32,7 @@ const EVENTOS: Record<Evento["tipo"], string> = {
   atribuicao: "atribuição",
   po: "virou pó",
   transferencia: "ações usadas por outra operação",
+  ajuste_strike: "strike ajustado pela B3",
 };
 
 type Painel =
@@ -108,17 +109,24 @@ function Pernas({ operacao }: { operacao: OperacaoCarteira }) {
   );
 }
 
+export function linhaDoEvento(evento: Evento, ticker: string | undefined): string {
+  const partes = [formatarData(evento.data), EVENTOS[evento.tipo], ticker ?? ""];
+  if (evento.lado !== null) partes.push(evento.lado);
+  if (evento.quantidade !== null) partes.push(String(evento.quantidade));
+  if (evento.strike_anterior !== null && evento.strike !== null) {
+    partes.push(`${formatarPreco(evento.strike_anterior)} → ${formatarPreco(evento.strike)} (${evento.fonte ?? ""})`);
+  }
+  let linha = partes.join(" · ");
+  if (evento.preco !== null) linha += ` a ${formatarPreco(evento.preco)}`;
+  if (evento.custo_medio !== null) linha += ` (custo médio ${formatarPreco(evento.custo_medio)})`;
+  return linha;
+}
+
 function Eventos({ operacao }: { operacao: OperacaoCarteira }) {
   return (
     <ol className="eventos">
       {operacao.eventos.map((evento, i) => (
-        <li key={i}>
-          {formatarData(evento.data)} · {EVENTOS[evento.tipo]} · {operacao.pernas[evento.perna]?.ticker}
-          {evento.lado !== null && ` · ${evento.lado}`}
-          {evento.quantidade !== null && ` · ${evento.quantidade}`}
-          {evento.preco !== null && ` a ${formatarPreco(evento.preco)}`}
-          {evento.custo_medio !== null && ` (custo médio ${formatarPreco(evento.custo_medio)})`}
-        </li>
+        <li key={i}>{linhaDoEvento(evento, operacao.pernas[evento.perna]?.ticker)}</li>
       ))}
     </ol>
   );

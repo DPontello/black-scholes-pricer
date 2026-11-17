@@ -19,6 +19,7 @@ __all__ = [
     "ExpiryNotice",
     "Fill",
     "LegMark",
+    "ListedStrike",
     "OperationView",
     "PortfolioSymbols",
     "PortfolioUseCase",
@@ -26,6 +27,7 @@ __all__ = [
     "RegisterOperation",
     "RegisterOptionLeg",
     "RegisterStock",
+    "StrikeNotice",
     "TaxMonthView",
 ]
 
@@ -119,6 +121,27 @@ class ExpiryNotice:
 
 
 @dataclass(frozen=True, slots=True)
+class ListedStrike:
+    """O strike da série no Cadastro da B3; ``source`` diz qual Cadastro (vai para o evento)."""
+
+    strike: float
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class StrikeNotice:
+    """Strike do Cadastro que não parece provento (alta, ou queda acima de 15%): não foi aplicado;
+    ``strike`` é o que segue em vigor e ``listed``, o do Cadastro."""
+
+    operation_id: str
+    leg: int
+    symbol: str
+    strike: float
+    listed: float
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
 class PortfolioSymbols:
     """O que a carteira aberta precisa assinar: os ativos das operações e as séries."""
 
@@ -195,3 +218,7 @@ class PortfolioUseCase(Protocol):
     def process_expiries(
         self, closes: Callable[[str, date], float | None]
     ) -> tuple[ExpiryNotice, ...]: ...
+
+    def process_strike_adjustments(
+        self, listed: Callable[[str], ListedStrike | None]
+    ) -> tuple[StrikeNotice, ...]: ...

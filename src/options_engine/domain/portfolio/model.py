@@ -11,6 +11,7 @@ porque quem vende é a operação de destino.
 from dataclasses import dataclass, replace
 from datetime import date
 from math import fsum, isfinite
+from typing import Final
 
 from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.enums import Side, StockOrigin
@@ -28,9 +29,14 @@ __all__ = [
     "Operation",
     "OptionLegRef",
     "StockLegRef",
+    "StrikeAdjusted",
     "TransferOut",
+    "event_refs",
     "leg_states",
 ]
+
+# Strikes saem do arquivo como foram gravados; a folga só cobre o último bit de uma conta.
+_MESMO_STRIKE: Final = 1e-9
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +110,20 @@ class TransferOut:
     to_operation: str
 
 
-Event = Open | Close | Exercise | Assignment | Expired | TransferOut
+@dataclass(frozen=True, slots=True)
+class StrikeAdjusted:
+    """Strike da série ajustado pela B3 (provento em dinheiro): ``previous`` é o strike em vigor
+    antes do ajuste e ``source``, de onde veio o novo (o Cadastro da B3 e a data dele). A perna
+    gravada não muda; o strike em vigor sai de ``leg_states``."""
+
+    leg: int
+    on: date
+    previous: float
+    strike: float
+    source: str
+
+
+Event = Open | Close | Exercise | Assignment | Expired | TransferOut | StrikeAdjusted
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,12 +291,53 @@ def _transferir(estado: _Estado, ref: LegRef, evento: TransferOut) -> None:
     _baixar(estado, evento.quantity)
 
 
+def _ajustar(estado: _Estado, ref: LegRef, evento: StrikeAdjusted) -> OptionLegRef:
+    if not isinstance(ref, OptionLegRef):
+        raise InvalidDomainValueError(
+            f"ajuste de strike só em perna de opção; {ref.symbol!r} é ação"
+        )
+    if estado.lado is None:
+        raise InvalidDomainValueError(f"{ref.symbol!r}: ajuste de strike sem nada em aberto")
+    if not (isfinite(evento.strike) and evento.strike > 0.0):
+        raise InvalidDomainValueError(
+            f"{ref.symbol!r}: strike ajustado inválido: {evento.strike!r}"
+        )
+    # O anterior foi copiado do strike em vigor: diferença é arquivo editado ou fora de ordem.
+    if abs(evento.previous - ref.terms.strike) > _MESMO_STRIKE:
+        raise InvalidDomainValueError(
+            f"{ref.symbol!r}: strike anterior do ajuste ({evento.previous!r}) não é o strike em "
+            f"vigor ({ref.terms.strike!r})"
+        )
+    if not evento.source.strip():
+        raise InvalidDomainValueError(f"{ref.symbol!r}: ajuste de strike sem a fonte")
+    return OptionLegRef(ref.symbol, replace(ref.terms, strike=evento.strike))
+
+
+def event_refs(operation: Operation) -> tuple[LegRef, ...]:
+    """A perna em vigor quando cada evento aconteceu (com os ajustes de strike de antes dele)."""
+    refs = list(operation.legs)
+    em_vigor: list[LegRef] = []
+    for evento in operation.events:
+        if not 0 <= evento.leg < len(refs):
+            raise InvalidDomainValueError(f"evento em perna inexistente: {evento.leg}")
+        em_vigor.append(refs[evento.leg])
+        if isinstance(evento, StrikeAdjusted):
+            ref = refs[evento.leg]
+            if isinstance(ref, OptionLegRef):
+                refs[evento.leg] = OptionLegRef(
+                    ref.symbol, replace(ref.terms, strike=evento.strike)
+                )
+    return tuple(em_vigor)
+
+
 def leg_states(operation: Operation) -> tuple[LegState, ...]:
+    """Posição de cada perna; ``ref`` traz o strike em vigor (com os ajustes da B3)."""
     estados = [_Estado() for _ in operation.legs]
+    refs = list(operation.legs)
     for evento in operation.events:
         if not 0 <= evento.leg < len(operation.legs):
             raise InvalidDomainValueError(f"evento em perna inexistente: {evento.leg}")
-        estado, ref = estados[evento.leg], operation.legs[evento.leg]
+        estado, ref = estados[evento.leg], refs[evento.leg]
         match evento:
             case Open():
                 _abrir(estado, ref, evento)
@@ -289,7 +349,9 @@ def leg_states(operation: Operation) -> tuple[LegState, ...]:
                 _virar_po(estado, ref)
             case TransferOut():
                 _transferir(estado, ref, evento)
+            case StrikeAdjusted():
+                refs[evento.leg] = _ajustar(estado, ref, evento)
     return tuple(
         LegState(i, ref, e.lado, e.quantidade, e.media, fsum(e.realizado))
-        for i, (ref, e) in enumerate(zip(operation.legs, estados, strict=True))
+        for i, (ref, e) in enumerate(zip(refs, estados, strict=True))
     )

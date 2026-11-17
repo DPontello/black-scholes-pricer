@@ -19,7 +19,13 @@ from starlette.concurrency import run_in_threadpool
 from starlette.websockets import WebSocketState
 
 from options_engine.adapters.inbound.web.alerts import alertas_out
-from options_engine.adapters.inbound.web.portfolio import Closes, carteira_out, ler_carteira
+from options_engine.adapters.inbound.web.portfolio import (
+    Closes,
+    Listed,
+    carteira_out,
+    ler_carteira,
+    sem_cadastro,
+)
 from options_engine.adapters.outbound.b3files.library import STALE_CADASTRO_BUSINESS_DAYS
 from options_engine.application.ports.alerts import AlertUseCase
 from options_engine.application.ports.inbound import (
@@ -338,6 +344,7 @@ def router_mercado(
     interval_s: float = INTERVALO_AO_VIVO_S,
     analysis: MarketAnalysisUseCase | None = None,
     alerts: AlertUseCase | None = None,
+    listed: Listed = sem_cadastro,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["mercado"])
 
@@ -368,7 +375,7 @@ def router_mercado(
     async def ao_vivo(websocket: WebSocket) -> None:
         await websocket.accept()
         await _SessaoAoVivo(
-            websocket, market, profiles, interval_s, portfolio, closes, alerts
+            websocket, market, profiles, interval_s, portfolio, closes, alerts, listed
         ).rodar()
 
     return router
@@ -384,9 +391,11 @@ class _SessaoAoVivo:
         portfolio: PortfolioUseCase | None,
         closes: Closes,
         alerts: AlertUseCase | None = None,
+        listed: Listed = sem_cadastro,
     ) -> None:
         self._ws = websocket
         self._alerts = alerts
+        self._listed = listed
         self._market = market
         self._profiles = profiles
         self._interval_s = interval_s
@@ -490,7 +499,7 @@ class _SessaoAoVivo:
         if self._portfolio is None:
             return None, None, _NADA
         try:
-            lida = ler_carteira(self._portfolio, self._closes)
+            lida = ler_carteira(self._portfolio, self._closes, self._listed)
         except DomainError as erro:
             carteira = _erro("carteira", erro)
             return carteira, None if self._alerts is None else _erro("alertas", erro), _NADA
@@ -498,7 +507,9 @@ class _SessaoAoVivo:
         if self._alerts is None:
             return carteira, None, lida.view.symbols
         try:
-            dados = alertas_out(self._alerts.evaluate(lida.view, lida.notices)).model_dump()
+            dados = alertas_out(
+                self._alerts.evaluate(lida.view, lida.notices, lida.strike_notices)
+            ).model_dump()
             alertas: dict[str, object] = {"tipo": "alertas", "dados": dados}
         except DomainError as erro:
             alertas = _erro("alertas", erro)

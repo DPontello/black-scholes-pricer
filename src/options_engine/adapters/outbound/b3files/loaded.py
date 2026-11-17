@@ -27,6 +27,7 @@ from options_engine.adapters.outbound.cotahist.errors import SourceFileError
 from options_engine.adapters.outbound.cotahist.instruments import InstrumentInfo, load_instruments
 from options_engine.adapters.outbound.cotahist.parser import MARKET_SPOT, CotahistRecord
 from options_engine.adapters.outbound.cotahist.session import SessionData, load_session_data
+from options_engine.application.ports.portfolio import ListedStrike
 from options_engine.domain.model.contracts import OptionTerms
 from options_engine.domain.model.errors import DomainError
 
@@ -74,6 +75,15 @@ class LoadedLibrary:
             info.option_type,
             info.exercise_style,
         )
+
+    def listed_strike(self, symbol: str) -> ListedStrike | None:
+        """O strike da série no Cadastro, com a fonte que vai para o ajuste na Carteira."""
+        info = self.instruments.get(symbol)
+        if info is None or info.strike is None:
+            return None
+        dia = next((f.reference_date for f in self.files if f.path == self.instruments_path), None)
+        fonte = "Cadastro da B3" if dia is None else f"Cadastro da B3 de {dia:%d/%m/%Y}"
+        return ListedStrike(info.strike, fonte)
 
     def closes(self, symbol: str) -> tuple[tuple[date, float], ...]:
         return () if self.data is None else self.data.closes.get(symbol, ())

@@ -9,10 +9,12 @@ from options_engine.application.ports.outbound import UnreadableFile
 from options_engine.application.ports.portfolio import (
     ExpiryNotice,
     Fill,
+    ListedStrike,
     PortfolioUseCase,
     RegisterOperation,
     RegisterOptionLeg,
     RegisterStock,
+    StrikeNotice,
 )
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.domain.model.chain import OptionQuote
@@ -27,6 +29,7 @@ from options_engine.domain.portfolio.model import (
     Open,
     Operation,
     OptionLegRef,
+    StrikeAdjusted,
     TransferOut,
 )
 from options_engine.domain.portfolio.positions import leg_states
@@ -348,6 +351,56 @@ def test_so_o_pregao_do_vencimento_ja_encerrado_conta(agora: datetime, processa:
     fechamentos = _fechamento(30.0)
     servico.process_expiries(lambda ativo, dia: fechamentos.get((ativo, dia)))
     assert (repositorio.operacoes[strangle.id] != strangle) is processa
+
+
+_CADASTRO = "Cadastro da B3 de 13/11/2026"
+
+
+def _call_comprada_30() -> RegisterOperation:
+    return RegisterOperation("PETR4", "call", D1, (_perna(30.0, _C, Fill(100, 1.0, costs=0.0)),))
+
+
+def test_ajuste_por_provento_e_gravado_uma_vez_e_o_vencimento_usa_o_novo_strike() -> None:
+    repositorio = FakeOperationRepository()
+    servico = _servico(repositorio, _Relogio(datetime(2026, 11, 19, 18, 0, tzinfo=B3)))
+    comprada = servico.register(_call_comprada_30())
+    cadastro = {"PETRK300": ListedStrike(29.47, _CADASTRO)}
+    assert servico.process_strike_adjustments(cadastro.get) == ()
+    ajustada = repositorio.operacoes[comprada.id]
+    assert ajustada.events[-1] == StrikeAdjusted(0, NOVEMBRO, 30.0, 29.47, _CADASTRO)
+    assert servico.process_strike_adjustments(cadastro.get) == ()
+    assert repositorio.operacoes[comprada.id] == ajustada  # o strike em vigor já é o do Cadastro
+    # O caso N1: fechamento de 29,80 seria pó com o strike de 30,00; com 29,47 é exercício.
+    fechamentos = _fechamento(29.80)
+    assert servico.process_expiries(lambda ativo, dia: fechamentos.get((ativo, dia))) == (
+        ExpiryNotice(comprada.id, 0, "PETRK300", NOVEMBRO, ExpiryOutcome.REGISTRAR_EXERCICIO),
+    )
+
+
+@pytest.mark.parametrize("listado", [15.0, 34.5, 25.0])
+def test_mudanca_que_nao_parece_provento_avisa_e_nao_grava(listado: float) -> None:
+    repositorio = FakeOperationRepository()
+    servico = _servico(repositorio)
+    comprada = servico.register(_call_comprada_30())
+    assert servico.process_strike_adjustments(
+        {"PETRK300": ListedStrike(listado, _CADASTRO)}.get
+    ) == (StrikeNotice(comprada.id, 0, "PETRK300", 30.0, listado, _CADASTRO),)
+    assert repositorio.operacoes[comprada.id] == comprada
+
+
+def test_serie_fora_do_cadastro_e_perna_encerrada_nao_sao_conferidas() -> None:
+    repositorio = FakeOperationRepository()
+    servico = _servico(repositorio)
+    comprada = servico.register(_call_comprada_30())
+    assert servico.process_strike_adjustments(lambda _ticker: None) == ()
+    encerrada = servico.register(
+        RegisterOperation("PETR4", "outra", D1, (_perna(32.0, _V, Fill(100, 1.0, costs=0.0)),))
+    )
+    repositorio.save(encerrada.with_events(Close(0, D2, 100, 0.5)))
+    cadastro = {"PETRK320": ListedStrike(31.5, _CADASTRO)}
+    assert servico.process_strike_adjustments(cadastro.get) == ()
+    assert repositorio.operacoes[comprada.id] == comprada
+    assert repositorio.operacoes[encerrada.id].events[-1] == Close(0, D2, 100, 0.5)
 
 
 def test_arquivos_ilegiveis_aparecem_na_carteira() -> None:

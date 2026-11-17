@@ -18,6 +18,7 @@ __all__ = [
     "AlertKind",
     "AlertSettings",
     "Evaluation",
+    "ListedStrikeChange",
     "OperationSnapshot",
 ]
 
@@ -53,6 +54,7 @@ class AlertKind(StrEnum):
     EXERCISE_TO_REGISTER = "exercicio_a_registrar"
     STOP = "stop"
     STOP_UNPRICED = "stop_sem_preco"
+    STRIKE_CHANGED = "strike_mudou"
     EXERCISE_RISK = "risco_de_exercicio"
     EXPIRY_NEAR = "vencimento_proximo"
     AWAITING_CLOSE = "aguardando_fechamento"
@@ -103,9 +105,23 @@ class AfterExpiry:
 
 
 @dataclass(frozen=True, slots=True)
+class ListedStrikeChange:
+    """Strike do Cadastro da B3 que não parece provento e não foi aplicado (o aviso da Carteira):
+    ``strike`` é o que segue em vigor e ``listed``, o do Cadastro."""
+
+    operation_id: str
+    leg: int
+    symbol: str
+    strike: float
+    listed: float
+
+
+@dataclass(frozen=True, slots=True)
 class Alert:
     """``key`` identifica o alerta entre avaliações (para dispensar): tipo, operação e perna
-    (``-`` quando o alerta é da operação inteira). ``estimated``: stop pelo total estimado."""
+    (``-`` quando o alerta é da operação inteira). ``estimated``: stop pelo total estimado.
+    ``strike`` e ``listed_strike``: só no strike que mudou no Cadastro (o em vigor e o do
+    Cadastro)."""
 
     key: str
     kind: AlertKind
@@ -121,6 +137,8 @@ class Alert:
     limit: float | None = None
     can_roll: bool = False
     estimated: bool = False
+    strike: float | None = None
+    listed_strike: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

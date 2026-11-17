@@ -17,6 +17,8 @@ export function alerta(parcial: Partial<Alerta> = {}): Alerta {
     limite: null,
     pode_rolar: true,
     estimado: false,
+    strike: null,
+    strike_cadastro: null,
     ...parcial,
   };
 }

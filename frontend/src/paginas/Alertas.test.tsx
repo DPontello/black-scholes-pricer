@@ -96,6 +96,13 @@ test("o stop estimado e o stop sem preço dizem de onde vem o número", () => {
   );
 });
 
+test("o strike que mudou no Cadastro pede para conferir e diz que não foi ajustado", () => {
+  const mudou = alerta({ tipo: "strike_mudou", ticker: "PETRK300", strike: 30, strike_cadastro: 15 });
+  expect(frase(mudou)).toBe(
+    "PETRK300: o strike mudou no Cadastro da B3 de 30,00 para 15,00 e não foi ajustado. Desdobramento, grupamento ou bonificação mudam também a quantidade: confira na corretora",
+  );
+});
+
 test("dispensar chama a rota e lê de novo", async () => {
   const fetch = api();
   montar();
