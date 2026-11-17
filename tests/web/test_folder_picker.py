@@ -17,6 +17,8 @@ from options_engine.adapters.inbound.web.folder_picker import (
 )
 
 HOME = Path("/home/maria")
+# O ramo Linux só roda no Linux; no Windows o mesmo Path vira "\home\maria".
+HOME_TEXTO = str(HOME)
 COMANDO = ("seletor", "--pasta")
 
 
@@ -47,7 +49,7 @@ def test_linux_com_kdialog_usa_o_kdialog() -> None:
         "--title",
         PICK_TITLE,
         "--getexistingdirectory",
-        "/home/maria",
+        HOME_TEXTO,
     )
 
 
@@ -57,7 +59,7 @@ def test_linux_so_com_zenity_usa_o_zenity() -> None:
         "--file-selection",
         "--directory",
         f"--title={PICK_TITLE}",
-        "--filename=/home/maria/",
+        f"--filename={HOME_TEXTO}/",
     )
 
 

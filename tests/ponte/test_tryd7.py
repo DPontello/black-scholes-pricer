@@ -159,13 +159,14 @@ def test_identidade_do_assembly_le_a_saida_do_powershell() -> None:
         comandos.append(comando)
         return IDENTIDADE + "\r\n"
 
-    assert identidade_do_assembly(Path("C:/Tryd/StRtd.dll"), executar) == IDENTIDADE
+    # Caminho com barra invertida, como no Windows: o Path dá o mesmo texto no Windows e no Linux.
+    assert identidade_do_assembly(Path(r"C:\Tryd\StRtd.dll"), executar) == IDENTIDADE
     assert comandos == [
         [
             "powershell",
             "-NoProfile",
             "-Command",
-            "[System.Reflection.AssemblyName]::GetAssemblyName('C:/Tryd/StRtd.dll').FullName",
+            r"[System.Reflection.AssemblyName]::GetAssemblyName('C:\Tryd\StRtd.dll').FullName",
         ]
     ]
 
@@ -180,8 +181,8 @@ def test_identidade_do_assembly_escapa_a_aspa_do_caminho(aspa: str, dobrada: str
         comandos.append(comando)
         return IDENTIDADE
 
-    identidade_do_assembly(Path(f"C:/Users/O{aspa}Brien/StRtd.dll"), executar)
-    assert f"GetAssemblyName('C:/Users/O{dobrada}Brien/StRtd.dll')" in comandos[0][3]
+    identidade_do_assembly(Path(rf"C:\Users\O{aspa}Brien\StRtd.dll"), executar)
+    assert rf"GetAssemblyName('C:\Users\O{dobrada}Brien\StRtd.dll')" in comandos[0][3]
 
 
 def test_identidade_do_assembly_recusa_saida_que_nao_e_a_do_strtd() -> None:

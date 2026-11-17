@@ -115,6 +115,31 @@ conhecida, que só aparece com a suíte inteira.
 - N3: vencimento de 2028 sumindo sem aviso; falta estender o `b3_holidays.csv` quando a B3
   publicar 2028.
 
+### Segunda auditoria (16/11, Windows)
+
+Refeita no PC Windows, sobre a `development` antiga dele (`fa4a8c7`) e conferida na atual
+(`3664f5d`), com entradas sintéticas fora do repositório. Os itens 1 a 5 chegam às mesmas
+conclusões de 13/11. O que acrescenta:
+
+- Tarefa 1.4: no Windows falham exatamente os 6 testes do plano (5735 passando, 23 pulados), e o
+  produto está certo nos dois casos (detalhe na entrada da tarefa).
+- N1, strike de duas fontes: a cadeia de fim de dia usa o PREEXE do COTAHIST
+  (`cotahist/adapter.py:251`); a ao vivo, o `ExrcPric` do Cadastro (`tryd/feed.py:176`). Com um
+  ajuste por provento entre os dois pregões, o mesmo ticker aparece com strikes diferentes conforme
+  a fonte, sem aviso. O `conferir-b3` já detecta o deslocamento (`conferencia.py:342`); o app não.
+  Para a enquete da tarefa 1.5.
+- N3: a partir de 03/01/2028 toda consulta passa da cobertura do calendário, então não é só o
+  vencimento de 2028 que some: some qualquer vencimento.
+- Lote com decimais vira `None` (`AllcnRndLot` `100.0`, `1,00`, `100.000000`); o arquivo real de
+  03/11 veio inteiro. Strike com milhar no Cadastro CSV (`1.030,00`) também vira `None`, e a série
+  some da cadeia ao vivo. Os dois são raros.
+- Documentação divergente: `cotahist/parser.py:14` diz que o PREEXE é dividido pelo FATCOT;
+  `b3files/conferencia.py:320` diz que na opção de índice (FATCOT 100) ele vem em pontos, sem o
+  fator. Sem efeito hoje: opção de índice não entra no app.
+- Conflito para a tarefa 2.1: a ADR-0005 (item 8) ordena pelo anualizado líquido; o `dfd6d4f`
+  (09/11) passou o Book para bruto sem atualizar a ADR nem registrar `Ruling:`; o plano pede o
+  líquido de custos. Pede decisão do autor antes da 2.1.
+
 ## Sprint 1 — alertas que não calam
 
 ### Tarefa 1.1 — stop com perna sem oferta para zerar
@@ -156,6 +181,26 @@ Branch `fix/alerta-stop-sem-oferta`, a partir da `development` (`c5ca7ff`).
 - Checagens: ruff, ruff format, mypy, import-linter; pytest em `tests/alerts`,
   `tests/application`, `tests/web` e `tests/portfolio` (603 passando); `tsc --noEmit` e os testes
   de Alertas, Termos e DialogoLimites (23 passando).
+
+### Tarefa 1.4 — suíte verde no Windows
+
+Branch `fix/testes-windows`, a partir da `development` (`3664f5d`). Só testes; o produto não muda.
+
+- `tests/ponte/test_tryd7.py` (4): `identidade_do_assembly` recebia `Path("C:/Tryd/StRtd.dll")`.
+  No Windows o `Path` vira `C:\Tryd\StRtd.dll` e o comando do PowerShell sai com barra invertida,
+  que é o certo ali (a aspa continua dobrada: `O''Brien`); o teste esperava a barra do Linux. Os
+  testes passam a usar o caminho como no Windows (`Path(r"C:\Tryd\StRtd.dll")`), que dá o mesmo
+  texto nos dois sistemas.
+- `tests/web/test_folder_picker.py` (2): `HOME = Path("/home/maria")` vira `\home\maria` no
+  Windows, e o ramo "Linux" do produto só roda no Linux. O esperado do kdialog e do zenity passa a
+  ser `str(HOME)`, igual ao de antes no Linux.
+- Ruling: corrigir o teste e não o produto, como o plano pede; a segunda auditoria confirmou que o
+  produto monta o caminho certo no Windows. Custo se errado: nenhum no app; só os testes.
+- Posição desta entrada: antes das "Decisões de 13/11", e não no fim do arquivo, para não dar
+  conflito com a entrada da tarefa 1.2 (`fix/risco-exercicio-fora-da-janela`), que vai no fim.
+- Checagens: ruff, ruff format, mypy, import-linter; no Windows, pytest em `tests/ponte` e
+  `tests/web/test_folder_picker.py` (458 passando, 1 pulado; antes, 6 falhas). O Linux não foi
+  rodado (sem PC Linux nesta sessão): simulei com `PurePosixPath` e os mesmos esperados batem.
 
 ## Decisões de 13/11 para as próximas tarefas
 
