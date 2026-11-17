@@ -12,6 +12,7 @@ from options_engine.adapters.inbound.web.app import create_app
 from options_engine.adapters.inbound.web.portfolio import router_carteira
 from options_engine.adapters.outbound.clock import FixedClock
 from options_engine.adapters.outbound.storage.operations import JsonOperationRepository
+from options_engine.application.ports.portfolio import ListedStrike
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
 from options_engine.domain.model.chain import OptionQuote
@@ -38,6 +39,7 @@ def _cliente(
     agora: datetime = AGORA,
     mercado: MercadoFalso | None = None,
     fechamentos: dict[tuple[str, date], float] | None = None,
+    listados: dict[str, ListedStrike] | None = None,
 ) -> TestClient:
     relogio = FixedClock(agora)
     perfis = ProfileService(FakeProfileRepository(), relogio, "PC-TESTE")
@@ -53,8 +55,10 @@ def _cliente(
         market=MercadoFalso() if mercado is None else mercado,
         calendar=CALENDARIO,
     )
-    fechou = fechamentos or {}
-    rotas = router_carteira(carteira, closes=lambda s, d: fechou.get((s, d)), terms=_termos)
+    fechou, cadastro = fechamentos or {}, listados or {}
+    rotas = router_carteira(
+        carteira, closes=lambda s, d: fechou.get((s, d)), terms=_termos, listed=cadastro.get
+    )
     return TestClient(create_app([rotas]))
 
 
@@ -143,6 +147,9 @@ def test_registra_e_mostra_a_carteira_a_mercado(tmp_path: Path) -> None:
         "custos": None,
         "custo_medio": None,
         "para": None,
+        "strike_anterior": None,
+        "strike": None,
+        "fonte": None,
     }
     assert [(t["ticker"], t["lado"], t["quantidade"]) for t in carteira["totais"]] == [
         ("PETRK300", "compra", 100),
@@ -226,6 +233,35 @@ def test_requisicao_invalida_e_recusada_antes_do_servico(tmp_path: Path) -> None
     assert not (tmp_path / "operacoes").exists()
 
 
+def test_abrir_a_carteira_aplica_o_ajuste_do_cadastro_antes_do_vencimento(tmp_path: Path) -> None:
+    comprada = {**TRAVA, "nome": "call", "pernas": [_perna("PETRK300", "compra", 100, 1.0)]}
+    _registrar(_cliente(tmp_path), comprada)
+    depois = datetime(2026, 11, 20, 10, 0, tzinfo=B3)
+    cadastro = {"PETRK300": ListedStrike(29.47, "Cadastro da B3 de 13/11/2026")}
+    cliente = _cliente(
+        tmp_path, agora=depois, fechamentos={("PETR4", NOVEMBRO): 29.80}, listados=cadastro
+    )
+    carteira = cliente.get("/api/carteira").json()
+    (operacao,) = carteira["operacoes"]
+    # Com o strike gravado (30,00) seria pó; com o ajustado (29,47), é exercício a registrar.
+    assert [a["situacao"] for a in carteira["avisos"]] == ["registrar_exercicio"]
+    assert operacao["pernas"][0]["strike"] == 29.47
+    assert operacao["eventos"][-1] == {
+        "tipo": "ajuste_strike",
+        "perna": 0,
+        "data": "2026-11-20",
+        "lado": None,
+        "quantidade": None,
+        "preco": None,
+        "custos": None,
+        "custo_medio": None,
+        "para": None,
+        "strike_anterior": 30.0,
+        "strike": 29.47,
+        "fonte": "Cadastro da B3 de 13/11/2026",
+    }
+
+
 def test_abrir_a_carteira_roda_o_vencimento_com_o_fechamento_importado(tmp_path: Path) -> None:
     strangle = {
         **TRAVA,
@@ -256,6 +292,9 @@ def test_abrir_a_carteira_roda_o_vencimento_com_o_fechamento_importado(tmp_path:
         "custos": None,
         "custo_medio": None,
         "para": None,
+        "strike_anterior": None,
+        "strike": None,
+        "fonte": None,
     }
 
 

@@ -301,6 +301,15 @@ export const TERMOS: TermoGlossario[] = [
     onde: "Na aba Alertas, com os botões Abrir na Carteira e Rolar.",
   },
   {
+    id: "ajuste-de-strike",
+    titulo: "Ajuste de strike",
+    texto:
+      "Quando a empresa paga dividendos ou JCP, a B3 costuma reduzir o [strike](strike) das opções pelo valor do provento. O app confere o strike de cada perna aberta da Carteira com o [Cadastro](cadastro) da B3 mais recente: uma queda de até 15% é aplicada sozinha e aparece nos eventos da operação, com o strike de antes, o de depois e o Cadastro de onde veio. Uma queda maior, ou uma alta, não é aplicada: desdobramento, grupamento e bonificação mudam também a quantidade de opções, e o app avisa na aba Alertas para você conferir na corretora.",
+    exemplo:
+      "Uma call de PETR4 registrada com strike R$ 30,00 passa a R$ 29,47 no Cadastro depois de um dividendo: no vencimento, o app decide entre pó e exercício com R$ 29,47.",
+    onde: "Nos eventos da operação, na Carteira, e no alerta de strike que mudou, na aba Alertas.",
+  },
+  {
     id: "rolagem",
     titulo: "Rolagem",
     texto:

@@ -59,10 +59,10 @@ def _perna_de_acao(operation: Operation, origem: StockOrigin) -> int | None:
 def _movimento(operation: Operation, leg: int, quantity: int) -> tuple[Side, StockMovement]:
     if not 0 <= leg < len(operation.legs):
         raise InvalidDomainValueError(f"evento em perna inexistente: {leg}")
-    ref = operation.legs[leg]
+    estado = leg_states(operation)[leg]
+    ref = estado.ref  # com o strike ajustado pela B3, se houve ajuste
     if not isinstance(ref, OptionLegRef):
         raise InvalidDomainValueError(f"exercício só em perna de opção; {ref.symbol!r} é ação")
-    estado = leg_states(operation)[leg]
     if estado.side is None or quantity > estado.quantity:
         raise InvalidDomainValueError(
             f"{ref.symbol!r}: exerce {quantity} com {estado.quantity} em aberto"

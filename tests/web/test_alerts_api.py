@@ -15,6 +15,7 @@ from options_engine.adapters.outbound.storage.dismissed_alerts import JsonDismis
 from options_engine.adapters.outbound.storage.operations import JsonOperationRepository
 from options_engine.application.ports.alerts import AlertsView
 from options_engine.application.ports.inbound import BuilderLegInput, BuilderRequest
+from options_engine.application.ports.portfolio import ListedStrike
 from options_engine.application.use_cases.alerts import AlertService
 from options_engine.application.use_cases.portfolio import PortfolioService
 from options_engine.application.use_cases.profiles import ProfileService
@@ -76,8 +77,9 @@ def _sugerir(ativo: str, modelo: str, vencimento: date) -> BuilderRequest:
     return BuilderRequest(ativo, (BuilderLegInput("PETRX280", Side.SELL, 100),), None, modelo)
 
 
-def _cliente(pasta: Path | None) -> TestClient:
+def _cliente(pasta: Path | None, listados: dict[str, ListedStrike] | None = None) -> TestClient:
     relogio = FixedClock(DIA_17)
+    cadastro = listados or {}
     perfis = ProfileService(FakeProfileRepository(), relogio, "PC-TESTE")
     if pasta is not None:
         perfis.create("Hugo", str(pasta))
@@ -106,8 +108,8 @@ def _cliente(pasta: Path | None) -> TestClient:
         return None
 
     rotas = [
-        router_carteira(carteira, closes=sem_fechamento, terms=_termos),
-        router_alertas(alertas, rolagem, carteira, closes=sem_fechamento),
+        router_carteira(carteira, closes=sem_fechamento, terms=_termos, listed=cadastro.get),
+        router_alertas(alertas, rolagem, carteira, closes=sem_fechamento, listed=cadastro.get),
     ]
     return TestClient(create_app(rotas))
 
@@ -139,8 +141,27 @@ def test_lista_com_risco_de_exercicio_e_vencimento(tmp_path: Path) -> None:
         "limite": None,
         "pode_rolar": True,
         "estimado": False,
+        "strike": None,
+        "strike_cadastro": None,
     }
     assert (vencimento["tipo"], vencimento["dentro_do_dinheiro"]) == ("vencimento_proximo", None)
+
+
+def test_strike_que_mudou_no_cadastro_vira_alerta_confira(tmp_path: Path) -> None:
+    cliente = _cliente(tmp_path, {"PETRW280": ListedStrike(14.0, "Cadastro da B3 de 13/11/2026")})
+    resposta = cliente.post("/api/carteira/operacoes", json=PUT_VENDIDA)
+    operacao = resposta.json()["id"]
+    (mudou,) = [
+        a for a in cliente.get("/api/alertas").json()["alertas"] if a["tipo"] == "strike_mudou"
+    ]
+    assert (mudou["chave"], mudou["ticker"], mudou["strike"], mudou["strike_cadastro"]) == (
+        f"strike_mudou:{operacao}:0",
+        "PETRW280",
+        28.0,
+        14.0,
+    )
+    # Não aplicado: a Carteira segue com o strike gravado.
+    assert cliente.get("/api/carteira").json()["operacoes"][0]["pernas"][0]["strike"] == 28.0
 
 
 def test_stop_estimado_e_stop_sem_preco_saem_rotulados() -> None:

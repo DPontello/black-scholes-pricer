@@ -21,7 +21,7 @@ from options_engine.application.ports.inbound import (
     WatchRow,
 )
 from options_engine.application.ports.outbound import CadastroFreshness
-from options_engine.application.ports.portfolio import ExpiryNotice, PortfolioView
+from options_engine.application.ports.portfolio import ExpiryNotice, PortfolioView, StrikeNotice
 from options_engine.application.use_cases.alerts import AlertService
 from options_engine.application.use_cases.market_analysis import MarketAnalysisService
 from options_engine.application.use_cases.portfolio import PortfolioService
@@ -498,7 +498,12 @@ def test_alertas_vao_no_ao_vivo_junto_da_carteira_e_so_quando_mudam() -> None:
 class _AlertasComVencimento:
     """``AlertUseCase`` que devolve um alerta com a data do vencimento (um ``date``)."""
 
-    def evaluate(self, view: PortfolioView, notices: Sequence[ExpiryNotice]) -> AlertsView:
+    def evaluate(
+        self,
+        view: PortfolioView,
+        notices: Sequence[ExpiryNotice],
+        strike_notices: Sequence[StrikeNotice] = (),
+    ) -> AlertsView:
         alerta = Alert(
             "vencimento_proximo:op000001:0",
             AlertKind.EXPIRY_NEAR,

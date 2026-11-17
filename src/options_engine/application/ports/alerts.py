@@ -6,7 +6,7 @@ from datetime import date
 from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.inbound import BuilderRequest
-from options_engine.application.ports.portfolio import ExpiryNotice, PortfolioView
+from options_engine.application.ports.portfolio import ExpiryNotice, PortfolioView, StrikeNotice
 from options_engine.domain.alerts.model import Alert
 from options_engine.domain.model.quotes import DataSource
 
@@ -25,9 +25,14 @@ class AlertsView:
 
 @runtime_checkable
 class AlertUseCase(Protocol):
-    def evaluate(self, view: PortfolioView, notices: Sequence[ExpiryNotice]) -> AlertsView:
+    def evaluate(
+        self,
+        view: PortfolioView,
+        notices: Sequence[ExpiryNotice],
+        strike_notices: Sequence[StrikeNotice] = (),
+    ) -> AlertsView:
         """A carteira e os avisos vêm de quem já os leu (a rota ou o WebSocket): uma consulta de
-        mercado só para os dois."""
+        mercado só para os dois. ``strike_notices``: strikes do Cadastro que não foram aplicados."""
         ...
 
     def dismiss(self, key: str) -> None: ...

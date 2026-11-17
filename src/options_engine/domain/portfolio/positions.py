@@ -23,7 +23,9 @@ from options_engine.domain.portfolio.model import (
     Operation,
     OptionLegRef,
     StockLegRef,
+    StrikeAdjusted,
     TransferOut,
+    event_refs,
     leg_states,
 )
 
@@ -57,7 +59,7 @@ def is_closed(operation: Operation) -> bool:
 
 def event_costs(evento: Event, ref: LegRef, schedules: Sequence[CostSchedule]) -> float:
     """Custo do evento: o real informado, senão a estimativa da tabela vigente no dia."""
-    if isinstance(evento, Expired | TransferOut):
+    if isinstance(evento, Expired | TransferOut | StrikeAdjusted):
         return 0.0
     if evento.costs is not None:
         return evento.costs
@@ -78,7 +80,10 @@ def event_costs(evento: Event, ref: LegRef, schedules: Sequence[CostSchedule]) -
 
 def realized_result(operation: Operation, schedules: Sequence[CostSchedule]) -> float:
     """Bruto realizado menos os custos: os reais informados, senão a estimativa da ADR-0005."""
-    custos = [event_costs(e, operation.legs[e.leg], schedules) for e in operation.events]
+    custos = [
+        event_costs(e, ref, schedules)
+        for e, ref in zip(operation.events, event_refs(operation), strict=True)
+    ]
     return fsum([*(estado.realized for estado in leg_states(operation)), *(-c for c in custos)])
 
 

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from options_engine.adapters.outbound.b3files.loaded import LibraryLoader, LoadedLibrary
+from options_engine.application.ports.portfolio import ListedStrike
 from options_engine.domain.model.enums import ExerciseStyle, OptionType
 from tests.adapters._mercado import biblioteca
 
@@ -23,6 +24,21 @@ def test_lote_da_serie_vem_do_cadastro_e_ticker_desconhecido_e_none(tmp_path: Pa
     assert isinstance(loaded, LoadedLibrary)
     assert (loaded.lot("PETRK300"), loaded.lot("BOVAK170")) == (100, 1)
     assert loaded.lot("VALEK600") is None
+
+
+def test_strike_do_cadastro_com_a_fonte_para_o_ajuste_da_carteira(tmp_path: Path) -> None:
+    linhas = [
+        "TckrSymb;Asst;XprtnDt;ExrcPric;OptnStyle;OptnTp;UndrlygTckrSymb1;AllcnRndLot",
+        "PETRK300;PETR4;2026-11-19;29.47;AMER;CALL;PETR4;100",
+        "PETRK340;PETR4;2026-11-19;;AMER;CALL;PETR4;100",
+    ]
+    lib = biblioteca(tmp_path / "mercado", cadastro="\r\n".join(linhas).encode("utf-8-sig"))
+    loaded = LibraryLoader(lib).load()
+    assert isinstance(loaded, LoadedLibrary)
+    # A data vem do nome do Cadastro importado (_20261023 na fixture).
+    assert loaded.listed_strike("PETRK300") == ListedStrike(29.47, "Cadastro da B3 de 23/10/2026")
+    assert loaded.listed_strike("PETRK340") is None  # sem strike legível
+    assert loaded.listed_strike("VALEK600") is None
 
 
 def test_termos_da_serie_vem_do_cadastro_com_o_ativo_da_operacao_de_reserva(tmp_path: Path) -> None:

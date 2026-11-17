@@ -16,16 +16,19 @@ from options_engine.application.ports.outbound import (
 from options_engine.application.ports.portfolio import (
     AssetView,
     ExpiryNotice,
+    ListedStrike,
     OperationView,
     PortfolioSymbols,
     PortfolioView,
     RegisterOperation,
+    StrikeNotice,
     TaxMonthView,
 )
 from options_engine.application.use_cases._marks import Marker
 from options_engine.domain.income.costs import CostSchedule
 from options_engine.domain.model.enums import OptionType, Side, StockOrigin
 from options_engine.domain.model.errors import InvalidDomainValueError
+from options_engine.domain.portfolio.adjustment import StrikeChange, strike_change
 from options_engine.domain.portfolio.exercise import apply_exercise, takes_portfolio_shares
 from options_engine.domain.portfolio.expiry import ExpiryOutcome, expiry_outcome
 from options_engine.domain.portfolio.income_tax import monthly_tax, tax_records
@@ -38,6 +41,7 @@ from options_engine.domain.portfolio.model import (
     Operation,
     OptionLegRef,
     StockLegRef,
+    StrikeAdjusted,
     TransferOut,
 )
 from options_engine.domain.portfolio.positions import (
@@ -247,6 +251,49 @@ class PortfolioService:
                     )
             if po:
                 repositorio.save(operacao.with_events(*po))
+        return tuple(avisos)
+
+    def process_strike_adjustments(
+        self, listed: Callable[[str], ListedStrike | None]
+    ) -> tuple[StrikeNotice, ...]:
+        """Confere o strike em vigor das pernas de opção abertas com o do Cadastro: queda de até
+        15% vira o evento de ajuste; outra mudança, o aviso (sem gravar). Roda antes do
+        vencimento, para o pó ou o exercício já sair do strike ajustado."""
+        with self._lock:
+            return self._ajustar(listed)
+
+    def _ajustar(self, listed: Callable[[str], ListedStrike | None]) -> tuple[StrikeNotice, ...]:
+        hoje = self._clock.now().astimezone(self._tz).date()
+        repositorio = self._repository_for()
+        avisos: list[StrikeNotice] = []
+        for operacao in _operacoes(repositorio.list()):
+            ajustes: list[Event] = []
+            for estado in open_legs(operacao):
+                ref = estado.ref
+                achado = listed(ref.symbol) if isinstance(ref, OptionLegRef) else None
+                if not isinstance(ref, OptionLegRef) or achado is None:
+                    continue
+                em_vigor = ref.terms.strike
+                match strike_change(em_vigor, achado.strike):
+                    case StrikeChange.APPLY:
+                        ajustes.append(
+                            StrikeAdjusted(
+                                estado.index, hoje, em_vigor, achado.strike, achado.source
+                            )
+                        )
+                    case StrikeChange.CHECK:
+                        avisos.append(
+                            StrikeNotice(
+                                operacao.id,
+                                estado.index,
+                                ref.symbol,
+                                em_vigor,
+                                achado.strike,
+                                achado.source,
+                            )
+                        )
+            if ajustes:
+                repositorio.save(operacao.with_events(*ajustes))
         return tuple(avisos)
 
     def _pagar_ate(self, mes: date) -> date | None:

@@ -11,6 +11,7 @@ from options_engine.domain.alerts.model import (
     AlertKind,
     AlertSettings,
     Evaluation,
+    ListedStrikeChange,
     OperationSnapshot,
 )
 from options_engine.domain.alerts.rules import evaluate
@@ -216,6 +217,35 @@ def test_aviso_de_operacao_desconhecida_recusado() -> None:
     aviso = AfterExpiry("outra", 0, "PETRK300", NOVEMBRO, ExpiryOutcome.REGISTRAR_EXERCICIO)
     with pytest.raises(InvalidDomainValueError, match="outra"):
         avaliar([foto(perna(0, call(30.0), Side.SELL))], avisos=[aviso])
+
+
+def test_strike_que_mudou_no_cadastro_vira_alerta_confira() -> None:
+    op = foto(perna(0, call(30.0), Side.SELL), total=-900.0, stop=100.0)
+    mudou = ListedStrikeChange("op1", 0, "PETRK300", 30.0, 15.0)
+    r = evaluate([op], (), {"PETR4": 31.0}, lambda _v: 3, PADRAO, strike_changes=[mudou])
+    # Logo depois do stop: o strike em dúvida põe em dúvida o risco de exercício que vem depois.
+    assert tipos(r) == [
+        (AlertKind.STOP, None),
+        (AlertKind.STRIKE_CHANGED, 0),
+        (AlertKind.EXERCISE_RISK, 0),
+        (AlertKind.EXPIRY_NEAR, 0),
+    ]
+    alerta = r.alerts[1]
+    assert alerta.key == "strike_mudou:op1:0"
+    assert (alerta.symbol, alerta.strike, alerta.listed_strike) == ("PETRK300", 30.0, 15.0)
+
+
+def test_strike_mudou_de_operacao_desconhecida_recusado() -> None:
+    mudou = ListedStrikeChange("outra", 0, "PETRK300", 30.0, 15.0)
+    with pytest.raises(InvalidDomainValueError, match="outra"):
+        evaluate(
+            [foto(perna(0, call(30.0), Side.SELL))],
+            (),
+            {},
+            lambda _v: 3,
+            PADRAO,
+            strike_changes=[mudou],
+        )
 
 
 def test_ordem_por_gravidade() -> None:

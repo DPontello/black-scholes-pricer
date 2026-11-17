@@ -41,6 +41,7 @@ const IDS = [
   "ir-mensal",
   "stop-e-alvo",
   "risco-de-exercicio",
+  "ajuste-de-strike",
   "rolagem",
   "anualizado",
   "retorno-sobre-risco",
@@ -95,7 +96,7 @@ test("a lista mostra todos os termos em ordem alfabética, cada um com o id dele
   montar("/aprender/termos");
   const esperados = [...TERMOS].sort((a, b) => a.titulo.localeCompare(b.titulo, "pt-BR"));
   expect(titulos()).toEqual(esperados.map((t) => t.titulo));
-  expect(titulos()[0]).toBe("Americana e europeia");
+  expect(titulos()[0]).toBe("Ajuste de strike");
   for (const termo of TERMOS) {
     const titulo = screen.getByRole("heading", { level: 3, name: termo.titulo });
     expect(titulo.closest("article")?.id).toBe(termo.id);

@@ -7,13 +7,15 @@ export type TipoAlerta =
   | "exercicio_a_registrar"
   | "stop"
   | "stop_sem_preco"
+  | "strike_mudou"
   | "risco_de_exercicio"
   | "vencimento_proximo"
   | "aguardando_fechamento"
   | "alvo";
 
 /** `perna` é null no stop e no alvo (alertas da operação inteira). `estimado`: o total do stop
- * saiu do teórico de uma perna sem oferta para zerar. */
+ * saiu do teórico de uma perna sem oferta para zerar. `strike` e `strike_cadastro`: só no strike
+ * que mudou no Cadastro (o em vigor e o do Cadastro). */
 export type Alerta = {
   chave: string;
   tipo: TipoAlerta;
@@ -29,6 +31,8 @@ export type Alerta = {
   limite: number | null;
   pode_rolar: boolean;
   estimado: boolean;
+  strike: number | null;
+  strike_cadastro: number | null;
 };
 
 /** Já na ordem de gravidade; `dispensados`: quantos estão escondidos agora. */

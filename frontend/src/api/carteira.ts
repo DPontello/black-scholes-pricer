@@ -24,8 +24,9 @@ export type PernaCarteira = {
   marca: Marca | null;
 };
 
+/** `strike_anterior`, `strike` e `fonte`: só no ajuste de strike pela B3. */
 export type Evento = {
-  tipo: "abertura" | "encerramento" | "exercicio" | "atribuicao" | "po" | "transferencia";
+  tipo: "abertura" | "encerramento" | "exercicio" | "atribuicao" | "po" | "transferencia" | "ajuste_strike";
   perna: number;
   data: string;
   lado: Lado | null;
@@ -34,6 +35,9 @@ export type Evento = {
   custos: number | null;
   custo_medio: number | null;
   para: string | null;
+  strike_anterior: number | null;
+  strike: number | null;
+  fonte: string | null;
 };
 
 export type OperacaoCarteira = {

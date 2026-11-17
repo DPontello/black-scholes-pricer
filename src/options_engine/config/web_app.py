@@ -59,6 +59,7 @@ from options_engine.adapters.outbound.tryd.feed import TrydMarketFeed
 from options_engine.adapters.outbound.tryd.settings import PORTA_PONTE
 from options_engine.application.ports.inbound import ProfileUseCase
 from options_engine.application.ports.outbound import CadastroFreshness, Clock, TradingCalendar
+from options_engine.application.ports.portfolio import ListedStrike
 from options_engine.application.use_cases.alerts import AlertService
 from options_engine.application.use_cases.book import BookService
 from options_engine.application.use_cases.market_analysis import MarketAnalysisService
@@ -227,6 +228,7 @@ def build_web_app(
             closes=lambda symbol, day: _close(loader, symbol, day),
             analysis=MarketAnalysisService(market, vol_history, calendar, B3_UTC_OFFSET),
             alerts=alerts,
+            listed=lambda symbol: _listed(loader, symbol),
         ),
         router_montador(builder, simulations),
         router_book(book, profiles),
@@ -234,9 +236,14 @@ def build_web_app(
             portfolio,
             closes=lambda symbol, day: _close(loader, symbol, day),
             terms=lambda symbol, underlying: _terms(loader, symbol, underlying),
+            listed=lambda symbol: _listed(loader, symbol),
         ),
         router_alertas(
-            alerts, roll, portfolio, closes=lambda symbol, day: _close(loader, symbol, day)
+            alerts,
+            roll,
+            portfolio,
+            closes=lambda symbol, day: _close(loader, symbol, day),
+            listed=lambda symbol: _listed(loader, symbol),
         ),
     ]
     lifespan = _lifespan(profiles, client, process, importer)
@@ -257,6 +264,12 @@ def _close(loader: LibraryLoader, symbol: str, day: date) -> float | None:
 def _terms(loader: LibraryLoader, symbol: str, underlying: str) -> OptionTerms | str:
     loaded = loader.load()
     return loaded if isinstance(loaded, str) else loaded.option_terms(symbol, underlying)
+
+
+def _listed(loader: LibraryLoader, symbol: str) -> ListedStrike | None:
+    """Strike da série no Cadastro mais recente, para o ajuste na Carteira; sem Cadastro, None."""
+    loaded = loader.load()
+    return None if isinstance(loaded, str) else loaded.listed_strike(symbol)
 
 
 def _ponte_src_dir() -> Path:

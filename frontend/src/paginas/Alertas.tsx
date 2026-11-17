@@ -12,7 +12,7 @@ import {
 import type { EstadoAoVivo } from "../api/aoVivo";
 import { definirLimitesAlertas, ErroApi, type Perfil } from "../api/cliente";
 import { Ajuda } from "../componentes/Ajuda";
-import { formatarData, formatarDiasUteis, formatarReais } from "../formatacao";
+import { formatarData, formatarDiasUteis, formatarPreco, formatarReais } from "../formatacao";
 
 const FONTES = { ao_vivo: null, atrasado: "com preços atrasados", fim_de_dia: "pelo fim de dia (B3)" };
 
@@ -21,6 +21,7 @@ const TERMO: Record<Alerta["tipo"], string> = {
   exercicio_a_registrar: "exercicio",
   stop: "stop-e-alvo",
   stop_sem_preco: "stop-e-alvo",
+  strike_mudou: "ajuste-de-strike",
   risco_de_exercicio: "risco-de-exercicio",
   vencimento_proximo: "vencimento",
   aguardando_fechamento: "vencimento",
@@ -59,6 +60,8 @@ export function frase(alerta: Alerta): string {
     }
     case "stop_sem_preco":
       return `Stop sem preço para avaliar: uma perna está sem oferta para zerar e sem teórico (limite ${formatarReais(-(alerta.limite ?? 0))})`;
+    case "strike_mudou":
+      return `${serie}: o strike mudou no Cadastro da B3 de ${formatarPreco(alerta.strike)} para ${formatarPreco(alerta.strike_cadastro)} e não foi ajustado. Desdobramento, grupamento ou bonificação mudam também a quantidade: confira na corretora`;
     case "alvo":
       return `Alvo: resultado ${formatarReais(alerta.total ?? 0)} (alvo ${formatarReais(alerta.limite ?? 0)})`;
   }

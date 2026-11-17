@@ -117,6 +117,103 @@ conhecida, que só aparece com a suíte inteira.
 
 ## Sprint 1 — alertas que não calam
 
+### Tarefa 1.5 — decisões de 16/11 e desenho (strike ajustado na Carteira, N1)
+
+Branch `fix/strike-ajustado-carteira`, a partir da `development` (`3664f5d`). Esta seção vem antes
+das outras tarefas para não dar conflito com as entradas da 1.2 (no fim do arquivo) e da 1.4
+(antes das "Decisões de 13/11").
+
+- Ruling (autor, 16/11, fonte): o strike ajustado vem do Cadastro da B3 mais recente, pelo
+  ticker, o mesmo que o registro (`LoadedLibrary.option_terms`) e o ao vivo já usam. Custo se
+  errado: o ajuste só aparece depois de importado um Cadastro posterior a ele (com a rotina
+  semanal, até uma semana de atraso).
+- Ruling (autor, 16/11, aplicação): queda de até 15% sobre o strike em vigor (faixa de provento em
+  dinheiro) é aplicada sozinha e gravada como evento na operação, com o strike anterior, o novo, a
+  data e a fonte, sem apagar o original; a Carteira mostra a linha. Qualquer outra mudança (alta,
+  ou queda maior que 15%) não é aplicada e vira alerta "confira" (desdobramento, grupamento ou
+  bonificação mudam também a quantidade, e o app não tem dados de proventos). Custo se errado:
+  uma bonificação de 10% passa como provento e a quantidade fica errada.
+- Ruling (autor, 16/11): a divergência de strike entre a cadeia de fim de dia (COTAHIST) e a ao
+  vivo (Cadastro) fica para a Sprint 3, com o N2 e o N3. Custo se errado: até lá, as duas cadeias
+  podem mostrar strikes diferentes para a mesma série depois de um ajuste.
+
+Análise de impacto (onde o strike gravado entra hoje):
+
+| Onde | Uso | Lê de |
+|---|---|---|
+| `portfolio.py:233-245` (`_vencer`) | pó ou exercício no vencimento | `leg_states` |
+| `domain/portfolio/exercise.py:62-73` | preço da ação no exercício (IR) | `operation.legs` |
+| `domain/portfolio/positions.py:66-70` | emolumento do exercício sobre o strike | a perna do evento |
+| `domain/alerts/rules.py:139` | risco de exercício | `leg_states` (pelo `OperationSnapshot`) |
+| `application/use_cases/_marks.py:75` | teórico da perna | a perna da marcação |
+| `adapters/inbound/web/portfolio.py` e a Carteira | o strike na tela | a perna |
+
+Desenho proposto (rulings minhas, para o autor conferir):
+
+- Ruling: evento novo `StrikeAdjusted(leg, on, previous, strike, source)`, gravado no
+  `operacoes/*.json` como `{"tipo": "ajuste_strike", "perna", "data", "strike_anterior",
+  "strike", "fonte"}`. A `versao` do arquivo segue 1 (o campo é um tipo novo de evento). Custo se
+  errado: uma versão antiga do app não lê a operação ajustada; a atualização pelo app (§13 do
+  HANDOFF) reduz a janela.
+- Ruling: os termos em vigor de cada perna saem de `leg_states` (o `LegState.ref` passa a trazer o
+  strike ajustado), e o exercício e o emolumento passam a ler dali, em vez de `operation.legs`. As
+  pernas gravadas não mudam.
+- Ruling: a conferência roda em `ler_carteira`, **antes** do vencimento, no mesmo padrão do
+  `process_expiries` (que já grava o pó numa leitura). Assim o vencimento já decide com o strike
+  ajustado.
+- Ruling: só o Cadastro mais recente é consultado. Se a série já tiver saído dele (vencida) antes de
+  o app ler a Carteira com um Cadastro posterior ao ajuste, o ajuste não é visto. Custo se errado:
+  o caso N1 continua possível para quem passa semanas sem abrir o app.
+- Ruling: o alerta "confira" tem chave por perna (`strike_mudou:<operação>:<perna>`) e pode ser
+  dispensado; segue a regra de sempre dos dispensados: volta quando deixa de valer (o Cadastro
+  volta a bater) e vale de novo. Mudou do desenho: lá dizia "volta quando o strike do Cadastro muda
+  de novo", o que pediria o valor na chave. Custo se errado: um segundo salto de strike numa perna
+  já dispensada não reaparece. O app não oferece correção manual de strike e quantidade.
+
+Implementação (o autor aprovou o desenho em 16/11):
+
+- Domínio (`domain/portfolio/`):
+  - `model.py`: o evento `StrikeAdjusted`; `leg_states` aplica o ajuste e confere a perna (só
+    opção, só aberta, strike finito e > 0, fonte preenchida, anterior igual ao strike em vigor);
+    `event_refs` dá a perna em vigor em cada evento.
+  - `adjustment.py`: `strike_change(em vigor, do Cadastro)` → igual, aplicar ou conferir.
+  - `exercise.py` (preço da ação no IR) e `positions.py` (emolumento do exercício) passam a usar o
+    strike em vigor.
+- Ruling: borda inclusiva, como nos alertas: queda de exatamente 15% aplica. Diferença abaixo de
+  meio centavo é igual (strikes da B3 têm duas casas); queda de um centavo já aplica.
+- Ruling: a data do evento é o dia em que o app aplicou o ajuste, e a data do Cadastro vai na
+  fonte (`"Cadastro da B3 de 13/11/2026"`, do nome do arquivo importado; sem data no nome, só
+  "Cadastro da B3"). Custo se errado: a data de corte do ajuste na B3 não fica gravada.
+- Aplicação: `PortfolioService.process_strike_adjustments(listed)` grava os ajustes e devolve os
+  `StrikeNotice`; `ListedStrike` e `StrikeNotice` na porta da Carteira. O `AlertService.evaluate`
+  ganhou `strike_notices`.
+- Alertas: tipo `strike_mudou`, logo depois do stop sem preço e antes do risco de exercício (um
+  strike em dúvida põe em dúvida o risco que vem depois). O `Alert` ganhou `strike` e
+  `listed_strike`.
+- Ruling: o alerta de strike convive com o risco de exercício e o vencimento da mesma perna (o
+  risco segue pelo strike em vigor). Custo se errado: dois alertas para a mesma perna.
+- Web e composição: `LoadedLibrary.listed_strike` lê o strike e a data do Cadastro;
+  `ler_carteira(portfolio, closes, listed)` confere antes do vencimento, para as rotas da Carteira
+  e dos Alertas e para o WebSocket do Mercado. A API manda o evento `ajuste_strike` (com
+  `strike_anterior`, `strike` e `fonte`) e o alerta com `strike` e `strike_cadastro`.
+- Tela: a linha "16/11/2026 · strike ajustado pela B3 · PETRK300 · 30,00 → 29,47 (Cadastro da B3
+  de 13/11/2026)" nos eventos da operação; o alerta "PETRK300: o strike mudou no Cadastro da B3 de
+  30,00 para 15,00 e não foi ajustado. Desdobramento, grupamento ou bonificação mudam também a
+  quantidade: confira na corretora"; o termo "Ajuste de strike" no glossário, com o "?" do alerta.
+  O README ganhou a frase da conferência.
+- Testes novos: 8 no domínio, com 23 casos (`tests/portfolio/test_ajuste_strike.py`), o caso N1 e a mudança
+  grande no serviço (`tests/application/test_portfolio.py`), o JSON (`test_operations.py`), as
+  regras e o serviço dos alertas, o `listed_strike` (`test_loaded.py`), as duas APIs e dois da tela.
+  Os testes que conferem um evento ou um alerta inteiro da API ganharam os campos novos (nulos); o
+  dublê `_AlertasComVencimento` ganhou o `strike_notices`; o teste do glossário que fixava
+  "Americana e europeia" como primeiro termo agora começa em "Ajuste de strike".
+- Checagens: ruff, ruff format, mypy, import-linter; pytest em `tests/web`, `tests/adapters`,
+  `tests/application`, `tests/alerts`, `tests/portfolio` e `tests/config` (1602 passando; as 2
+  falhas do seletor de pasta são as da tarefa 1.4, corrigidas na `fix/testes-windows`); `tsc
+  --noEmit` e os testes de Alertas, Carteira e Aprender (69 passando).
+- Não conferido no app real: abrir a Carteira com um Cadastro que traga um strike ajustado. Fica
+  para o autor, com um Cadastro de depois de uma data-com.
+
 ### Tarefa 1.1 — stop com perna sem oferta para zerar
 
 Branch `fix/alerta-stop-sem-oferta`, a partir da `development` (`c5ca7ff`).

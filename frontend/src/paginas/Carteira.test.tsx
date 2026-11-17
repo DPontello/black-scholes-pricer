@@ -6,7 +6,7 @@ import type { EstadoAoVivo } from "../api/aoVivo";
 import type { Carteira as CarteiraDados, RascunhoOperacao } from "../api/carteira";
 import { carteira, mesIr, mesIrOutubro, trava } from "../testes/carteira";
 import { simularFetch } from "../testes/fetchFalso";
-import { Carteira } from "./Carteira";
+import { Carteira, linhaDoEvento } from "./Carteira";
 
 const AO_VIVO: EstadoAoVivo = {
   conectado: true,
@@ -143,6 +143,26 @@ test("o histórico traz as encerradas com os eventos", async () => {
   fireEvent.click(await screen.findByRole("tab", { name: "Histórico" }));
   expect(await screen.findByText("coberta")).toBeTruthy();
   await waitFor(() => expect(screen.getByText(/abertura · PETRK300 · compra · 100 a 1,20/)).toBeTruthy());
+});
+
+test("o ajuste de strike pela B3 aparece nos eventos com o antes, o depois e a fonte", () => {
+  const ajuste = {
+    tipo: "ajuste_strike" as const,
+    perna: 0,
+    data: "2026-11-16",
+    lado: null,
+    quantidade: null,
+    preco: null,
+    custos: null,
+    custo_medio: null,
+    para: null,
+    strike_anterior: 30,
+    strike: 29.47,
+    fonte: "Cadastro da B3 de 13/11/2026",
+  };
+  expect(linhaDoEvento(ajuste, "PETRK300")).toBe(
+    "16/11/2026 · strike ajustado pela B3 · PETRK300 · 30,00 → 29,47 (Cadastro da B3 de 13/11/2026)",
+  );
 });
 
 test("a aba IR mensal busca e mostra o IR", async () => {

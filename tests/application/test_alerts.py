@@ -12,6 +12,7 @@ from options_engine.application.ports.portfolio import (
     OperationView,
     PortfolioSymbols,
     PortfolioView,
+    StrikeNotice,
 )
 from options_engine.application.use_cases.alerts import AlertService
 from options_engine.domain.alerts.model import AlertKind, AlertSettings
@@ -270,6 +271,27 @@ def test_avisos_de_vencimento_e_fonte() -> None:
     )
     assert [a.kind for a in visao.alerts] == [AlertKind.EXERCISE_TO_REGISTER]
     assert visao.source is DataSource.FIM_DE_DIA
+
+
+def test_strike_que_mudou_no_cadastro_vira_alerta_e_pode_ser_dispensado() -> None:
+    comprada = operacao([call(30.0)], [Open(0, D1, Side.BUY, 100, 1.0)], id_="comprada1")
+    mudou = StrikeNotice("comprada1", 0, "PETRK300", 30.0, 15.0, "Cadastro da B3 de 13/11/2026")
+    longe = _Relogio(datetime(2026, 11, 4, 14, 0, tzinfo=B3))  # fora da janela de vencimento
+    caixa = _Dispensados()
+    servico = _servico(caixa, relogio=longe)
+    (alerta,) = servico.evaluate(_carteira(_visao(comprada)), [], [mudou]).alerts
+    assert (alerta.kind, alerta.key, alerta.strike, alerta.listed_strike) == (
+        AlertKind.STRIKE_CHANGED,
+        "strike_mudou:comprada1:0",
+        30.0,
+        15.0,
+    )
+    servico.dismiss(alerta.key)
+    visao = servico.evaluate(_carteira(_visao(comprada)), [], [mudou])
+    assert (visao.alerts, visao.dismissed) == ((), 1)
+    # Sem a mudança (o Cadastro voltou a bater), o dispensado sai e o alerta pode voltar.
+    servico.evaluate(_carteira(_visao(comprada)), [])
+    assert caixa.chaves == frozenset()
 
 
 def test_dispensar_e_restaurar_todos() -> None:
