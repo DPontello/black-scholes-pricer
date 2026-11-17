@@ -7,7 +7,7 @@ from typing import Protocol, runtime_checkable
 
 from options_engine.application.ports.inbound import BuilderRequest
 from options_engine.application.ports.portfolio import ExpiryNotice, PortfolioView, StrikeNotice
-from options_engine.domain.alerts.model import Alert
+from options_engine.domain.alerts.model import Alert, Undetermined
 from options_engine.domain.model.quotes import DataSource
 
 __all__ = ["AlertUseCase", "AlertsView", "RollSuggestion", "RollUseCase"]
@@ -16,11 +16,13 @@ __all__ = ["AlertUseCase", "AlertsView", "RollSuggestion", "RollUseCase"]
 @dataclass(frozen=True, slots=True)
 class AlertsView:
     """``alerts``: sem os dispensados; ``dismissed``: quantos estão escondidos agora.
-    ``source``: a da Carteira (o fim de dia, com o Tryd fechado)."""
+    ``source``: a da Carteira (o fim de dia, com o Tryd fechado). ``not_evaluated``: os que não
+    deu para avaliar agora, com o motivo, dispensados inclusive (o aviso não se dispensa)."""
 
     alerts: tuple[Alert, ...]
     dismissed: int
     source: DataSource
+    not_evaluated: tuple[Undetermined, ...] = ()
 
 
 @runtime_checkable

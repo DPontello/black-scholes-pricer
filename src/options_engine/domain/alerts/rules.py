@@ -20,6 +20,8 @@ from options_engine.domain.alerts.model import (
     Evaluation,
     ListedStrikeChange,
     OperationSnapshot,
+    Undetermined,
+    UndeterminedReason,
 )
 from options_engine.domain.model.enums import Side
 from options_engine.domain.model.errors import InvalidDomainValueError
@@ -35,21 +37,35 @@ _DO_AVISO = {
 }
 
 
+def _ordem(posicao: int, alerta: Alert) -> tuple[int, int, int]:
+    return _GRAVIDADE[alerta.kind], posicao, alerta.leg or 0
+
+
 class _Coleta:
-    """Os alertas com a posição da operação na entrada (desempate da ordem), as indeterminadas e
-    as estimadas."""
+    """Os alertas com a posição da operação na entrada (desempate da ordem), as indeterminadas
+    (com as que vão para a tela) e as estimadas."""
 
     def __init__(self) -> None:
         self.alertas: list[tuple[int, Alert]] = []
         self.indeterminadas: set[str] = set()
+        self.nao_avaliados: list[tuple[int, Undetermined]] = []
         self.estimadas: set[str] = set()
 
+    def indeterminar(
+        self, posicao: int, alerta: Alert, motivo: UndeterminedReason, *, mostrar: bool = True
+    ) -> None:
+        self.indeterminadas.add(alerta.key)
+        if mostrar:
+            self.nao_avaliados.append((posicao, Undetermined(alerta, motivo)))
+
     def avaliacao(self) -> Evaluation:
-        self.alertas.sort(key=lambda item: (_GRAVIDADE[item[1].kind], item[0], item[1].leg or 0))
+        self.alertas.sort(key=lambda item: _ordem(*item))
+        self.nao_avaliados.sort(key=lambda item: _ordem(item[0], item[1].alert))
         return Evaluation(
             tuple(a for _, a in self.alertas),
             frozenset(self.indeterminadas),
             frozenset(self.estimadas),
+            tuple(n for _, n in self.nao_avaliados),
         )
 
 
@@ -144,11 +160,12 @@ def _perna(
     if not isinstance(ref, OptionLegRef) or estado.side is None:
         return
     vendida = estado.side is Side.SELL
-    vencimento = _alerta(AlertKind.EXPIRY_NEAR, op, estado.index)
-    risco = _alerta(AlertKind.EXERCISE_RISK, op, estado.index)
+    vencimento = replace(_alerta(AlertKind.EXPIRY_NEAR, op, estado.index), symbol=ref.symbol)
+    risco = replace(_alerta(AlertKind.EXERCISE_RISK, op, estado.index), symbol=ref.symbol)
     du = business_days(ref.terms.expiry)
     if du is None:
-        coleta.indeterminadas.update([vencimento.key, risco.key] if vendida else [vencimento.key])
+        for alerta in [vencimento, risco] if vendida else [vencimento]:
+            coleta.indeterminar(posicao, alerta, UndeterminedReason.OUT_OF_CALENDAR)
         return
     na_janela = du <= settings.expiry_days
     vencimento = replace(
@@ -160,7 +177,7 @@ def _perna(
         return
     spot = spots.get(op.underlying)
     if spot is None:
-        coleta.indeterminadas.add(risco.key)
+        coleta.indeterminar(posicao, risco, UndeterminedReason.NO_SPOT)
         return
     dentro = _no_dinheiro(ref, spot, settings.strike_distance)
     if dentro is not None and (dentro or na_janela):
@@ -190,8 +207,12 @@ def _stop_e_alvo(coleta: _Coleta, posicao: int, op: OperationSnapshot) -> None:
             total, estimado = op.estimated_total, True
             coleta.estimadas.add(alerta.key)
         if total is None:
-            coleta.indeterminadas.add(alerta.key)
-            if kind is AlertKind.STOP and op.unpriced:
+            sem_preco_avisado = kind is AlertKind.STOP and op.unpriced
+            # O "stop sem preço para avaliar" já fala por este stop: fica fora dos não avaliados.
+            coleta.indeterminar(
+                posicao, alerta, UndeterminedReason.NO_PRICE, mostrar=not sem_preco_avisado
+            )
+            if sem_preco_avisado:
                 aviso = replace(_alerta(AlertKind.STOP_UNPRICED, op), limit=limite)
                 coleta.alertas.append((posicao, aviso))
             continue

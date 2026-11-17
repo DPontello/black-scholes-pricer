@@ -13,6 +13,7 @@ from options_engine.domain.alerts.model import (
     Evaluation,
     ListedStrikeChange,
     OperationSnapshot,
+    UndeterminedReason,
 )
 from options_engine.domain.alerts.rules import evaluate
 from options_engine.domain.model.enums import Side
@@ -223,6 +224,46 @@ def test_fora_do_calendario_indeterminado() -> None:
     r = avaliar([foto(perna(0, call(30.0), Side.SELL))], du=None)
     assert r.alerts == ()
     assert r.undetermined == {"vencimento_proximo:op1:0", "risco_de_exercicio:op1:0"}
+
+
+def nao_avaliados(r: Evaluation) -> list[tuple[str, UndeterminedReason, str | None]]:
+    return [(n.alert.key, n.reason, n.alert.symbol) for n in r.not_evaluated]
+
+
+def test_nao_avaliados_saem_com_o_motivo_na_ordem_de_gravidade() -> None:
+    vendida = foto(perna(0, call(30.0), Side.SELL), id_="a", total=None, stop=100.0, alvo=50.0)
+    fora = foto(perna(0, put(28.0), Side.BUY), id_="b")
+    r = evaluate([vendida], (), {}, lambda _v: 3, PADRAO)
+    assert nao_avaliados(r) == [
+        ("stop:a:-", UndeterminedReason.NO_PRICE, None),
+        ("risco_de_exercicio:a:0", UndeterminedReason.NO_SPOT, "PETRK300"),
+        ("alvo:a:-", UndeterminedReason.NO_PRICE, None),
+    ]
+    r = evaluate([fora], (), {}, lambda _v: None, PADRAO)
+    assert nao_avaliados(r) == [
+        ("vencimento_proximo:b:0", UndeterminedReason.OUT_OF_CALENDAR, "PETRW280")
+    ]
+
+
+def test_fora_do_calendario_vendida_tem_vencimento_e_risco_nao_avaliados() -> None:
+    r = avaliar([foto(perna(0, call(30.0), Side.SELL))], du=None)
+    assert [(k, m) for k, m, _ in nao_avaliados(r)] == [
+        ("risco_de_exercicio:op1:0", UndeterminedReason.OUT_OF_CALENDAR),
+        ("vencimento_proximo:op1:0", UndeterminedReason.OUT_OF_CALENDAR),
+    ]
+
+
+def test_stop_sem_preco_ja_avisado_nao_se_repete_nos_nao_avaliados() -> None:
+    op = foto(perna(0, put(28.0), Side.BUY), total=None, sem_preco=True, stop=50.0, alvo=30.0)
+    r = avaliar([op], du=30)
+    assert tipos(r) == [(AlertKind.STOP_UNPRICED, None)]
+    assert r.undetermined == {"stop:op1:-", "alvo:op1:-"}  # o dispensado do stop fica
+    assert [k for k, _, _ in nao_avaliados(r)] == ["alvo:op1:-"]
+
+
+def test_tudo_avaliado_nao_tem_nao_avaliados() -> None:
+    op = foto(perna(0, call(30.0), Side.SELL), total=-10.0, stop=100.0)
+    assert avaliar([op], spot=25.0).not_evaluated == ()
 
 
 def test_avisos_de_vencimento_viram_alertas() -> None:

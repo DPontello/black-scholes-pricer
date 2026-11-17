@@ -1099,6 +1099,25 @@ a.ajuda:focus-visible {
   color: var(--alta);
 }
 
+/* Os que não deu para avaliar: informação, não alerta (sem a cor de perda). */
+.nao-avaliados {
+  margin: 0.75rem 0;
+  padding: 0.8rem 1rem;
+  background: var(--painel);
+  border: 1px dashed var(--borda);
+  border-radius: 6px;
+}
+
+.nao-avaliados h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+}
+
+.nao-avaliados ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
 .acoes-alerta {
   display: flex;
   gap: 0.5rem;

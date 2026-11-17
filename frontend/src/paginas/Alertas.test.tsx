@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import type { Alertas as AlertasDados } from "../api/alertas";
 import type { EstadoAoVivo } from "../api/aoVivo";
 import type { Perfil } from "../api/cliente";
-import { alerta, alertas, rolagem } from "../testes/alertas";
+import { alerta, alertas, naoAvaliado, rolagem } from "../testes/alertas";
 import { PERFIL } from "../testes/book";
 import { simularFetch } from "../testes/fetchFalso";
 import { Alertas, frase } from "./Alertas";
@@ -60,6 +60,33 @@ test("sem alertas mostra o vazio", async () => {
   montar();
   expect(await screen.findByText("Nenhum alerta agora.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Mostrar dispensados/ })).toBeNull();
+});
+
+test("os alertas que não puderam ser avaliados aparecem com o motivo, em vez de sumir", async () => {
+  api(
+    alertas({
+      alertas: [],
+      nao_avaliados: [
+        naoAvaliado({ chave: "stop:op2:-", tipo: "stop", nome: "ações à mão", perna: null, ticker: null, motivo: "sem_preco" }),
+        naoAvaliado({ motivo: "sem_spot" }),
+        naoAvaliado({ chave: "vencimento_proximo:op3:0", tipo: "vencimento_proximo", nome: "call 2028", ticker: "PETRA400", motivo: "fora_do_calendario" }),
+      ],
+    }),
+  );
+  montar();
+  const caixa = await screen.findByRole("region", { name: "3 alertas não puderam ser avaliados" });
+  expect(within(caixa).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+    "ações à mão · stop: sem preço para zerar alguma perna",
+    "put coberta · risco de exercício de PETRW280: sem a cotação do ativo",
+    "call 2028 · vencimento próximo de PETRA400: vencimento além do calendário de feriados do app",
+  ]);
+  expect(screen.queryByText("Nenhum alerta agora.")).toBeNull();
+});
+
+test("um só não avaliado fica no singular", async () => {
+  api(alertas({ nao_avaliados: [naoAvaliado()] }));
+  montar();
+  expect(await screen.findByRole("region", { name: "1 alerta não pôde ser avaliado" })).toBeTruthy();
 });
 
 test("agrupa por operação na ordem de gravidade, com as frases", async () => {

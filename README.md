@@ -314,7 +314,9 @@ Os **Alertas** avisam, do mais grave para o mais leve, a opção vencida que esp
 exercício, o stop, o risco de exercício (opção vendida dentro do dinheiro, em qualquer prazo, ou a
 menos de 2% do strike, a 5 dias úteis ou menos do vencimento), o vencimento próximo e o alvo; os dois limites
 ficam editáveis no perfil, e o menu mostra quantos alertas há. Um alerta dispensado volta quando
-deixa de valer e vale de novo. **Rolar** abre no Montador a mesma estrutura no vencimento
+deixa de valer e vale de novo. O que não dá para avaliar (sem a cotação do ativo, sem preço para
+zerar uma perna ou com o vencimento além do calendário de feriados) aparece numa lista própria,
+com o motivo, em vez de sumir. **Rolar** abre no Montador a mesma estrutura no vencimento
 seguinte, com uma faixa que mostra o custo de zerar as pernas atuais e o caixa líquido; nada é
 enviado.
 O strike de cada perna aberta é conferido com o Cadastro da B3 mais recente: uma queda de até
